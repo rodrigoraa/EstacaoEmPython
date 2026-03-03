@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estação Meteorológica | EESJ</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="pb-12">
+
+    <nav class="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
+        <div class="flex items-center gap-4">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo EE São José"
+                class="h-12 w-auto object-contain" onerror="this.style.display='none';">
+            <div>
+                <h1 class="text-lg font-bold text-slate-800 leading-tight">Vicentina MS - Distrito de São José</h1>
+                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mt-0.5">EE São José <span
+                        class="text-slate-300 mx-1">|</span> Centro de Monitoramento</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4 text-sm">
+            <div class="hidden sm:flex items-center gap-2">
+                <span class="relative flex h-3 w-3">
+                    <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                <span class="text-slate-500 font-medium">Ao vivo <span id="hora-leitura"
+                        class="ml-1 text-slate-400">--:--</span></span>
+            </div>
+            <button onclick="document.getElementById('modal-cadastro').classList.remove('hidden')"
+                class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2">
+                <i class="fa-brands fa-whatsapp text-lg"></i> <span class="hidden sm:inline">Receber Alertas</span>
+            </button>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 mt-8 space-y-6">
+
+        {% if mensagem %}
+        <div
+            class="bg-{{ 'emerald' if '✅' in mensagem else 'amber' }}-50 border border-{{ 'emerald' if '✅' in mensagem else 'amber' }}-200 text-slate-700 px-4 py-3 rounded-lg shadow-sm flex items-center gap-3">
+            <span class="text-lg">{{ mensagem }}</span>
+            <button onclick="this.parentElement.style.display='none'"
+                class="ml-auto text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+            <div class="card flex flex-col justify-between">
+                <div class="flex justify-between items-start mb-2">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Temperatura</h3>
+                    <i class="fa-solid fa-temperature-three-quarters text-orange-500 text-xl"></i>
+                </div>
+                <div class="mt-4">
+                    <div class="flex items-baseline gap-1">
+                        <span class="text-6xl font-extrabold tracking-tighter text-slate-800" id="val-temp">--</span>
+                        <span class="text-2xl font-medium text-slate-500">°C</span>
+                    </div>
+
+                    <div class="mt-4 space-y-1.5 border-t border-slate-100 pt-3">
+                        <p class="text-sm font-medium text-slate-500 flex justify-between">
+                            <span>Sensação Térmica:</span>
+                            <span class="text-orange-600 font-bold"><span id="val-sensacao">--</span>°C</span>
+                        </p>
+                        <p class="text-sm font-medium text-slate-500 flex justify-between">
+                            <span>Umidade do Ar:</span>
+                            <span class="text-blue-500 font-bold"><span id="val-umidade">--</span>%</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card flex flex-col">
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Vento</h3>
+                    <i class="fa-solid fa-wind text-teal-500 text-xl"></i>
+                </div>
+
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <div
+                        class="relative w-28 h-28 rounded-full border-4 border-slate-100 bg-slate-50 flex items-center justify-center shadow-inner">
+                        <span class="absolute top-1 text-[10px] font-bold text-slate-400">N</span>
+                        <span class="absolute bottom-1 text-[10px] font-bold text-slate-400">S</span>
+                        <span class="absolute right-1.5 text-[10px] font-bold text-slate-400">L</span>
+                        <span class="absolute left-1.5 text-[10px] font-bold text-slate-400">O</span>
+
+                        <div class="absolute inset-0 transition-transform duration-1000 z-10" id="icone-bussola">
+                            <div class="absolute top-0.5 left-1/2 -translate-x-1/2 text-teal-500">
+                                <i class="fa-solid fa-caret-up text-2xl drop-shadow-sm"></i>
+                            </div>
+                        </div>
+
+                        <div
+                            class="relative z-20 flex flex-col items-center justify-center bg-white rounded-full w-16 h-16 shadow-sm border border-slate-100">
+                            <span class="text-xl font-extrabold text-slate-800 leading-none"
+                                id="val-vento-atual">--</span>
+                            <span class="text-[9px] font-bold text-slate-400 uppercase mt-0.5">km/h</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 text-center w-full">
+                        <p class="text-sm font-bold text-teal-600 uppercase tracking-wide" id="txt-direcao-vento">--</p>
+                        <div class="mt-2 pt-2 border-t border-slate-100">
+                            <p class="text-xs font-bold text-slate-400 uppercase">Rajada Máxima</p>
+                            <p class="text-lg font-bold text-rose-500 leading-tight mt-0.5"><span
+                                    id="val-vento-rajada">--</span> <span
+                                    class="text-xs text-rose-400 font-normal">km/h</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card flex flex-col justify-between">
+                <div class="flex justify-between items-start mb-2">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Chuva (Hoje)</h3>
+                    <i class="fa-solid fa-cloud-showers-heavy text-blue-500 text-xl"></i>
+                </div>
+                <div class="flex justify-around items-end h-full pt-4">
+                    <div class="flex flex-col items-center text-center">
+                        <span class="text-[11px] font-bold text-blue-600 mb-2 leading-tight"><span id="txt-chuva-rate"
+                                class="text-sm">--</span><br><span
+                                class="text-[9px] text-slate-500 font-normal">mm/h</span></span>
+                        <div class="gauge-container">
+                            <div class="gauge-marks"></div>
+                            <div id="tubo-rate" class="gauge-fill transition-all duration-1000" style="height: 0%;">
+                            </div>
+                        </div>
+                        <span
+                            class="text-[9px] text-slate-400 font-bold uppercase mt-2 w-16 leading-tight">Intensidade</span>
+                    </div>
+                    <div class="flex flex-col items-center text-center">
+                        <span class="text-[11px] font-bold text-blue-600 mb-2 leading-tight"><span id="txt-chuva-evento"
+                                class="text-sm">--</span><br><span
+                                class="text-[9px] text-slate-500 font-normal">mm</span></span>
+                        <div class="gauge-container">
+                            <div class="gauge-marks"></div>
+                            <div id="tubo-evento" class="gauge-fill transition-all duration-1000" style="height: 0%;">
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-slate-400 font-bold uppercase mt-2 w-16 leading-tight">Última
+                            Chuva</span>
+                    </div>
+                    <div class="flex flex-col items-center text-center">
+                        <span class="text-[11px] font-bold text-blue-600 mb-2 leading-tight"><span id="txt-chuva-hoje"
+                                class="text-sm">--</span><br><span
+                                class="text-[9px] text-slate-500 font-normal">mm</span></span>
+                        <div class="gauge-container">
+                            <div class="gauge-marks"></div>
+                            <div id="tubo-hoje" class="gauge-fill transition-all duration-1000" style="height: 0%;">
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-slate-400 font-bold uppercase mt-2 w-16 leading-tight">Total
+                            Hoje</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="card">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-base font-bold text-slate-800"><i
+                        class="fa-solid fa-calendar-week text-blue-500 mr-2"></i> Acumulado da Semana</h3>
+            </div>
+
+            <div class="flex justify-between items-end gap-2 overflow-x-auto pb-2">
+                {% if dias_chuva %}
+                {% for dia in dias_chuva %}
+                <div class="flex flex-col items-center text-center flex-1 min-w-[60px]">
+                    <span class="text-[11px] font-bold text-blue-600 mb-2 leading-tight">
+                        <span class="text-sm">{{ dia.valor }}</span><br>
+                        <span class="text-[9px] text-slate-500 font-normal">mm</span>
+                    </span>
+                    <div class="gauge-container">
+                        <div class="gauge-marks"></div>
+                        <div class="gauge-fill transition-all duration-1000"
+                            style="height: min({{ (dia.valor / 50) * 100 }}%, 100%);"></div>
+                    </div>
+                    <span
+                        class="text-[10px] {% if dia.is_hoje %}text-blue-600 font-extrabold{% else %}text-slate-500 font-bold{% endif %} uppercase mt-2 leading-tight">
+                        {{ dia.label }}
+                    </span>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="w-full text-center py-6 text-slate-400 text-sm">
+                    <i class="fa-solid fa-cloud-sun text-2xl mb-2 block"></i>
+                    Os dados da semana ainda estão sendo calculados ou indisponíveis.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-base font-bold text-slate-800"><i
+                        class="fa-solid fa-chart-line text-orange-500 mr-2"></i> Curva de Temperatura (Hoje)</h3>
+            </div>
+            <div style="height: 250px; width: 100%;">
+                <canvas id="graficoTemp"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-base font-bold text-slate-800"><i
+                        class="fa-solid fa-chart-column text-blue-500 mr-2"></i> Volume de Chuva (Este Mês)</h3>
+
+                <div class="bg-blue-50 border border-blue-100 px-4 py-2 rounded-lg text-right">
+                    <span class="text-xs font-bold text-blue-600 uppercase block mb-1">Total Acumulado</span>
+                    <span class="text-2xl font-extrabold text-blue-700"><span id="total-chuva-mes">0.0</span> <span
+                            class="text-sm font-medium">mm</span></span>
+                </div>
+            </div>
+            <div style="height: 250px; width: 100%;">
+                <canvas id="graficoChuva"></canvas>
+            </div>
+        </div>
+
+    </main>
+    <footer class="max-w-6xl mx-auto px-4 mt-8 pb-4 text-center">
+        <p class="text-sm text-slate-500 font-medium">
+            Desenvolvido por: <span class="font-bold text-slate-700">Rodrigo Alencar de Araújo</span>
+        </p>
+    </footer>
+
+
+
+    <div id="modal-cadastro"
+        class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-opacity">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden transform transition-all">
+            <div class="bg-emerald-500 p-6 text-white text-center relative">
+                <button onclick="document.getElementById('modal-cadastro').classList.add('hidden')"
+                    class="absolute top-4 right-4 text-emerald-100 hover:text-white transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+                <i class="fa-brands fa-whatsapp text-4xl mb-2"></i>
+                <h2 class="text-xl font-bold">Alertas Meteorológicos</h2>
+                <p class="text-emerald-100 text-sm mt-1">Receba avisos de chuvas e ventos fortes</p>
+            </div>
+
+            <form method="POST" action="/" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">O seu Nome</label>
+                    <input type="text" name="nome" required
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 bg-slate-50 focus:bg-white"
+                        placeholder="Ex: João da Silva">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">O seu Endereço</label>
+                    <input type="text" name="endereco" required
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 bg-slate-50 focus:bg-white"
+                        placeholder="Rua, Número - Bairro">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">O seu WhatsApp</label>
+                    <input type="tel" name="telefone" required
+                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 bg-slate-50 focus:bg-white"
+                        placeholder="(67) 99999-9999">
+                    <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-lock mr-1"></i> Os seus dados estão
+                        seguros.</p>
+                </div>
+                <button type="submit"
+                    class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-lg transition-colors shadow-sm">Confirmar
+                    Inscrição</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.color = '#64748b';
+
+        let chartTemp, chartChuva;
+
+        function obterDirecaoExtenso(graus) {
+            const direcoes = ["Norte", "Nordeste", "Leste", "Sudeste", "Sul", "Sudoeste", "Oeste", "Noroeste"];
+            const indice = Math.round(((graus %= 360) < 0 ? graus + 360 : graus) / 45) % 8;
+            return direcoes[indice];
+        }
+
+        function buscarClima() {
+            fetch('/api/clima').then(res => res.json()).then(data => {
+                if (!data.erro) {
+                    document.getElementById('hora-leitura').innerText = data.hora_leitura;
+                    document.getElementById('val-temp').innerText = data.temp;
+
+                    if (data.sensacao) document.getElementById('val-sensacao').innerText = data.sensacao;
+                    if (data.umidade !== undefined) document.getElementById('val-umidade').innerText = data.umidade;
+
+                    document.getElementById('val-vento-atual').innerText = data.vento_atual;
+                    document.getElementById('val-vento-rajada').innerText = data.vento_rajada;
+                    document.getElementById('icone-bussola').style.transform = `rotate(${data.vento_dir}deg)`;
+                    document.getElementById('txt-direcao-vento').innerText = obterDirecaoExtenso(data.vento_dir);
+
+                    document.getElementById('txt-chuva-rate').innerText = data.chuva_rate;
+                    document.getElementById('txt-chuva-evento').innerText = data.chuva_evento;
+                    document.getElementById('txt-chuva-hoje').innerText = data.chuva_hoje;
+
+                    let cap_rate = Math.min((data.chuva_rate / 50) * 100, 100);
+                    let cap_evento = Math.min((data.chuva_evento / 50) * 100, 100);
+                    let cap_hoje = Math.min((data.chuva_hoje / 50) * 100, 100);
+
+                    document.getElementById('tubo-rate').style.height = cap_rate + "%";
+                    document.getElementById('tubo-evento').style.height = cap_evento + "%";
+                    document.getElementById('tubo-hoje').style.height = cap_hoje + "%";
+                }
+            });
+        }
+
+        function renderizarGraficos() {
+
+            fetch('/api/historico')
+                .then(res => res.json())
+                .then(dados => {
+
+                    console.log("Histórico recebido:", dados);
+
+                    if (!dados || dados.length === 0) {
+                        console.warn("Sem dados para o gráfico");
+                        return;
+                    }
+
+                    // ===== TEMPERATURA =====
+                    const labelsTemp = dados.map(d => d.timestamp.substring(11, 16));
+                    const dadosTemp = dados.map(d => d.temperatura);
+
+                    const ctxTemp = document.getElementById('graficoTemp').getContext('2d');
+
+                    let gradienteTemp = ctxTemp.createLinearGradient(0, 0, 0, 250);
+                    gradienteTemp.addColorStop(0, 'rgba(249, 115, 22, 0.4)');
+                    gradienteTemp.addColorStop(1, 'rgba(249, 115, 22, 0.0)');
+
+                    if (chartTemp) chartTemp.destroy();
+
+                    chartTemp = new Chart(ctxTemp, {
+                        type: 'line',
+                        data: {
+                            labels: labelsTemp,
+                            datasets: [{
+                                label: 'Temperatura (°C)',
+                                data: dadosTemp,
+                                borderColor: '#ea580c',
+                                backgroundColor: gradienteTemp,
+                                borderWidth: 2,
+                                pointRadius: 0,
+                                pointHoverRadius: 6,
+                                fill: true,
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { intersect: false, mode: 'index' },
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: { grid: { display: false } },
+                                y: { border: { dash: [4, 4] }, grid: { color: '#f1f5f9' } }
+                            }
+                        }
+                    });
+
+                    // ===== CHUVA POR DIA (agrupamento simples) =====
+                    const chuvaPorDia = {};
+
+                    dados.forEach(d => {
+                        const dia = d.timestamp.substring(0, 10);
+                        chuvaPorDia[dia] = Math.max(chuvaPorDia[dia] || 0, d.chuva);
+                    });
+
+                    const labelsChuva = Object.keys(chuvaPorDia);
+                    const dadosChuva = Object.values(chuvaPorDia);
+
+                    // total do mês
+                    const totalMes = dadosChuva.reduce((a, b) => a + b, 0);
+                    document.getElementById('total-chuva-mes').innerText = totalMes.toFixed(1);
+
+                    const ctxChuva = document.getElementById('graficoChuva').getContext('2d');
+
+                    if (chartChuva) chartChuva.destroy();
+
+                    chartChuva = new Chart(ctxChuva, {
+                        type: 'bar',
+                        data: {
+                            labels: labelsChuva,
+                            datasets: [{
+                                label: 'Precipitação (mm)',
+                                data: dadosChuva,
+                                backgroundColor: '#3b82f6',
+                                borderRadius: 4,
+                                barPercentage: 0.6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: { grid: { display: false } },
+                                y: { beginAtZero: true, border: { dash: [4, 4] }, grid: { color: '#f1f5f9' } }
+                            }
+                        }
+                    });
+
+                })
+                .catch(err => console.error("Erro no gráfico:", err));
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            buscarClima();
+            renderizarGraficos();
+
+            setInterval(buscarClima, 10000);
+        });
+    </script>
+</body>
+
+</html>

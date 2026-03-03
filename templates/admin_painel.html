@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin | EESJ</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="bg-slate-50 font-['Inter'] text-slate-800 pb-12">
+
+    <nav
+        class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i>
+            <div>
+                <h1 class="text-lg font-bold text-white leading-tight">Painel de Controle</h1>
+                <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Acesso Restrito</p>
+            </div>
+        </div>
+        <div>
+            <a href="/admin?sair=true"
+                class="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                <i class="fa-solid fa-right-from-bracket"></i> Sair
+            </a>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 mt-8 space-y-8">
+
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-brands fa-whatsapp text-emerald-500 text-xl"></i>
+                    Inscritos para Alertas
+                </h3>
+                <span
+                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    Base de Contatos
+                </span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Nome do Contato</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Endereço</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Número (WhatsApp)</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200 w-32 text-center">ID</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for row in usuarios %}
+                        <tr class="hover:bg-slate-50/80 transition-colors">
+                            <td class="px-6 py-4 font-medium text-slate-800">
+                                <i class="fa-regular fa-user text-slate-400 mr-2"></i> {{ row['nome'] }}
+                            </td>
+                            <td class="px-6 py-4 text-slate-600">
+                                <i class="fa-solid fa-location-dot text-slate-400 mr-1"></i> {{ row['endereco'] }}
+                            </td>
+                            <td class="px-6 py-4 text-slate-600 font-mono">
+                                {{ row['telefone'] }}
+                            </td>
+                            <td class="px-6 py-4 text-center">
+                                <span
+                                    class="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
+                                    #{{ row['id'] }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="px-6 py-12 text-center text-slate-500">
+                                <i class="fa-regular fa-folder-open text-3xl text-slate-300 mb-3 block"></i>
+                                Nenhum utilizador registado para receber alertas ainda.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-server text-blue-500 text-xl"></i>
+                    Debug Histórico
+                </h3>
+                <span
+                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    Últimos 5 registos
+                </span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Data e Hora</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Temperatura</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Humidade</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Precipitação</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for row in historico %}
+                        <tr class="hover:bg-slate-50/80 transition-colors">
+                            <td class="px-6 py-4 text-slate-600 font-mono text-xs">
+                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ row['data_hora'] }}
+                            </td>
+                            <td class="px-6 py-4">
+                                <span
+                                    class="font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
+                                    {{ row['temp'] }}°C
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-blue-600 font-medium">
+                                <i class="fa-solid fa-droplet text-blue-300 mr-1"></i> {{ row['umidade'] }}%
+                            </td>
+                            <td class="px-6 py-4 text-slate-700 font-medium">
+                                {% if row['chuva'] > 0 %}
+                                <span class="text-blue-600">{{ row['chuva'] }} mm</span>
+                                {% else %}
+                                <span class="text-slate-400">{{ row['chuva'] }} mm</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="px-6 py-12 text-center text-slate-500">
+                                <i class=\"fa-solid fa-database text-3xl text-slate-300 mb-3 block\"></i>
+                                Nenhum registo de clima salvo na base de dados.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+</body>
+
+</html>

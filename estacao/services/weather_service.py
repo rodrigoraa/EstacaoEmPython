@@ -4,10 +4,7 @@ PUBLIC_SLUG = "a535a0b6ff603c1d2376abc99e689f2f"
 
 URL = f"https://lightning.ambientweather.net/devices?public.slug={PUBLIC_SLUG}"
 
-HEADERS = {
-    "Origin": "https://ambientweather.net",
-    "User-Agent": "Mozilla/5.0"
-}
+HEADERS = {"Origin": "https://ambientweather.net", "User-Agent": "Mozilla/5.0"}
 
 
 def f_to_c(f):
@@ -64,5 +61,5 @@ def obter_dados():
         vento_dir,
         chuva_rate,
         chuva_evento,
-        chuva_hoje
+        chuva_hoje,
     )

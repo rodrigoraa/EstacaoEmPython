@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify
 import database
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 api_routes = Blueprint("api", __name__)
 
@@ -27,10 +28,7 @@ def api_clima():
 
         url = f"https://lightning.ambientweather.net/devices?public.slug={PUBLIC_SLUG}"
 
-        headers = {
-            "Origin": "https://ambientweather.net",
-            "User-Agent": "Mozilla/5.0"
-        }
+        headers = {"Origin": "https://ambientweather.net", "User-Agent": "Mozilla/5.0"}
 
         resposta = requests.get(url, headers=headers, timeout=10)
         resposta.raise_for_status()
@@ -67,7 +65,9 @@ def api_clima():
         timestamp = raw.get("dateutc")
 
         if timestamp:
-            hora_leitura = datetime.fromtimestamp(timestamp / 1000).strftime("%H:%M:%S")
+            dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+            dt = dt.astimezone(ZoneInfo("America/Campo_Grande"))
+            hora_leitura = dt.strftime("%H:%M:%S")
         else:
             hora_leitura = "--:--:--"
 
@@ -87,7 +87,7 @@ def api_clima():
             "chuva_rate": chuva_rate,
             "chuva_evento": chuva_evento,
             "chuva_hoje": chuva_hoje,
-            "hora_leitura": hora_leitura
+            "hora_leitura": hora_leitura,
         }
 
         return jsonify(dados)
@@ -119,12 +119,14 @@ def api_historico():
     resultado = []
 
     for row in dados:
-        resultado.append({
-            "timestamp": row["data_hora"],
-            "temperatura": row["temp"],
-            "chuva": row["chuva_hoje"],
-            "vento": row["vento_vel"]
-        })
+        resultado.append(
+            {
+                "timestamp": row["data_hora"],
+                "temperatura": row["temp"],
+                "chuva": row["chuva_hoje"],
+                "vento": row["vento_vel"],
+            }
+        )
 
     return jsonify(resultado)
 

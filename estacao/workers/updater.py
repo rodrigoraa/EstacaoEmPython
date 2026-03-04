@@ -114,10 +114,7 @@ def enviar_alerta(mensagem):
 
         try:
 
-            enviar_whatsapp(
-                telefone,
-                f"⚠️ Alerta Meteorológico\n\n{mensagem}"
-            )
+            enviar_whatsapp(telefone, f"⚠️ Alerta Meteorológico\n\n{mensagem}")
 
             log(f"✅ Enviado para {u['nome']}")
 
@@ -179,12 +176,10 @@ def executar():
             vento_dir,
             chuva_rate,
             chuva_evento,
-            chuva_hoje
+            chuva_hoje,
         ) = dados
 
-        log(
-            f"🌡 {temp}°C | 💧 {umidade}% | 💨 {vento} km/h | 🌧 {chuva_hoje} mm"
-        )
+        log(f"🌡 {temp}°C | 💧 {umidade}% | 💨 {vento} km/h | 🌧 {chuva_hoje} mm")
 
         verificar_alertas(vento, chuva_hoje)
 

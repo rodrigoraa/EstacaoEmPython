@@ -9,7 +9,6 @@ app = Flask(__name__)
 
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key_trocar_em_producao")
 
-# registrar rotas
 app.register_blueprint(public_routes)
 app.register_blueprint(api_routes)
 app.register_blueprint(admin_routes)

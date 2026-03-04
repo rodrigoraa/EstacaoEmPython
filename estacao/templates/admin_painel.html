@@ -125,10 +125,10 @@
                                 <i class="fa-solid fa-droplet text-blue-300 mr-1"></i> {{ row['umidade'] }}%
                             </td>
                             <td class="px-6 py-4 text-slate-700 font-medium">
-                                {% if row['chuva'] > 0 %}
-                                <span class="text-blue-600">{{ row['chuva'] }} mm</span>
+                                {% if row['chuva_hoje'] > 0 %}
+                                <span class="text-blue-600">{{ row['chuva_hoje'] }} mm</span>
                                 {% else %}
-                                <span class="text-slate-400">{{ row['chuva'] }} mm</span>
+                                <span class="text-slate-400">{{ row['chuva_hoje'] }} mm</span>
                                 {% endif %}
                             </td>
                         </tr>

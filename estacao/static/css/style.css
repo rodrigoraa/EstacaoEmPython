@@ -2,60 +2,189 @@
    ESTILOS DA ESTAÇÃO METEOROLÓGICA - EE SÃO JOSÉ
    ========================================================= */
 
-body { 
-    font-family: 'Inter', sans-serif; 
-    color: #334155; 
-    background-color: #f8fafc; /* Cor de fallback caso a imagem demore a carregar */
-    
-    /* --- FUNDO COM A IMAGEM DA ESCOLA --- */
-    background-image: 
-        linear-gradient(rgba(248, 250, 252, 0.88), rgba(248, 250, 252, 0.88)), /* Película semi-transparente */
+body {
+    font-family: 'Inter', sans-serif;
+    color: #334155;
+    background-color: #f8fafc;
+
+    /* FUNDO COM FOTO DA ESCOLA */
+
+    background-image:
+        linear-gradient(rgba(248, 250, 252, 0.88), rgba(248, 250, 252, 0.88)),
         url('../background.jpg');
+
     background-size: cover;
     background-position: center;
-    background-attachment: fixed; /* Mantém a foto parada enquanto rola a página */
+    background-attachment: fixed;
     background-repeat: no-repeat;
 }
 
-.card { 
-    background: #ffffff; 
-    border: 1px solid #e2e8f0; 
-    border-radius: 12px; 
-    box-shadow: 0 1px 3px rgba(0,0,0,0.02); 
-    padding: 1.5rem; 
+
+/* =========================================================
+   CARDS
+   ========================================================= */
+
+.card {
+
+    background: #ffffff;
+
+    border: 1px solid #e2e8f0;
+
+    border-radius: 14px;
+
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+
+    padding: 1.5rem;
+
+    transition: all .2s ease;
+
 }
 
-/* Pluviômetros Minimalistas (Design Analítico) */
-.gauge-container { 
-    width: 24px; 
-    height: 100px; 
-    background: #f1f5f9; 
-    border-radius: 12px; 
-    position: relative; 
-    overflow: hidden; 
-    margin: 0 auto; 
-    border: 1px solid #e2e8f0; 
+.card:hover {
+
+    transform: translateY(-2px);
+
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.06);
+
 }
 
-.gauge-fill { 
-    position: absolute; 
-    bottom: 0; 
-    left: 0; 
-    width: 100%; 
-    background: linear-gradient(180deg, #3b82f6 0%, #1e3a8a 100%); 
-    transition: height 1s ease-out; 
-    border-radius: 12px; 
+
+/* =========================================================
+   PLUVIÔMETROS
+   ========================================================= */
+
+.gauge-container {
+
+    width: 24px;
+
+    height: 100px;
+
+    background: #f1f5f9;
+
+    border-radius: 12px;
+
+    position: relative;
+
+    overflow: hidden;
+
+    margin: 0 auto;
+
+    border: 1px solid #e2e8f0;
+
 }
 
-.gauge-marks { 
-    position: absolute; 
-    width: 100%; 
-    height: 100%; 
-    background: repeating-linear-gradient(transparent, transparent 19px, rgba(255,255,255,0.3) 19px, rgba(255,255,255,0.3) 20px); 
-    z-index: 10; 
+
+/* coluna de água */
+
+.gauge-fill {
+
+    position: absolute;
+
+    bottom: 0;
+
+    left: 0;
+
+    width: 100%;
+
+    background: linear-gradient(180deg, #3b82f6 0%, #1e3a8a 100%);
+
+    transition: height 1s ease-out;
+
+    border-radius: 12px;
+
+    box-shadow: inset 0 -2px 6px rgba(0, 0, 0, 0.2);
+
 }
 
-/* Animação da Bússola */
-.compass-arrow { 
-    transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1); 
+
+/* marcações */
+
+.gauge-marks {
+
+    position: absolute;
+
+    width: 100%;
+
+    height: 100%;
+
+    background:
+
+        repeating-linear-gradient(transparent,
+
+            transparent 19px,
+
+            rgba(255, 255, 255, 0.3) 19px,
+
+            rgba(255, 255, 255, 0.3) 20px);
+
+    z-index: 10;
+
+}
+
+
+/* =========================================================
+   BÚSSOLA
+   ========================================================= */
+
+#icone-bussola {
+
+    transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+
+}
+
+
+/* =========================================================
+   TEXTO DOS VALORES
+   ========================================================= */
+
+.valor-grande {
+
+    font-size: 3rem;
+
+    font-weight: 800;
+
+    letter-spacing: -1px;
+
+}
+
+
+/* =========================================================
+   ANIMAÇÃO DE ATUALIZAÇÃO
+   ========================================================= */
+
+@keyframes pulseData {
+
+    0% {
+        opacity: .7;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: .7;
+    }
+
+}
+
+.atualizando {
+
+    animation: pulseData 1.5s infinite;
+
+}
+
+
+/* =========================================================
+   RESPONSIVO
+   ========================================================= */
+
+@media(max-width:768px) {
+
+    .card {
+
+        padding: 1.2rem;
+
+    }
+
 }

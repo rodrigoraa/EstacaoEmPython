@@ -19,28 +19,28 @@ def index():
 
         telefone = "".join(filter(str.isdigit, telefone))
 
-    if not nome or not telefone or not endereco:
-        mensagem = "❌ Preencha todos os campos!"
-    else:
+        if not nome or not telefone or not endereco:
+            mensagem = "❌ Preencha todos os campos!"
+        else:
 
-        conn = database.get_db()
-        cursor = conn.cursor()
+            conn = database.get_db()
+            cursor = conn.cursor()
 
-        try:
+            try:
 
-            cursor.execute(
-                "INSERT INTO usuarios (nome, telefone, endereco) VALUES (?, ?, ?)",
-                (nome, telefone, endereco),
-            )
+                cursor.execute(
+                    "INSERT INTO usuarios (nome, telefone, endereco) VALUES (?, ?, ?)",
+                    (nome, telefone, endereco),
+                )
 
-            conn.commit()
-            mensagem = "✅ Cadastro realizado com sucesso!"
+                conn.commit()
+                mensagem = "✅ Cadastro realizado com sucesso!"
 
-        except sqlite3.IntegrityError:
-            mensagem = "⚠️ Número já cadastrado!"
+            except sqlite3.IntegrityError:
+                mensagem = "⚠️ Número já cadastrado!"
 
-        finally:
-            conn.close()
+            finally:
+                conn.close()
 
     dias_chuva = []
     dias_semana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]

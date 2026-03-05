@@ -399,8 +399,6 @@
 
           .then((data) => {
             if (!data.erro) {
-              document.getElementById("hora-leitura").innerText =
-                data.hora_leitura;
 
               document.getElementById("val-temp").innerText = data.temp;
               document.getElementById("val-sensacao").innerText = data.sensacao;
@@ -449,7 +447,9 @@
           .then((dados) => {
             if (!dados.length) return;
 
-            const labelsTemp = dados.map((d) => d.timestamp.replace(":00", "h"));
+            const labelsTemp = dados.map((d) =>
+              d.timestamp.replace(":00", "h"),
+            );
             const temps = dados.map((d) => d.temperatura);
             const ventos = dados.map((d) => d.vento);
             const chuvas = dados.map((d) => d.chuva);
@@ -670,7 +670,26 @@
         modal.classList.remove("flex");
       }
 
+      function iniciarRelogioAoVivo() {
+        function atualizar() {
+          const agora = new Date();
+
+          const hora = agora.toLocaleTimeString("pt-BR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          });
+
+          document.getElementById("hora-leitura").innerText = hora;
+        }
+
+        atualizar();
+        setInterval(atualizar, 1000);
+      }
+
       document.addEventListener("DOMContentLoaded", () => {
+        iniciarRelogioAoVivo();
+
         buscarClima();
         renderizarGraficos();
 

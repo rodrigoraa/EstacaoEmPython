@@ -1,9 +1,33 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+    redirect,
+    url_for,
+)
 import database
 
 admin_routes = Blueprint("admin", __name__)
 
 SENHA_ADMIN = "fera@123"
+
+
+@admin_routes.route("/admin/deletar/<int:id>")
+def deletar_usuario(id):
+
+    conn = database.get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM usuarios WHERE id = ?", (id,))
+    conn.commit()
+
+    conn.close()
+
+    return redirect("/admin")
 
 
 @admin_routes.route("/admin", methods=["GET", "POST"])

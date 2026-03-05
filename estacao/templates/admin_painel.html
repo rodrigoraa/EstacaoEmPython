@@ -53,6 +53,7 @@
                             <th class="px-6 py-4 font-semibold border-b border-slate-200">Endereço</th>
                             <th class="px-6 py-4 font-semibold border-b border-slate-200">Número (WhatsApp)</th>
                             <th class="px-6 py-4 font-semibold border-b border-slate-200 w-32 text-center">ID</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200 w-32 text-center">Ações</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 text-sm">
@@ -73,10 +74,19 @@
                                     #{{ row['id'] }}
                                 </span>
                             </td>
+                            <td class="px-6 py-4 text-center">
+                                <a href="/admin/deletar/{{ row['id'] }}"
+                                    onclick="return confirm('Apagar este utilizador?')"
+                                    class="bg-rose-500 hover:bg-rose-600 text-white text-xs px-3 py-1 rounded shadow-sm">
+
+                                    <i class="fa-solid fa-trash"></i>
+
+                                </a>
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="4" class="px-6 py-12 text-center text-slate-500">
+                            <td colspan="5" class="px-6 py-12 text-center text-slate-500">
                                 <i class="fa-regular fa-folder-open text-3xl text-slate-300 mb-3 block"></i>
                                 Nenhum utilizador registado para receber alertas ainda.
                             </td>

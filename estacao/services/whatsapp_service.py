@@ -1,12 +1,16 @@
 import requests
+import os
 
-WA_TOKEN = "SEU_TOKEN_AQUI"
-WA_PHONE_ID = "SEU_PHONE_ID_AQUI"
+WA_TOKEN = os.getenv("WA_TOKEN")
+WA_PHONE_ID = os.getenv("WA_PHONE_ID")
+
+URL = f"https://graph.facebook.com/v18.0/{WA_PHONE_ID}/messages"
 
 
 def enviar_whatsapp(telefone, mensagem):
 
-    url = f"https://graph.facebook.com/v18.0/{WA_PHONE_ID}/messages"
+    if not WA_TOKEN or not WA_PHONE_ID:
+        raise ValueError("Token ou Phone ID não configurados")
 
     headers = {
         "Authorization": f"Bearer {WA_TOKEN}",
@@ -20,4 +24,16 @@ def enviar_whatsapp(telefone, mensagem):
         "text": {"body": mensagem},
     }
 
-    requests.post(url, headers=headers, json=payload, timeout=10)
+    try:
+
+        resp = requests.post(URL, headers=headers, json=payload, timeout=10)
+
+        resp.raise_for_status()
+
+        return resp.json()
+
+    except requests.exceptions.RequestException as e:
+
+        print("Erro ao enviar WhatsApp:", e)
+
+        return None

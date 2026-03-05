@@ -1,730 +1,764 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-
-<head>
-
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <title>Estação Meteorológica | EESJ</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-        rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
 
-</head>
+  <body class="pb-12">
+    <nav
+      class="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50"
+    >
+      <div class="flex items-center gap-4">
+        <img src="{{ url_for('static', filename='logo.png') }}" class="h-12" />
 
-<body class="pb-12">
+        <div>
+          <h1 class="text-lg font-bold text-slate-800">
+            Vicentina MS - Distrito de São José
+          </h1>
 
-    <nav class="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
-
-        <div class="flex items-center gap-4">
-
-            <img src="{{ url_for('static', filename='logo.png') }}" class="h-12">
-
-            <div>
-
-                <h1 class="text-lg font-bold text-slate-800">
-                    Vicentina MS - Distrito de São José
-                </h1>
-
-                <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    EE São José | Centro de Monitoramento
-                </p>
-
-            </div>
-
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            EE São José | Centro de Monitoramento
+          </p>
         </div>
+      </div>
 
-        <div class="flex items-center gap-4 text-sm">
+      <div class="flex items-center gap-4 text-sm">
+        <button
+          onclick="abrirCadastro()"
+          class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-2"
+        >
+          <i class="fa-solid fa-bell"></i>
+          Receber Alertas
+        </button>
 
-            <div class="hidden sm:flex items-center gap-2">
+        <div class="hidden sm:flex items-center gap-2">
+          <span class="relative flex h-3 w-3">
+            <span
+              class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+            ></span>
+            <span
+              class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"
+            ></span>
+          </span>
 
-                <span class="relative flex h-3 w-3">
-                    <span
-                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                </span>
-
-                <span class="text-slate-500 font-medium">
-                    Ao vivo
-                    <span id="hora-leitura" class="ml-1 text-slate-400">--:--</span>
-                </span>
-
-            </div>
-
+          <span class="text-slate-500 font-medium">
+            Ao vivo
+            <span id="hora-leitura" class="ml-1 text-slate-400">--:--</span>
+          </span>
         </div>
-
+      </div>
     </nav>
 
+    {% if mensagem %}
+    <div class="max-w-6xl mx-auto mt-4 px-4">
+      <div
+        class="px-4 py-3 rounded-lg {% if '❌' in mensagem %} bg-red-100 border border-red-300 text-red-700 {% elif '⚠️' in mensagem %} bg-yellow-100 border border-yellow-300 text-yellow-700 {% else %} bg-green-100 border border-green-300 text-green-700 {% endif %}"
+      >
+        {{ mensagem }}
+      </div>
+    </div>
+    {% endif %}
     <div id="alerta-tempestade" class="hidden max-w-6xl mx-auto mt-6 px-4">
-
-        <div class="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-lg font-semibold">
-
-            ⚠️ Possível tempestade em desenvolvimento
-            (vento forte + chuva intensa)
-
-        </div>
-
+      <div
+        class="bg-red-100 border border-red-300 text-red-700 px-4 py-3 rounded-lg font-semibold"
+      >
+        ⚠️ Possível tempestade em desenvolvimento (vento forte + chuva intensa)
+      </div>
     </div>
 
-
     <main class="max-w-6xl mx-auto px-4 mt-8 space-y-6">
+      <!-- GRID PRINCIPAL -->
 
-        <!-- GRID PRINCIPAL -->
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-            <!-- TEMPERATURA -->
-
-            <div class="card">
-
-                <div class="flex justify-between items-start mb-2">
-                    <h3 class="text-sm font-bold text-slate-400 uppercase">Temperatura</h3>
-                    <i class="fa-solid fa-temperature-three-quarters text-orange-500 text-xl"></i>
-                </div>
-
-                <div class="mt-4">
-
-                    <div class="flex items-baseline gap-1">
-
-                        <span id="val-temp" class="text-6xl font-extrabold text-slate-800">--</span>
-                        <span class="text-2xl text-slate-500">°C</span>
-
-                    </div>
-
-                    <div class="mt-4 border-t pt-3 space-y-1">
-
-                        <p class="flex justify-between text-sm">
-                            <span>Sensação</span>
-                            <span class="font-bold text-orange-600">
-                                <span id="val-sensacao">--</span>°C
-                            </span>
-                        </p>
-
-                        <p class="flex justify-between text-sm">
-                            <span>Umidade</span>
-                            <span class="font-bold text-blue-500">
-                                <span id="val-umidade">--</span>%
-                            </span>
-                        </p>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <!-- VENTO -->
-
-            <div class="card flex flex-col">
-
-                <div class="flex justify-between items-start mb-4">
-                    <h3 class="text-sm font-bold text-slate-400 uppercase">Vento</h3>
-                    <i class="fa-solid fa-wind text-teal-500 text-xl"></i>
-                </div>
-
-                <div class="flex flex-col items-center">
-
-                    <div
-                        class="relative w-28 h-28 rounded-full border-4 border-slate-100 bg-slate-50 flex items-center justify-center shadow-inner">
-
-                        <span class="absolute top-1 text-[10px] font-bold text-slate-400">N</span>
-                        <span class="absolute bottom-1 text-[10px] font-bold text-slate-400">S</span>
-                        <span class="absolute right-1 text-[10px] font-bold text-slate-400">L</span>
-                        <span class="absolute left-1 text-[10px] font-bold text-slate-400">O</span>
-
-                        <div id="icone-bussola" class="absolute inset-0">
-
-                            <div class="absolute top-0.5 left-1/2 -translate-x-1/2 text-teal-500">
-                                <i class="fa-solid fa-caret-up text-2xl"></i>
-                            </div>
-
-                        </div>
-
-                        <div
-                            class="relative z-20 flex flex-col items-center justify-center bg-white rounded-full w-16 h-16 shadow-sm border">
-
-                            <span id="val-vento-atual" class="text-xl font-extrabold text-slate-800">--</span>
-
-                            <span class="text-[9px] font-bold text-slate-400 uppercase">
-                                km/h
-                            </span>
-
-                        </div>
-
-                    </div>
-
-                    <div class="mt-4 text-center w-full">
-
-                        <p id="txt-direcao-vento" class="text-sm font-bold text-teal-600 uppercase">
-                            --
-                        </p>
-
-                        <div class="mt-2 pt-2 border-t border-slate-100">
-
-                            <p class="text-xs font-bold text-slate-400 uppercase">
-                                Rajada Máxima
-                            </p>
-
-                            <p class="text-lg font-bold text-rose-500">
-
-                                <span id="val-vento-rajada">--</span>
-                                <span class="text-xs">km/h</span>
-
-                            </p>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            <!-- CHUVA -->
-
-            <div class="card flex flex-col justify-between">
-
-                <div class="flex justify-between items-start mb-2">
-
-                    <h3 class="text-sm font-bold text-slate-400 uppercase">
-                        Chuva (Hoje)
-                    </h3>
-
-                    <i class="fa-solid fa-cloud-showers-heavy text-blue-500 text-xl"></i>
-
-                </div>
-
-                <div class="flex justify-around items-end h-full pt-4">
-
-                    <div class="flex flex-col items-center text-center">
-
-                        <span class="text-[11px] font-bold text-blue-600 mb-2">
-                            <span id="txt-chuva-rate" class="text-sm">--</span><br>
-                            <span class="text-[9px] text-slate-500">mm/h</span>
-                        </span>
-
-                        <div class="gauge-container">
-                            <div id="tubo-rate" class="gauge-fill" style="height:0%"></div>
-                        </div>
-
-                        <span class="text-[9px] text-slate-400 font-bold uppercase mt-2">
-                            Intensidade
-                        </span>
-
-                    </div>
-
-
-                    <div class="flex flex-col items-center text-center">
-
-                        <span class="text-[11px] font-bold text-blue-600 mb-2">
-                            <span id="txt-chuva-evento" class="text-sm">--</span><br>
-                            <span class="text-[9px] text-slate-500">mm</span>
-                        </span>
-
-                        <div class="gauge-container">
-                            <div id="tubo-evento" class="gauge-fill" style="height:0%"></div>
-                        </div>
-
-                        <span class="text-[9px] text-slate-400 font-bold uppercase mt-2">
-                            Evento
-                        </span>
-
-                    </div>
-
-
-                    <div class="flex flex-col items-center text-center">
-
-                        <span class="text-[11px] font-bold text-blue-600 mb-2">
-                            <span id="txt-chuva-hoje" class="text-sm">--</span><br>
-                            <span class="text-[9px] text-slate-500">mm</span>
-                        </span>
-
-                        <div class="gauge-container">
-                            <div id="tubo-hoje" class="gauge-fill" style="height:0%"></div>
-                        </div>
-
-                        <span class="text-[9px] text-slate-400 font-bold uppercase mt-2">
-                            Total Hoje
-                        </span>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- SEGUNDO GRID -->
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-            <div class="card">
-                <h3 class="text-sm font-bold text-slate-400 uppercase mb-2">Pressão</h3>
-                <p class="text-3xl font-bold text-indigo-600">
-                    <span id="val-pressao">--</span> hPa
-                </p>
-            </div>
-
-            <div class="card">
-                <h3 class="text-sm font-bold text-slate-400 uppercase mb-2">Índice UV</h3>
-                <p class="text-3xl font-bold text-yellow-600">
-                    <span id="val-uv">--</span>
-                </p>
-            </div>
-
-            <div class="card">
-                <h3 class="text-sm font-bold text-slate-400 uppercase mb-2">Radiação Solar</h3>
-                <p class="text-3xl font-bold text-amber-600">
-                    <span id="val-radiacao">--</span> W/m²
-                </p>
-            </div>
-
-        </div>
-
-
-        <!-- GRÁFICO -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- TEMPERATURA -->
 
         <div class="card">
-
-            <h3 class="text-base font-bold text-slate-800 mb-6">
-                <i class="fa-solid fa-chart-line text-orange-500 mr-2"></i>
-                Curva de Temperatura
+          <div class="flex justify-between items-start mb-2">
+            <h3 class="text-sm font-bold text-slate-400 uppercase">
+              Temperatura
             </h3>
+            <i
+              class="fa-solid fa-temperature-three-quarters text-orange-500 text-xl"
+            ></i>
+          </div>
 
-            <div style="height:250px">
-                <canvas id="graficoTemp"></canvas>
+          <div class="mt-4">
+            <div class="flex items-baseline gap-1">
+              <span id="val-temp" class="text-6xl font-extrabold text-slate-800"
+                >--</span
+              >
+              <span class="text-2xl text-slate-500">°C</span>
             </div>
 
+            <div class="mt-4 border-t pt-3 space-y-1">
+              <p class="flex justify-between text-sm">
+                <span>Sensação</span>
+                <span class="font-bold text-orange-600"
+                  ><span id="val-sensacao">--</span>°C</span
+                >
+              </p>
+
+              <p class="flex justify-between text-sm">
+                <span>Umidade</span>
+                <span class="font-bold text-blue-500"
+                  ><span id="val-umidade">--</span>%</span
+                >
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- VENTO -->
 
-            <!-- CHUVA DA SEMANA -->
+        <div class="card flex flex-col">
+          <div class="flex justify-between items-start mb-4">
+            <h3 class="text-sm font-bold text-slate-400 uppercase">Vento</h3>
+            <i class="fa-solid fa-wind text-teal-500 text-xl"></i>
+          </div>
 
-            <div class="card">
+          <div class="flex flex-col items-center">
+            <div
+              class="relative w-28 h-28 rounded-full border-4 border-slate-100 bg-slate-50 flex items-center justify-center shadow-inner"
+            >
+              <span class="absolute top-1 text-[10px] font-bold text-slate-400"
+                >N</span
+              >
+              <span
+                class="absolute bottom-1 text-[10px] font-bold text-slate-400"
+                >S</span
+              >
+              <span
+                class="absolute right-1 text-[10px] font-bold text-slate-400"
+                >L</span
+              >
+              <span class="absolute left-1 text-[10px] font-bold text-slate-400"
+                >O</span
+              >
 
-                <h3 class="text-base font-bold text-slate-800 mb-6">
-                    <i class="fa-solid fa-cloud-rain text-blue-500 mr-2"></i>
-                    Chuva da Semana
-                </h3>
-
-                <div style="height:250px">
-                    <canvas id="graficoSemana"></canvas>
+              <div id="icone-bussola" class="absolute inset-0">
+                <div
+                  class="absolute top-0.5 left-1/2 -translate-x-1/2 text-teal-500"
+                >
+                  <i class="fa-solid fa-caret-up text-2xl"></i>
                 </div>
+              </div>
 
+              <div
+                class="relative z-20 flex flex-col items-center justify-center bg-white rounded-full w-16 h-16 shadow-sm border"
+              >
+                <span
+                  id="val-vento-atual"
+                  class="text-xl font-extrabold text-slate-800"
+                  >--</span
+                >
+
+                <span class="text-[9px] font-bold text-slate-400 uppercase"
+                  >km/h</span
+                >
+              </div>
             </div>
 
+            <div class="mt-4 text-center w-full">
+              <p
+                id="txt-direcao-vento"
+                class="text-sm font-bold text-teal-600 uppercase"
+              >
+                --
+              </p>
 
-            <!-- CHUVA DO MÊS -->
-
-            <div class="card">
-
-                <h3 class="text-base font-bold text-slate-800 mb-6">
-                    <i class="fa-solid fa-calendar text-indigo-500 mr-2"></i>
-                    Chuva do Mês
-                </h3>
-
-                <div style="height:250px">
-                    <canvas id="graficoMes"></canvas>
-                </div>
-
-                <p class="text-sm text-slate-500 mt-2">
-                    Total do mês:
-                    <span id="chuva-mes-total" class="font-bold text-blue-600">--</span> mm
+              <div class="mt-2 pt-2 border-t border-slate-100">
+                <p class="text-xs font-bold text-slate-400 uppercase">
+                  Rajada Máxima
                 </p>
-            </div>
 
+                <p class="text-lg font-bold text-rose-500">
+                  <span id="val-vento-rajada">--</span>
+                  <span class="text-xs">km/h</span>
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
+        <!-- CHUVA -->
 
-        <div class="card">
-
-            <h3 class="text-base font-bold text-slate-800 mb-6">
-                <i class="fa-solid fa-wind text-teal-500 mr-2"></i>
-                Velocidade do Vento
+        <div class="card flex flex-col justify-between">
+          <div class="flex justify-between items-start mb-2">
+            <h3 class="text-sm font-bold text-slate-400 uppercase">
+              Chuva (Hoje)
             </h3>
 
-            <div style="height:250px">
-                <canvas id="graficoVento"></canvas>
+            <i
+              class="fa-solid fa-cloud-showers-heavy text-blue-500 text-xl"
+            ></i>
+          </div>
+
+          <div class="flex justify-around items-end h-full pt-4">
+            <div class="flex flex-col items-center text-center">
+              <span class="text-[11px] font-bold text-blue-600 mb-2">
+                <span id="txt-chuva-rate" class="text-sm">--</span><br />
+                <span class="text-[9px] text-slate-500">mm/h</span>
+              </span>
+
+              <div class="gauge-container">
+                <div id="tubo-rate" class="gauge-fill" style="height: 0%"></div>
+              </div>
+
+              <span class="text-[9px] text-slate-400 font-bold uppercase mt-2"
+                >Intensidade</span
+              >
             </div>
 
+            <div class="flex flex-col items-center text-center">
+              <span class="text-[11px] font-bold text-blue-600 mb-2">
+                <span id="txt-chuva-evento" class="text-sm">--</span><br />
+                <span class="text-[9px] text-slate-500">mm</span>
+              </span>
+
+              <div class="gauge-container">
+                <div
+                  id="tubo-evento"
+                  class="gauge-fill"
+                  style="height: 0%"
+                ></div>
+              </div>
+
+              <span class="text-[9px] text-slate-400 font-bold uppercase mt-2"
+                >Evento</span
+              >
+            </div>
+
+            <div class="flex flex-col items-center text-center">
+              <span class="text-[11px] font-bold text-blue-600 mb-2">
+                <span id="txt-chuva-hoje" class="text-sm">--</span><br />
+                <span class="text-[9px] text-slate-500">mm</span>
+              </span>
+
+              <div class="gauge-container">
+                <div id="tubo-hoje" class="gauge-fill" style="height: 0%"></div>
+              </div>
+
+              <span class="text-[9px] text-slate-400 font-bold uppercase mt-2"
+                >Total Hoje</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEGUNDO GRID -->
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="card">
+          <h3 class="text-sm font-bold text-slate-400 uppercase mb-2">
+            Pressão
+          </h3>
+          <p class="text-3xl font-bold text-indigo-600">
+            <span id="val-pressao">--</span> hPa
+          </p>
         </div>
 
         <div class="card">
-
-            <h3 class="text-base font-bold text-slate-800 mb-6">
-                <i class="fa-solid fa-chart-area text-indigo-500 mr-2"></i>
-                Condições Meteorológicas
-            </h3>
-
-            <div style="height:260px">
-                <canvas id="graficoMeteo"></canvas>
-            </div>
-
+          <h3 class="text-sm font-bold text-slate-400 uppercase mb-2">
+            Índice UV
+          </h3>
+          <p class="text-3xl font-bold text-yellow-600">
+            <span id="val-uv">--</span>
+          </p>
         </div>
 
+        <div class="card">
+          <h3 class="text-sm font-bold text-slate-400 uppercase mb-2">
+            Radiação Solar
+          </h3>
+          <p class="text-3xl font-bold text-amber-600">
+            <span id="val-radiacao">--</span> W/m²
+          </p>
+        </div>
+      </div>
+
+      <!-- GRÁFICO -->
+
+      <div class="card">
+        <h3 class="text-base font-bold text-slate-800 mb-6">
+          <i class="fa-solid fa-chart-line text-orange-500 mr-2"></i>
+          Curva de Temperatura
+        </h3>
+
+        <div style="height: 250px">
+          <canvas id="graficoTemp"></canvas>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- CHUVA DA SEMANA -->
+
+        <div class="card">
+          <h3 class="text-base font-bold text-slate-800 mb-6">
+            <i class="fa-solid fa-cloud-rain text-blue-500 mr-2"></i>
+            Chuva da Semana
+          </h3>
+
+          <div style="height: 250px">
+            <canvas id="graficoSemana"></canvas>
+          </div>
+        </div>
+
+        <!-- CHUVA DO MÊS -->
+
+        <div class="card">
+          <h3 class="text-base font-bold text-slate-800 mb-6">
+            <i class="fa-solid fa-calendar text-indigo-500 mr-2"></i>
+            Chuva do Mês
+          </h3>
+
+          <div style="height: 250px">
+            <canvas id="graficoMes"></canvas>
+          </div>
+
+          <p class="text-sm text-slate-500 mt-2">
+            Total do mês:
+            <span id="chuva-mes-total" class="font-bold text-blue-600">--</span>
+            mm
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="text-base font-bold text-slate-800 mb-6">
+          <i class="fa-solid fa-wind text-teal-500 mr-2"></i>
+          Velocidade do Vento
+        </h3>
+
+        <div style="height: 250px">
+          <canvas id="graficoVento"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="text-base font-bold text-slate-800 mb-6">
+          <i class="fa-solid fa-chart-area text-indigo-500 mr-2"></i>
+          Condições Meteorológicas
+        </h3>
+
+        <div style="height: 260px">
+          <canvas id="graficoMeteo"></canvas>
+        </div>
+      </div>
     </main>
 
-
     <script>
+      Chart.defaults.font.family = "'Inter',sans-serif";
 
-        Chart.defaults.font.family = "'Inter',sans-serif"
+      let chartTemp;
+      let chartSemana;
+      let chartMes;
+      let chartVento;
+      let chartMeteo;
 
-        let chartTemp
-        let chartSemana
-        let chartMes
-        let chartVento
-        let chartMeteo
+      function obterDirecaoExtenso(graus) {
+        const direcoes = [
+          "Norte",
+          "Nordeste",
+          "Leste",
+          "Sudeste",
+          "Sul",
+          "Sudoeste",
+          "Oeste",
+          "Noroeste",
+        ];
 
+        return direcoes[Math.round(graus / 45) % 8];
+      }
 
-        function obterDirecaoExtenso(graus) {
+      function buscarClima() {
+        fetch("/api/clima")
+          .then((res) => res.json())
 
-            const direcoes = ["Norte", "Nordeste", "Leste", "Sudeste", "Sul", "Sudoeste", "Oeste", "Noroeste"]
+          .then((data) => {
+            if (!data.erro) {
+              document.getElementById("hora-leitura").innerText =
+                data.hora_leitura;
 
-            return direcoes[Math.round(graus / 45) % 8]
+              document.getElementById("val-temp").innerText = data.temp;
+              document.getElementById("val-sensacao").innerText = data.sensacao;
+              document.getElementById("val-umidade").innerText = data.umidade;
 
+              document.getElementById("val-vento-atual").innerText =
+                data.vento_atual;
+              document.getElementById("val-vento-rajada").innerText =
+                data.vento_rajada;
+
+              document.getElementById("txt-direcao-vento").innerText =
+                obterDirecaoExtenso(data.vento_dir);
+
+              document.getElementById("icone-bussola").style.transform =
+                `rotate(${data.vento_dir}deg)`;
+
+              document.getElementById("txt-chuva-hoje").innerText =
+                data.chuva_hoje;
+              document.getElementById("txt-chuva-rate").innerText =
+                data.chuva_rate;
+              document.getElementById("txt-chuva-evento").innerText =
+                data.chuva_evento;
+
+              document.getElementById("val-pressao").innerText = data.pressao;
+              document.getElementById("val-uv").innerText = data.uv;
+              document.getElementById("val-radiacao").innerText = data.radiacao;
+
+              let cap_rate = Math.min((data.chuva_rate / 50) * 100, 100);
+              let cap_evento = Math.min((data.chuva_evento / 50) * 100, 100);
+              let cap_hoje = Math.min((data.chuva_hoje / 50) * 100, 100);
+
+              document.getElementById("tubo-rate").style.height =
+                cap_rate + "%";
+              document.getElementById("tubo-evento").style.height =
+                cap_evento + "%";
+              document.getElementById("tubo-hoje").style.height =
+                cap_hoje + "%";
+            }
+          });
+      }
+
+      function renderizarGraficos() {
+        fetch("/api/historico")
+          .then((res) => res.json())
+
+          .then((dados) => {
+            if (!dados.length) return;
+
+            const labelsTemp = dados.map((d) => d.timestamp.substring(11, 16));
+            const temps = dados.map((d) => d.temperatura);
+            const ventos = dados.map((d) => d.vento);
+            const chuvas = dados.map((d) => d.chuva);
+
+            const ctxTemp = document
+              .getElementById("graficoTemp")
+              .getContext("2d");
+
+            if (chartTemp) chartTemp.destroy();
+
+            let gradTemp = ctxTemp.createLinearGradient(0, 0, 0, 250);
+            gradTemp.addColorStop(0, "rgba(249,115,22,0.4)");
+            gradTemp.addColorStop(1, "rgba(249,115,22,0)");
+
+            chartTemp = new Chart(ctxTemp, {
+              type: "line",
+              data: {
+                labels: labelsTemp,
+                datasets: [
+                  {
+                    label: "Temperatura °C",
+                    data: temps,
+                    borderColor: "#ea580c",
+                    backgroundColor: gradTemp,
+                    fill: true,
+                    tension: 0.4,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+              },
+            });
+
+            const ctxVento = document
+              .getElementById("graficoVento")
+              .getContext("2d");
+
+            if (chartVento) chartVento.destroy();
+
+            let gradVento = ctxVento.createLinearGradient(0, 0, 0, 250);
+            gradVento.addColorStop(0, "rgba(20,184,166,0.4)");
+            gradVento.addColorStop(1, "rgba(20,184,166,0)");
+
+            chartVento = new Chart(ctxVento, {
+              type: "line",
+              data: {
+                labels: labelsTemp,
+                datasets: [
+                  {
+                    label: "Vento km/h",
+                    data: ventos,
+                    borderColor: "#14b8a6",
+                    backgroundColor: gradVento,
+                    fill: true,
+                    tension: 0.4,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+              },
+            });
+
+            const chuvaPorDia = {};
+
+            dados.forEach((d) => {
+              const dia = d.timestamp.substring(0, 10);
+
+              if (!chuvaPorDia[dia]) chuvaPorDia[dia] = 0;
+
+              chuvaPorDia[dia] += d.chuva;
+            });
+
+            const dias = Object.keys(chuvaPorDia);
+            const chuvaValores = Object.values(chuvaPorDia);
+
+            const semana = dias.slice(-7);
+            const chuvaSemana = chuvaValores.slice(-7);
+
+            const ctxSemana = document
+              .getElementById("graficoSemana")
+              .getContext("2d");
+
+            if (chartSemana) chartSemana.destroy();
+
+            chartSemana = new Chart(ctxSemana, {
+              type: "bar",
+              data: {
+                labels: semana,
+                datasets: [
+                  {
+                    label: "Chuva mm",
+                    data: chuvaSemana,
+                    backgroundColor: "#3b82f6",
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+              },
+            });
+
+            const ctxMes = document
+              .getElementById("graficoMes")
+              .getContext("2d");
+
+            if (chartMes) chartMes.destroy();
+
+            chartMes = new Chart(ctxMes, {
+              type: "bar",
+              data: {
+                labels: dias,
+                datasets: [
+                  {
+                    label: "Chuva mm",
+                    data: chuvaValores,
+                    backgroundColor: "#6366f1",
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+              },
+            });
+
+            const totalMes = chuvaValores.reduce((a, b) => a + b, 0);
+
+            document.getElementById("chuva-mes-total").innerText =
+              totalMes.toFixed(1);
+            const ctxMeteo = document
+              .getElementById("graficoMeteo")
+              .getContext("2d");
+
+            if (chartMeteo) chartMeteo.destroy();
+
+            chartMeteo = new Chart(ctxMeteo, {
+              data: {
+                labels: labelsTemp,
+
+                datasets: [
+                  {
+                    type: "line",
+                    label: "Temperatura °C",
+                    data: temps,
+                    borderColor: "#f97316",
+                    yAxisID: "y",
+                  },
+
+                  {
+                    type: "line",
+                    label: "Vento km/h",
+                    data: ventos,
+                    borderColor: "#14b8a6",
+                    yAxisID: "y1",
+                  },
+
+                  {
+                    type: "bar",
+                    label: "Chuva mm",
+                    data: chuvas,
+                    backgroundColor: "#3b82f6",
+                    yAxisID: "y2",
+                  },
+                ],
+              },
+
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: "index", intersect: false },
+
+                scales: {
+                  y: { type: "linear", position: "left" },
+
+                  y1: {
+                    type: "linear",
+                    position: "right",
+                    grid: { drawOnChartArea: false },
+                  },
+
+                  y2: {
+                    type: "linear",
+                    position: "right",
+                    display: false,
+                  },
+                },
+              },
+            });
+
+            const ventoAtual = ventos[ventos.length - 1];
+            const chuvaAtual = chuvas[chuvas.length - 1];
+
+            if (ventoAtual > 40 && chuvaAtual > 5) {
+              document
+                .getElementById("alerta-tempestade")
+                .classList.remove("hidden");
+            } else {
+              document
+                .getElementById("alerta-tempestade")
+                .classList.add("hidden");
+            }
+          });
+      }
+      function abrirCadastro() {
+        const modal = document.getElementById("modalCadastro");
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+      }
+
+      function fecharCadastro() {
+        const modal = document.getElementById("modalCadastro");
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        buscarClima();
+        renderizarGraficos();
+
+        setInterval(buscarClima, 10000);
+        setInterval(renderizarGraficos, 60000);
+
+        const telInput = document.getElementById("telefone");
+
+        if (telInput) {
+          telInput.addEventListener("input", function () {
+            let valor = this.value.replace(/\D/g, "");
+
+            if (valor.startsWith("55")) {
+              valor = valor.substring(2);
+            }
+
+            if (valor.length > 11) {
+              valor = valor.substring(0, 11);
+            }
+
+            if (valor.length > 6) {
+              valor = `(${valor.substring(0, 2)}) ${valor.substring(2, 7)}-${valor.substring(7)}`;
+            } else if (valor.length > 2) {
+              valor = `(${valor.substring(0, 2)}) ${valor.substring(2)}`;
+            }
+
+            this.value = valor;
+          });
         }
-
-
-        function buscarClima() {
-
-            fetch('/api/clima')
-
-                .then(res => res.json())
-
-                .then(data => {
-
-                    if (!data.erro) {
-
-                        document.getElementById('hora-leitura').innerText = data.hora_leitura
-
-                        document.getElementById('val-temp').innerText = data.temp
-                        document.getElementById('val-sensacao').innerText = data.sensacao
-                        document.getElementById('val-umidade').innerText = data.umidade
-
-                        document.getElementById('val-vento-atual').innerText = data.vento_atual
-                        document.getElementById('val-vento-rajada').innerText = data.vento_rajada
-
-                        document.getElementById('txt-direcao-vento').innerText =
-                            obterDirecaoExtenso(data.vento_dir)
-
-                        document.getElementById('icone-bussola').style.transform =
-                            `rotate(${data.vento_dir}deg)`
-
-                        document.getElementById('txt-chuva-hoje').innerText = data.chuva_hoje
-                        document.getElementById('txt-chuva-rate').innerText = data.chuva_rate
-                        document.getElementById('txt-chuva-evento').innerText = data.chuva_evento
-
-                        document.getElementById('val-pressao').innerText = data.pressao
-                        document.getElementById('val-uv').innerText = data.uv
-                        document.getElementById('val-radiacao').innerText = data.radiacao
-
-
-                        let cap_rate = Math.min((data.chuva_rate / 50) * 100, 100)
-                        let cap_evento = Math.min((data.chuva_evento / 50) * 100, 100)
-                        let cap_hoje = Math.min((data.chuva_hoje / 50) * 100, 100)
-
-                        document.getElementById('tubo-rate').style.height = cap_rate + "%"
-                        document.getElementById('tubo-evento').style.height = cap_evento + "%"
-                        document.getElementById('tubo-hoje').style.height = cap_hoje + "%"
-
-                    }
-
-                })
-
-        }
-
-
-        function renderizarGraficos() {
-
-            fetch('/api/historico')
-
-                .then(res => res.json())
-
-                .then(dados => {
-
-                    if (!dados.length) return
-
-
-                    const labelsTemp = dados.map(d => d.timestamp.substring(11, 16))
-                    const temps = dados.map(d => d.temperatura)
-                    const ventos = dados.map(d => d.vento)
-                    const chuvas = dados.map(d => d.chuva)
-
-
-
-                    /* =================
-                    TEMPERATURA
-                    ================= */
-
-                    const ctxTemp = document.getElementById('graficoTemp').getContext('2d')
-
-                    if (chartTemp) chartTemp.destroy()
-
-                    let gradTemp = ctxTemp.createLinearGradient(0, 0, 0, 250)
-                    gradTemp.addColorStop(0, 'rgba(249,115,22,0.4)')
-                    gradTemp.addColorStop(1, 'rgba(249,115,22,0)')
-
-                    chartTemp = new Chart(ctxTemp, {
-                        type: 'line',
-                        data: {
-                            labels: labelsTemp,
-                            datasets: [{
-                                label: 'Temperatura °C',
-                                data: temps,
-                                borderColor: '#ea580c',
-                                backgroundColor: gradTemp,
-                                fill: true,
-                                tension: 0.4
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false
-                        }
-                    })
-
-
-
-                    /* =================
-                    VENTO
-                    ================= */
-
-                    const ctxVento = document.getElementById('graficoVento').getContext('2d')
-
-                    if (chartVento) chartVento.destroy()
-
-                    let gradVento = ctxVento.createLinearGradient(0, 0, 0, 250)
-                    gradVento.addColorStop(0, 'rgba(20,184,166,0.4)')
-                    gradVento.addColorStop(1, 'rgba(20,184,166,0)')
-
-                    chartVento = new Chart(ctxVento, {
-                        type: 'line',
-                        data: {
-                            labels: labelsTemp,
-                            datasets: [{
-                                label: 'Vento km/h',
-                                data: ventos,
-                                borderColor: '#14b8a6',
-                                backgroundColor: gradVento,
-                                fill: true,
-                                tension: 0.4
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false
-                        }
-                    })
-
-
-
-                    /* =================
-                    CHUVA AGRUPADA
-                    ================= */
-
-                    const chuvaPorDia = {}
-
-                    dados.forEach(d => {
-
-                        const dia = d.timestamp.substring(0, 10)
-
-                        if (!chuvaPorDia[dia]) chuvaPorDia[dia] = 0
-
-                        chuvaPorDia[dia] += d.chuva
-
-                    })
-
-                    const dias = Object.keys(chuvaPorDia)
-                    const chuvaValores = Object.values(chuvaPorDia)
-
-
-
-                    /* =================
-                    CHUVA SEMANA
-                    ================= */
-
-                    const semana = dias.slice(-7)
-                    const chuvaSemana = chuvaValores.slice(-7)
-
-                    const ctxSemana = document.getElementById('graficoSemana').getContext('2d')
-
-                    if (chartSemana) chartSemana.destroy()
-
-                    chartSemana = new Chart(ctxSemana, {
-                        type: 'bar',
-                        data: {
-                            labels: semana,
-                            datasets: [{
-                                label: 'Chuva mm',
-                                data: chuvaSemana,
-                                backgroundColor: '#3b82f6'
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false
-                        }
-                    })
-
-
-
-                    /* =================
-                    CHUVA MÊS
-                    ================= */
-
-                    const ctxMes = document.getElementById('graficoMes').getContext('2d')
-
-                    if (chartMes) chartMes.destroy()
-
-                    chartMes = new Chart(ctxMes, {
-                        type: 'bar',
-                        data: {
-                            labels: dias,
-                            datasets: [{
-                                label: 'Chuva mm',
-                                data: chuvaValores,
-                                backgroundColor: '#6366f1'
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false
-                        }
-                    })
-
-
-
-                    /* =================
-                    TOTAL DO MÊS
-                    ================= */
-
-                    const totalMes = chuvaValores.reduce((a, b) => a + b, 0)
-
-                    document.getElementById("chuva-mes-total").innerText =
-                        totalMes.toFixed(1)
-
-
-
-                    /* =================
-                    GRÁFICO METEOROLÓGICO
-                    ================= */
-
-                    const ctxMeteo = document.getElementById('graficoMeteo').getContext('2d')
-
-                    if (chartMeteo) chartMeteo.destroy()
-
-                    chartMeteo = new Chart(ctxMeteo, {
-
-                        data: {
-                            labels: labelsTemp,
-
-                            datasets: [
-
-                                {
-                                    type: 'line',
-                                    label: 'Temperatura °C',
-                                    data: temps,
-                                    borderColor: '#f97316',
-                                    yAxisID: 'y'
-                                },
-
-                                {
-                                    type: 'line',
-                                    label: 'Vento km/h',
-                                    data: ventos,
-                                    borderColor: '#14b8a6',
-                                    yAxisID: 'y1'
-                                },
-
-                                {
-                                    type: 'bar',
-                                    label: 'Chuva mm',
-                                    data: chuvas,
-                                    backgroundColor: '#3b82f6',
-                                    yAxisID: 'y2'
-                                }
-
-                            ]
-
-                        },
-
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: { mode: 'index', intersect: false },
-
-                            scales: {
-
-                                y: { type: 'linear', position: 'left' },
-
-                                y1: {
-                                    type: 'linear',
-                                    position: 'right',
-                                    grid: { drawOnChartArea: false }
-                                },
-
-                                y2: {
-                                    type: 'linear',
-                                    position: 'right',
-                                    display: false
-                                }
-
-                            }
-
-                        }
-
-                    })
-
-
-
-                    /* =================
-                    DETECTOR TEMPESTADE
-                    ================= */
-
-                    const ventoAtual = ventos[ventos.length - 1]
-                    const chuvaAtual = chuvas[chuvas.length - 1]
-
-                    if (ventoAtual > 40 && chuvaAtual > 5) {
-
-                        document.getElementById("alerta-tempestade").classList.remove("hidden")
-
-                    } else {
-
-                        document.getElementById("alerta-tempestade").classList.add("hidden")
-
-                    }
-
-                })
-
-        }
-
-
-        document.addEventListener("DOMContentLoaded", () => {
-
-            buscarClima()
-            renderizarGraficos()
-
-            setInterval(buscarClima, 10000)
-            setInterval(renderizarGraficos, 60000)
-
-        })
-
+      });
     </script>
 
-</body>
+    <div
+      id="modalCadastro"
+      class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50"
+    >
+      <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
+        <h2 class="text-xl font-bold text-slate-800 mb-4">
+          <i class="fa-solid fa-user-plus text-green-600 mr-2"></i>
+          Receber Alertas Meteorológicos
+        </h2>
 
+        <form method="POST">
+          <div class="space-y-4">
+            <input
+              type="text"
+              name="nome"
+              placeholder="Seu nome"
+              required
+              class="w-full border rounded-lg px-3 py-2"
+            />
+
+            <input
+              type="text"
+              id="telefone"
+              name="telefone"
+              placeholder="WhatsApp"
+              required
+              class="w-full border rounded-lg px-3 py-2"
+            />
+
+            <input
+              type="text"
+              name="endereco"
+              placeholder="Endereço / Fazenda / Bairro"
+              required
+              class="w-full border rounded-lg px-3 py-2"
+            />
+          </div>
+
+          <div class="flex justify-end gap-3 mt-6">
+            <button
+              type="button"
+              onclick="fecharCadastro()"
+              class="px-4 py-2 text-sm bg-gray-200 rounded-lg"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="submit"
+              class="px-4 py-2 text-sm bg-green-600 text-white rounded-lg"
+            >
+              Cadastrar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </body>
 </html>

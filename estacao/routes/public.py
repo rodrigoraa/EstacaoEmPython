@@ -13,9 +13,9 @@ def index():
 
     if request.method == "POST":
 
-        nome = request.form.get("nome")
-        telefone = request.form.get("telefone")
-        endereco = request.form.get("endereco")
+        nome = request.form.get("nome", "").strip()
+        telefone = request.form.get("telefone", "")
+        endereco = request.form.get("endereco", "").strip()
 
         telefone = "".join(filter(str.isdigit, telefone))
 

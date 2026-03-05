@@ -106,16 +106,14 @@ def api_historico():
         SELECT
             strftime('%H:00', data_hora) as hora,
             AVG(temp) as temp,
-            SUM(chuva_hoje) as chuva_hoje,
+            MAX(chuva_hoje) as chuva_hoje,
             AVG(vento_vel) as vento_vel
         FROM historico_clima
-        WHERE date(data_hora) = date('now')
+        WHERE date(data_hora) = date('now','localtime')
         GROUP BY hora
         ORDER BY hora ASC
         """
     ).fetchall()
-    
-    dados = dados[::-1]
 
     conn.close()
 

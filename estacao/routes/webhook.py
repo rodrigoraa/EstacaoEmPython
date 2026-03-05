@@ -6,7 +6,10 @@ import os
 
 webhook_routes = Blueprint("webhook", __name__)
 
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "trocar_esse_segredo")
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
+
+if not WEBHOOK_SECRET:
+    raise RuntimeError("WEBHOOK_SECRET não configurado")
 
 
 def verificar_github(req):
@@ -16,7 +19,10 @@ def verificar_github(req):
     if assinatura is None:
         return False
 
-    sha_name, assinatura = assinatura.split("=")
+    try:
+        sha_name, assinatura = assinatura.split("=")
+    except ValueError:
+        return False
 
     if sha_name != "sha256":
         return False
@@ -29,8 +35,16 @@ def verificar_github(req):
 @webhook_routes.route("/deploy/python", methods=["POST"])
 def deploy_python():
 
+    if request.headers.get("X-GitHub-Event") != "push":
+        return "evento ignorado"
+
     if not verificar_github(request):
         abort(403)
+
+    payload = request.get_json()
+
+    if payload.get("ref") != "refs/heads/main":
+        return "branch ignorada"
 
     subprocess.Popen(["/var/www/deploy/deploy-python.sh"])
 

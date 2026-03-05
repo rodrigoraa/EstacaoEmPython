@@ -449,7 +449,7 @@
           .then((dados) => {
             if (!dados.length) return;
 
-            const labelsTemp = dados.map((d) => d.timestamp.substring(11, 16));
+            const labelsTemp = dados.map((d) => d.timestamp.replace(":00", "h"));
             const temps = dados.map((d) => d.temperatura);
             const ventos = dados.map((d) => d.vento);
             const chuvas = dados.map((d) => d.chuva);

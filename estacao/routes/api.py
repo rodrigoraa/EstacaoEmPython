@@ -104,15 +104,18 @@ def api_historico():
     dados = conn.execute(
         """
         SELECT
-            data_hora,
-            temp,
-            chuva_hoje,
-            vento_vel
+            strftime('%H:00', data_hora) as hora,
+            AVG(temp) as temp,
+            SUM(chuva_hoje) as chuva_hoje,
+            AVG(vento_vel) as vento_vel
         FROM historico_clima
-        ORDER BY data_hora ASC
-        LIMIT 200
+        WHERE date(data_hora) = date('now')
+        GROUP BY hora
+        ORDER BY hora ASC
         """
     ).fetchall()
+    
+    dados = dados[::-1]
 
     conn.close()
 
@@ -121,7 +124,7 @@ def api_historico():
     for row in dados:
         resultado.append(
             {
-                "timestamp": row["data_hora"],
+                "timestamp": row["hora"],
                 "temperatura": row["temp"],
                 "chuva": row["chuva_hoje"],
                 "vento": row["vento_vel"],

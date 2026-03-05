@@ -1,6 +1,7 @@
 import sys
 import os
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import sqlite3
@@ -12,9 +13,9 @@ import os
 from services.weather_service import obter_dados
 from services.whatsapp_service import enviar_whatsapp
 
-DB = "estacao.db"
 
-STATE_FILE = "alert_state.json"
+DB = os.path.join(BASE_DIR, "estacao.db")
+STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
 
 INTERVALO = 15
 

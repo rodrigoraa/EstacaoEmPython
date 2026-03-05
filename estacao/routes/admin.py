@@ -1,3 +1,4 @@
+import os
 from flask import (
     Blueprint,
     render_template,
@@ -13,11 +14,13 @@ import database
 
 admin_routes = Blueprint("admin", __name__)
 
-SENHA_ADMIN = "fera@123"
-
+SENHA_ADMIN = os.environ.get("ADMIN_PASSWORD")
 
 @admin_routes.route("/admin/deletar/<int:id>")
 def deletar_usuario(id):
+
+    if not session.get("logado"):
+        return redirect("/admin")
 
     conn = database.get_db()
     cursor = conn.cursor()

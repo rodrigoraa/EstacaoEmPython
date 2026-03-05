@@ -38,7 +38,7 @@ def api_clima():
         if not dados_api.get("data"):
             return jsonify({"erro": "Sem dados"})
 
-        raw = dados_api["data"][0].get("lastData", dados_api["data"][0])
+        raw = dados_api["data"][0]["lastData"]
         info = dados_api["data"][0].get("info", {})
 
         # ================= CONVERSÕES =================

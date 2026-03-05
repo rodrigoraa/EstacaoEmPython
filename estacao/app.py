@@ -1,10 +1,10 @@
 from flask import Flask
-import os
-
+from routes.webhook import webhook_routes
 from routes.public import public_routes
 from routes.api import api_routes
 from routes.admin import admin_routes
-
+import os
+app.register_blueprint(webhook_routes)
 app = Flask(__name__)
 
 app.secret_key = os.environ.get("SECRET_KEY", "dev_key_trocar_em_producao")

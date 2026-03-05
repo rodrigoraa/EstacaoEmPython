@@ -378,6 +378,8 @@
       let chartVento;
       let chartMeteo;
 
+      let horaEstacao = null;
+
       function obterDirecaoExtenso(graus) {
         const direcoes = [
           "Norte",
@@ -399,6 +401,12 @@
 
           .then((data) => {
             if (!data.erro) {
+              const partes = data.hora_leitura.split(":");
+
+              horaEstacao = new Date();
+              horaEstacao.setHours(partes[0]);
+              horaEstacao.setMinutes(partes[1]);
+              horaEstacao.setSeconds(partes[2]);
 
               document.getElementById("val-temp").innerText = data.temp;
               document.getElementById("val-sensacao").innerText = data.sensacao;
@@ -672,9 +680,11 @@
 
       function iniciarRelogioAoVivo() {
         function atualizar() {
-          const agora = new Date();
+          if (!horaEstacao) return;
 
-          const hora = agora.toLocaleTimeString("pt-BR", {
+          horaEstacao.setSeconds(horaEstacao.getSeconds() + 1);
+
+          const hora = horaEstacao.toLocaleTimeString("pt-BR", {
             hour: "2-digit",
             minute: "2-digit",
             second: "2-digit",
@@ -683,7 +693,6 @@
           document.getElementById("hora-leitura").innerText = hora;
         }
 
-        atualizar();
         setInterval(atualizar, 1000);
       }
 

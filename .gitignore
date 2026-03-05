@@ -1,0 +1,14 @@
+# Banco de dados
+*.db
+*.sqlite3
+
+# Arquivos de estado
+alert_state.json
+estado_alertas.json
+
+# Ambiente virtual
+venv/
+
+# cache python
+__pycache__/
+*.pyc

@@ -9,7 +9,7 @@ import time
 import datetime
 import json
 from services.weather_service import obter_dados
-from services.whatsapp_service import enviar_whatsapp
+#from services.whatsapp_service import enviar_whatsapp
 
 
 DB = os.path.join(BASE_DIR, "estacao.db")
@@ -23,7 +23,6 @@ def log(msg):
     agora = datetime.datetime.now().strftime("%d/%m %H:%M:%S")
 
     print(f"[{agora}] {msg}", flush=True)
-    log("🔄 Coletando dados da estação")
 
 def salvar_leitura(dados):
 
@@ -142,13 +141,13 @@ def verificar_alertas(vento, chuva_hoje):
 
     if chuva_hoje >= estado["chuva"] + 10:
 
-        enviar_alerta(f"🌧️ Chuva acumulada {chuva_hoje:.1f} mm")
+        #enviar_alerta(f"🌧️ Chuva acumulada {chuva_hoje:.1f} mm")
 
         estado["chuva"] += 10
 
     if vento >= estado["vento"] + 10:
 
-        enviar_alerta(f"💨 Rajadas {vento:.1f} km/h")
+        #enviar_alerta(f"💨 Rajadas {vento:.1f} km/h")
 
         estado["vento"] += 10
 

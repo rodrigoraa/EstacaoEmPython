@@ -23,11 +23,12 @@ def log(msg):
     agora = datetime.datetime.now().strftime("%d/%m %H:%M:%S")
 
     print(f"[{agora}] {msg}", flush=True)
-
+    log("🔄 Coletando dados da estação")
 
 def salvar_leitura(dados):
 
     conn = sqlite3.connect(DB)
+    conn.execute("PRAGMA journal_mode=WAL;")
 
     cursor = conn.cursor()
 

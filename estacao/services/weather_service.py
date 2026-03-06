@@ -21,9 +21,11 @@ def in_to_mm(i):
 
 def obter_dados():
 
-    resposta = requests.get(URL, headers=HEADERS, timeout=20)
-
-    resposta.raise_for_status()
+    try:
+        resposta = requests.get(URL, headers=HEADERS, timeout=20)
+        resposta.raise_for_status()
+    except Exception:
+        return None
 
     dados = resposta.json()
 

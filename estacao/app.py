@@ -7,7 +7,12 @@ import os
 app = Flask(__name__)
 app.register_blueprint(webhook_routes)
 
-app.secret_key = os.environ.get("SECRET_KEY", "dev_key_trocar_em_producao")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY não configurada")
+
+app.secret_key = SECRET_KEY
 
 app.register_blueprint(public_routes)
 app.register_blueprint(api_routes)

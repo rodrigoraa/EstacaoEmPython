@@ -41,7 +41,10 @@ def deploy_python():
     if not verificar_github(request):
         abort(403)
 
-    payload = request.get_json()
+    payload = request.get_json(silent=True)
+
+    if not payload:
+        return "payload inválido"
 
     if payload.get("ref") != "refs/heads/main":
         return "branch ignorada"

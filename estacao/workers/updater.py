@@ -156,7 +156,7 @@ def verificar_alertas(vento, chuva_hoje):
 
 
 def executar():
-
+    log("🔄 Coletando dados da estação")
     try:
 
         dados = obter_dados()

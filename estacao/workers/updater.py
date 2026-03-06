@@ -8,8 +8,6 @@ import sqlite3
 import time
 import datetime
 import json
-import os
-
 from services.weather_service import obter_dados
 from services.whatsapp_service import enviar_whatsapp
 
@@ -24,7 +22,7 @@ def log(msg):
 
     agora = datetime.datetime.now().strftime("%d/%m %H:%M:%S")
 
-    print(f"[{agora}] {msg}")
+    print(f"[{agora}] {msg}", flush=True)
 
 
 def salvar_leitura(dados):
@@ -113,6 +111,9 @@ def enviar_alerta(mensagem):
 
         telefone = "".join(filter(str.isdigit, u["telefone"]))
 
+        if not telefone.startswith("55"):
+            telefone = "55" + telefone
+
         try:
 
             enviar_whatsapp(telefone, f"⚠️ Alerta Meteorológico\n\n{mensagem}")
@@ -121,7 +122,7 @@ def enviar_alerta(mensagem):
 
         except Exception as e:
 
-            log(f"❌ Erro envio {u['nome']} {e}")
+            log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
 
 
 def verificar_alertas(vento, chuva_hoje):
@@ -165,26 +166,42 @@ def executar():
 
             return
 
-        (
-            temp,
-            sensacao,
-            umidade,
-            pressao,
-            uv,
-            radiacao,
-            vento,
-            rajada,
-            vento_dir,
-            chuva_rate,
-            chuva_evento,
-            chuva_hoje,
-        ) = dados
+        temp = dados["temp"]
+        sensacao = dados["sensacao"]
+        umidade = dados["umidade"]
+        pressao = dados["pressao"]
+
+        uv = dados["uv"]
+        radiacao = dados["radiacao"]
+
+        vento = dados["vento"]
+        rajada = dados["rajada"]
+        vento_dir = dados["vento_dir"]
+
+        chuva_rate = dados["chuva_rate"]
+        chuva_evento = dados["chuva_evento"]
+        chuva_hoje = dados["chuva_hoje"]
 
         log(f"🌡 {temp}°C | 💧 {umidade}% | 💨 {vento} km/h | 🌧 {chuva_hoje} mm")
 
         verificar_alertas(vento, chuva_hoje)
 
-        salvar_leitura(dados)
+        salvar_leitura(
+            (
+                temp,
+                sensacao,
+                umidade,
+                pressao,
+                uv,
+                radiacao,
+                vento,
+                rajada,
+                vento_dir,
+                chuva_rate,
+                chuva_evento,
+                chuva_hoje,
+            )
+        )
 
     except Exception as e:
 

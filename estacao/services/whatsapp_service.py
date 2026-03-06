@@ -1,39 +1,33 @@
-import requests
 import os
-
-WA_TOKEN = os.getenv("WA_TOKEN")
-WA_PHONE_ID = os.getenv("WA_PHONE_ID")
-
-URL = f"https://graph.facebook.com/v18.0/{WA_PHONE_ID}/messages"
+import requests
 
 
-def enviar_whatsapp(telefone, mensagem):
+EVOLUTION_URL = os.environ.get("EVOLUTION_URL")
+EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY")
+EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE")
 
-    if not WA_TOKEN or not WA_PHONE_ID:
-        raise ValueError("Token ou Phone ID não configurados")
 
-    headers = {
-        "Authorization": f"Bearer {WA_TOKEN}",
-        "Content-Type": "application/json",
-    }
+if not EVOLUTION_URL:
+    raise RuntimeError("EVOLUTION_URL não configurado")
 
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": telefone,
-        "type": "text",
-        "text": {"body": mensagem},
-    }
+if not EVOLUTION_API_KEY:
+    raise RuntimeError("EVOLUTION_API_KEY não configurado")
 
-    try:
+if not EVOLUTION_INSTANCE:
+    raise RuntimeError("EVOLUTION_INSTANCE não configurado")
 
-        resp = requests.post(URL, headers=headers, json=payload, timeout=10)
 
-        resp.raise_for_status()
+def enviar_whatsapp(numero, mensagem):
 
-        return resp.json()
+    url = f"{EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}"
 
-    except requests.exceptions.RequestException as e:
+    payload = {"number": numero, "text": mensagem}
 
-        print("Erro ao enviar WhatsApp:", e)
+    headers = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}
 
-        return None
+    response = requests.post(url, json=payload, headers=headers, timeout=10)
+
+    if response.status_code != 200:
+        raise Exception(f"Erro Evolution API: {response.text}")
+
+    return True

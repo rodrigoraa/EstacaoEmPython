@@ -49,17 +49,17 @@ def obter_dados():
     chuva_evento = in_to_mm(raw.get("eventrainin", 0))
     chuva_hoje = in_to_mm(raw.get("dailyrainin", 0))
 
-    return (
-        temp,
-        sensacao,
-        umidade,
-        pressao,
-        uv,
-        radiacao,
-        vento,
-        rajada,
-        vento_dir,
-        chuva_rate,
-        chuva_evento,
-        chuva_hoje,
-    )
+    return {
+        "temp": temp,
+        "sensacao": sensacao,
+        "umidade": umidade,
+        "pressao": pressao,
+        "uv": uv,
+        "radiacao": radiacao,
+        "vento": vento,
+        "rajada": rajada,
+        "vento_dir": vento_dir,
+        "chuva_rate": chuva_rate,
+        "chuva_evento": chuva_evento,
+        "chuva_hoje": chuva_hoje,
+    }

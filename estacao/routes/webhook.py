@@ -4,7 +4,7 @@ import hmac
 import hashlib
 import os
 import logging
-logging.warning("Webhook recebido: deploy python")
+
 webhook_routes = Blueprint("webhook", __name__)
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
@@ -14,7 +14,6 @@ if not WEBHOOK_SECRET:
 
 
 def verificar_github(req):
-
     assinatura = req.headers.get("X-Hub-Signature-256")
 
     if assinatura is None:
@@ -36,6 +35,8 @@ def verificar_github(req):
 @webhook_routes.route("/deploy/python", methods=["POST"])
 def deploy_python():
 
+    logging.warning("Webhook recebido: deploy python")
+
     if request.headers.get("X-GitHub-Event") != "push":
         return "evento ignorado"
 
@@ -50,7 +51,10 @@ def deploy_python():
     if payload.get("ref") != "refs/heads/main":
         return "branch ignorada"
 
-    subprocess.Popen(["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-python.sh"])
+    subprocess.Popen(
+        ["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-python.sh"],
+        start_new_session=True,
+    )
 
     return "deploy python iniciado"
 
@@ -58,9 +62,14 @@ def deploy_python():
 @webhook_routes.route("/deploy/php", methods=["POST"])
 def deploy_php():
 
+    logging.warning("Webhook recebido: deploy php")
+
     if not verificar_github(request):
         abort(403)
 
-    subprocess.Popen(["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-php.sh"])
+    subprocess.Popen(
+        ["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-php.sh"],
+        start_new_session=True,
+    )
 
     return "deploy php iniciado"

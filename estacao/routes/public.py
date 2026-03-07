@@ -93,3 +93,7 @@ def unsubscribe():
     }
 
     return render_template("unsubscribe.html", estado=estado)
+
+@public_routes.route("/sobre")
+def sobre():
+    return render_template("sobre.html")

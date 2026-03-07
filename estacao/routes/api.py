@@ -133,3 +133,40 @@ def api_ultimo():
             "chuva": row["chuva"],
         }
     )
+
+
+@api_routes.route("/historico_mes")
+def historico_mes():
+
+    ano = request.args.get("ano")
+    mes = request.args.get("mes")
+
+    conn = database.conectar()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT
+            strftime('%d', data_hora) as dia,
+            AVG(temperatura),
+            SUM(chuva),
+            MAX(vento)
+        FROM historico_clima
+        WHERE strftime('%Y', data_hora) = ?
+        AND strftime('%m', data_hora) = ?
+        GROUP BY dia
+        ORDER BY dia
+    """,
+        (ano, mes),
+    )
+
+    dados = cur.fetchall()
+
+    conn.close()
+
+    return jsonify(
+        [
+            {"dia": d[0], "temperatura": d[1], "chuva": d[2], "vento": d[3]}
+            for d in dados
+        ]
+    )

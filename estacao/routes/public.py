@@ -97,3 +97,7 @@ def unsubscribe():
 @public_routes.route("/sobre")
 def sobre():
     return render_template("sobre.html")
+
+@public_routes.route("/historico")
+def historico():
+    return render_template("historico.html")

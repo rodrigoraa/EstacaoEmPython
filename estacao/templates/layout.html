@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{{ titulo or "Estação Meteorológica" }}</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+</head>
+
+<body class="bg-slate-50 font-[Inter]">
+
+    <div class="flex min-h-screen">
+
+        <!-- MENU LATERAL -->
+
+        <aside class="w-64 bg-white border-r border-slate-200 p-6">
+
+            <h2 class="text-lg font-bold text-slate-800 mb-6">
+                <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
+                Estação Meteorológica
+            </h2>
+
+            <nav class="space-y-2 text-sm">
+
+                <a href="/" class="flex items-center gap-2 p-2 rounded hover:bg-slate-100">
+                    <i class="fa-solid fa-house"></i>
+                    Dashboard
+                </a>
+
+                <a href="/historico" class="flex items-center gap-2 p-2 rounded hover:bg-slate-100">
+                    <i class="fa-solid fa-chart-line"></i>
+                    Histórico
+                </a>
+
+                <a href="/sobre" class="flex items-center gap-2 p-2 rounded hover:bg-slate-100">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Sobre a estação
+                </a>
+
+            </nav>
+
+        </aside>
+
+        <!-- CONTEÚDO -->
+
+        <main class="flex-1 p-8">
+
+            {% block conteudo %}{% endblock %}
+
+        </main>
+
+    </div>
+
+</body>
+
+</html>

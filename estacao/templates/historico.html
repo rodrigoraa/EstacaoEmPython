@@ -1,0 +1,92 @@
+{% extends "layout.html" %}
+
+{% block conteudo %}
+
+<body class="pb-12">
+
+    <div class="max-w-6xl mx-auto px-4 mt-10 space-y-6">
+
+        <h1 class="text-3xl font-bold text-slate-800">
+            Histórico Meteorológico
+        </h1>
+
+        <div class="card">
+
+            <label class="text-sm font-medium">Escolher mês</label>
+
+            <input type="month" id="mesSelecionado" class="border rounded px-3 py-2" />
+
+            <button onclick="carregarDados()" class="bg-indigo-600 text-white px-4 py-2 rounded ml-2">
+                Ver dados
+            </button>
+
+        </div>
+
+        <div class="card">
+
+            <canvas id="graficoMes"></canvas>
+
+        </div>
+
+    </div>
+
+    <script>
+
+        let chart;
+
+        function carregarDados() {
+
+            const mes = document.getElementById("mesSelecionado").value;
+
+            if (!mes) return;
+
+            const partes = mes.split("-");
+
+            const ano = partes[0];
+            const mesNum = partes[1];
+
+            fetch(`/api/historico_mes?ano=${ano}&mes=${mesNum}`)
+                .then(r => r.json())
+                .then(dados => {
+
+                    const dias = dados.map(d => d.dia);
+                    const temp = dados.map(d => d.temperatura);
+                    const chuva = dados.map(d => d.chuva);
+
+                    const ctx = document.getElementById("graficoMes");
+
+                    if (chart) chart.destroy();
+
+                    chart = new Chart(ctx, {
+
+                        type: "bar",
+
+                        data: {
+
+                            labels: dias,
+
+                            datasets: [
+
+                                {
+                                    label: "Chuva (mm)",
+                                    data: chuva
+                                },
+
+                                {
+                                    type: "line",
+                                    label: "Temperatura (°C)",
+                                    data: temp
+                                }
+
+                            ]
+
+                        }
+
+                    });
+
+                });
+
+        }
+
+    </script>
+    {% endblock %}

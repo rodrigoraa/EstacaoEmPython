@@ -19,106 +19,56 @@
 
 <body class="bg-slate-50 font-[Inter]">
 
-    <!-- BOTÃO MENU MOBILE -->
-
-    <div class="md:hidden bg-white border-b px-4 py-3 flex items-center justify-between">
-
-        <button onclick="toggleMenu()" class="text-slate-700 text-xl">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-
+    <div class="md:hidden bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <span class="font-semibold text-slate-700">
+            <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
             Estação Meteorológica
         </span>
-
+        <button onclick="toggleMenu()" class="text-slate-700 text-2xl px-2">
+            <i class="fa-solid fa-bars"></i>
+        </button>
     </div>
 
-    <!-- OVERLAY MOBILE -->
+    <div id="menuOverlay" onclick="toggleMenu()"
+        class="fixed inset-0 bg-black/50 hidden z-40 md:hidden backdrop-blur-sm transition-opacity"></div>
 
-    <div id="menuOverlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/40 hidden z-40 md:hidden">
-    </div>
+    <aside id="menuLateral"
+        class="fixed inset-y-0 left-0 h-screen w-64 bg-white border-r border-slate-200 p-6 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 overflow-y-auto">
+        <h2 class="text-lg font-bold text-slate-800 mb-6 hidden md:block">
+            <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
+            Estação Meteorológica
+        </h2>
 
-    <div class="flex">
+        <nav class="space-y-2 text-sm">
+            <a href="/"
+                class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path == '/' %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
+                <i class="fa-solid fa-house w-5"></i> Dashboard
+            </a>
+            <a href="/historico"
+                class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/historico') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
+                <i class="fa-solid fa-chart-line w-5"></i> Histórico
+            </a>
+            <a href="/sobre"
+                class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/sobre') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
+                <i class="fa-solid fa-circle-info w-5"></i> Sobre a estação
+            </a>
+        </nav>
+    </aside>
 
-        <!-- MENU LATERAL -->
-
-        <aside id="menuLateral" class="sticky top-0 h-screen w-64 bg-white border-r border-slate-200 p-6 z-40
-transform -translate-x-full md:translate-x-0 transition-transform duration-200">
-
-            <h2 class="text-lg font-bold text-slate-800 mb-6">
-
-                <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
-
-                Estação Meteorológica
-
-            </h2>
-
-            <nav class="space-y-2 text-sm">
-
-                <a href="/" class="flex items-center gap-2 p-2 rounded
-     {% if request.path == '/' %}
-       bg-indigo-50 text-indigo-600 font-semibold
-     {% else %}
-       hover:bg-slate-100 text-slate-700
-     {% endif %}">
-
-                    <i class="fa-solid fa-house"></i>
-                    Dashboard
-
-                </a>
-
-                <a href="/historico" class="flex items-center gap-2 p-2 rounded
-     {% if request.path.startswith('/historico') %}
-       bg-indigo-50 text-indigo-600 font-semibold
-     {% else %}
-       hover:bg-slate-100 text-slate-700
-     {% endif %}">
-
-                    <i class="fa-solid fa-chart-line"></i>
-                    Histórico
-
-                </a>
-
-                <a href="/sobre" class="flex items-center gap-2 p-2 rounded
-     {% if request.path.startswith('/sobre') %}
-       bg-indigo-50 text-indigo-600 font-semibold
-     {% else %}
-       hover:bg-slate-100 text-slate-700
-     {% endif %}">
-
-                    <i class="fa-solid fa-circle-info"></i>
-                    Sobre a estação
-
-                </a>
-
-            </nav>
-
-        </aside>
-
-        <!-- CONTEÚDO -->
-
-        <main class="flex-1 p-4 md:p-8 md:ml-64">
-
+    <main class="w-full md:pl-64 min-h-screen flex flex-col">
+        <div class="p-4 md:p-8">
             {% block conteudo %}{% endblock %}
-
-        </main>
-
-    </div>
+        </div>
+    </main>
 
     <script>
-
         function toggleMenu() {
-
             const menu = document.getElementById("menuLateral");
             const overlay = document.getElementById("menuOverlay");
-
             menu.classList.toggle("-translate-x-full");
             overlay.classList.toggle("hidden");
-
         }
-
     </script>
-
 </body>
 
 </html>

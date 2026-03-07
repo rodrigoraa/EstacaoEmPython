@@ -19,49 +19,152 @@
 
 </head>
 
-<body class="bg-slate-50 font-[Inter]">
+<body class="pb-12">
 
-    <div class="max-w-4xl mx-auto px-6 py-10">
+    <div class="max-w-6xl mx-auto px-4 mt-10 space-y-6">
 
-        <h1 class="text-3xl font-bold text-slate-800 mb-6">
+        <h1 class="text-3xl font-bold text-slate-800">
+            <i class="fa-solid fa-circle-info text-indigo-500 mr-2"></i>
             Sobre a Estação Meteorológica
         </h1>
 
-        <div class="bg-white rounded-xl shadow p-6 space-y-4 text-slate-600 leading-relaxed">
+        <a href="/" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+            ← Voltar para a estação
+        </a>
 
-            <p>
-                Esta estação meteorológica realiza o monitoramento contínuo das condições
-                atmosféricas no Distrito de São José, município de Vicentina – MS.
-            </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-            <p>
-                Os dados apresentados neste site são coletados automaticamente por sensores
-                meteorológicos instalados no local e transmitidos para o sistema de
-                monitoramento da Escola Estadual São José.
-            </p>
+            <div class="card">
 
-            <p>
-                A estação mede diversos parâmetros ambientais, incluindo temperatura do ar,
-                umidade relativa, velocidade e direção do vento, pressão atmosférica,
-                radiação solar, índice UV e precipitação (chuva).
-            </p>
+                <h3 class="text-lg font-bold text-slate-800 mb-3">
+                    <i class="fa-solid fa-tower-broadcast text-indigo-500 mr-2"></i>
+                    Sobre a Estação
+                </h3>
 
-            <p>
-                As informações são atualizadas periodicamente e organizadas em gráficos e
-                indicadores que permitem acompanhar as condições meteorológicas atuais
-                e recentes da região.
-            </p>
+                <p class="text-sm text-slate-600 leading-relaxed">
+                    Esta estação meteorológica realiza o monitoramento contínuo das condições
+                    atmosféricas no Distrito de São José, município de Vicentina – MS.
+                </p>
 
-            <p>
-                O objetivo do projeto é fornecer informações meteorológicas locais para a
-                comunidade, apoiar atividades agrícolas e servir como ferramenta
-                educacional para estudantes e professores.
-            </p>
+                <p class="text-sm text-slate-600 leading-relaxed mt-2">
+                    Os dados apresentados neste site são coletados automaticamente por sensores
+                    meteorológicos instalados no local e transmitidos para o sistema de
+                    monitoramento da Escola Estadual São José.
+                </p>
 
-            <p>
-                Os registros também são armazenados em banco de dados, permitindo a análise
-                histórica das condições meteorológicas da região.
-            </p>
+            </div>
+
+            <div class="card">
+
+                <h3 class="text-lg font-bold text-slate-800 mb-3">
+                    <i class="fa-solid fa-cloud-sun text-orange-500 mr-2"></i>
+                    Parâmetros Monitorados
+                </h3>
+
+                <ul class="text-sm text-slate-600 space-y-1">
+
+                    <li>Temperatura do ar</li>
+                    <li>Umidade relativa</li>
+                    <li>Velocidade do vento</li>
+                    <li>Direção do vento</li>
+                    <li>Pressão atmosférica</li>
+                    <li>Radiação solar</li>
+                    <li>Índice UV</li>
+                    <li>Precipitação (chuva)</li>
+
+                </ul>
+
+            </div>
+
+            <div class="card">
+
+                <h3 class="text-lg font-bold text-slate-800 mb-3">
+                    <i class="fa-solid fa-database text-blue-500 mr-2"></i>
+                    Coleta e Armazenamento de Dados
+                </h3>
+
+                <p class="text-sm text-slate-600 leading-relaxed">
+                    As informações meteorológicas são coletadas automaticamente pela estação
+                    e enviadas para o servidor do sistema, onde são processadas e
+                    armazenadas em banco de dados.
+                </p>
+
+                <p class="text-sm text-slate-600 leading-relaxed mt-2">
+                    Isso permite acompanhar as condições atuais do tempo e também analisar
+                    o histórico meteorológico da região através dos gráficos disponíveis
+                    no site.
+                </p>
+
+            </div>
+
+            <div class="card">
+
+                <h3 class="text-lg font-bold text-slate-800 mb-3">
+                    <i class="fa-solid fa-graduation-cap text-green-600 mr-2"></i>
+                    Objetivo do Projeto
+                </h3>
+
+                <p class="text-sm text-slate-600 leading-relaxed">
+                    O projeto tem como objetivo fornecer informações meteorológicas locais
+                    para a comunidade, contribuindo para o acompanhamento das condições
+                    climáticas da região.
+                </p>
+
+                <p class="text-sm text-slate-600 leading-relaxed mt-2">
+                    A estação também serve como ferramenta educacional para estudantes
+                    e professores da Escola Estadual São José, incentivando o estudo
+                    de ciência, tecnologia e meteorologia.
+                </p>
+
+            </div>
+
+            <div class="card">
+
+                <h3 class="text-lg font-bold text-slate-800 mb-3">
+                    <i class="fa-solid fa-microchip text-indigo-500 mr-2"></i>
+                    Como os dados são obtidos
+                </h3>
+
+                <div class="text-sm text-slate-600 space-y-2">
+
+                    <p>
+                        <strong>Temperatura e Umidade:</strong>
+                        medidas por sensores digitais instalados na estação que registram
+                        a temperatura do ar e a umidade relativa do ambiente em intervalos
+                        regulares.
+                    </p>
+
+                    <p>
+                        <strong>Velocidade do vento:</strong>
+                        determinada por um anemômetro que mede a rotação provocada pela
+                        força do vento e converte essa informação em velocidade.
+                    </p>
+
+                    <p>
+                        <strong>Direção do vento:</strong>
+                        obtida por uma veleta meteorológica que indica a direção
+                        de onde o vento está soprando.
+                    </p>
+
+                    <p>
+                        <strong>Pressão atmosférica:</strong>
+                        medida por um sensor barométrico instalado na estação.
+                    </p>
+
+                    <p>
+                        <strong>Radiação solar e índice UV:</strong>
+                        obtidos por sensores ópticos que detectam a intensidade da radiação solar.
+                    </p>
+
+                    <p>
+                        <strong>Chuva (precipitação):</strong>
+                        registrada por um pluviômetro que contabiliza a quantidade de chuva
+                        ao longo do tempo.
+                    </p>
+
+                </div>
+
+            </div>
 
         </div>
 

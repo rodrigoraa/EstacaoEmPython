@@ -41,8 +41,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Define a data atual no input ao carregar a página
         window.onload = () => {
             const hoje = new Date();
             const ano = hoje.getFullYear();
@@ -59,7 +59,6 @@
 
             if (!mes) return;
 
-            // Feedback visual de carregamento
             btnBuscar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Carregando...';
             btnBuscar.disabled = true;
 
@@ -68,21 +67,33 @@
             const mesNum = partes[1];
 
             fetch(`/api/historico_mes?ano=${ano}&mes=${mesNum}`)
-                .then(r => r.json())
+                .then(async r => {
+                    // Se o servidor do Flask der erro (ex: 500 ou 404), pegamos o erro aqui
+                    if (!r.ok) {
+                        throw new Error(`Erro no servidor (Status ${r.status}). Verifique o terminal do Python.`);
+                    }
+
+                    // Se a resposta for texto puro ou HTML (erro de rota), isso vai falhar e ir para o catch
+                    const text = await r.text();
+                    if (!text) return []; // Se não vier nada, retorna array vazio
+
+                    try {
+                        return JSON.parse(text); // Tenta converter para JSON
+                    } catch (e) {
+                        throw new Error("A API não devolveu um JSON válido. Devolveu: " + text.substring(0, 50) + "...");
+                    }
+                })
                 .then(dados => {
-                    // Restaura o botão
                     btnBuscar.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Buscar Dados';
                     btnBuscar.disabled = false;
 
-                    // Verifica se há dados
-                    if (!dados || dados.length === 0) {
+                    if (!Array.isArray(dados) || dados.length === 0) {
                         if (chart) chart.destroy();
                         msgVazia.innerHTML = '<i class="fa-solid fa-cloud-sun text-4xl mb-3 opacity-50 text-orange-400"></i><p>Nenhum dado registrado para este mês.</p>';
                         msgVazia.style.display = 'flex';
                         return;
                     }
 
-                    // Esconde a mensagem vazia
                     msgVazia.style.display = 'none';
 
                     const dias = dados.map(d => `${d.dia}/${mesNum}`);
@@ -101,66 +112,47 @@
                                     type: "bar",
                                     label: "Chuva (mm)",
                                     data: chuva,
-                                    backgroundColor: "rgba(59, 130, 246, 0.7)", // Azul
+                                    backgroundColor: "rgba(59, 130, 246, 0.7)",
                                     borderColor: "rgb(59, 130, 246)",
                                     borderWidth: 1,
-                                    borderRadius: 4, // Barras arredondadas
-                                    yAxisID: 'yChuva' // Eixo isolado para chuva
+                                    borderRadius: 4,
+                                    yAxisID: 'yChuva'
                                 },
                                 {
                                     type: "line",
                                     label: "Temperatura Média (°C)",
                                     data: temp,
-                                    borderColor: "rgb(249, 115, 22)", // Laranja
+                                    borderColor: "rgb(249, 115, 22)",
                                     backgroundColor: "rgba(249, 115, 22, 0.1)",
                                     borderWidth: 3,
                                     pointBackgroundColor: "rgb(249, 115, 22)",
                                     pointRadius: 4,
                                     pointHoverRadius: 6,
-                                    tension: 0.4, // Deixa a linha curvada/suave
+                                    tension: 0.4,
                                     fill: true,
-                                    yAxisID: 'yTemp' // Eixo isolado para temperatura
+                                    yAxisID: 'yTemp'
                                 }
                             ]
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: false,
-                            interaction: {
-                                mode: 'index',
-                                intersect: false, // O tooltip mostra temp e chuva juntos ao passar o mouse na coluna
-                            },
+                            interaction: { mode: 'index', intersect: false },
                             plugins: {
-                                legend: {
-                                    position: 'top',
-                                    labels: { usePointStyle: true, padding: 20 }
-                                },
-                                tooltip: {
-                                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                                    titleFont: { size: 14 },
-                                    bodyFont: { size: 13 },
-                                    padding: 12,
-                                    cornerRadius: 8
-                                }
+                                legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } },
+                                tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }
                             },
                             scales: {
-                                x: {
-                                    grid: { display: false } // Remove linhas verticais para ficar mais limpo
-                                },
+                                x: { grid: { display: false } },
                                 yTemp: {
-                                    type: 'linear',
-                                    display: true,
-                                    position: 'left',
+                                    type: 'linear', display: true, position: 'left',
                                     title: { display: true, text: 'Temperatura (°C)', color: 'rgb(249, 115, 22)' },
-                                    suggestedMin: 10,
-                                    suggestedMax: 45
+                                    suggestedMin: 10, suggestedMax: 45
                                 },
                                 yChuva: {
-                                    type: 'linear',
-                                    display: true,
-                                    position: 'right',
+                                    type: 'linear', display: true, position: 'right',
                                     title: { display: true, text: 'Chuva (mm)', color: 'rgb(59, 130, 246)' },
-                                    grid: { drawOnChartArea: false }, // Evita que as linhas horizontais da chuva baguncem o gráfico
+                                    grid: { drawOnChartArea: false },
                                     suggestedMin: 0
                                 }
                             }
@@ -170,8 +162,19 @@
                 .catch(error => {
                     btnBuscar.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Buscar Dados';
                     btnBuscar.disabled = false;
-                    alert("Ocorreu um erro ao carregar os dados. Tente novamente.");
-                    console.error(error);
+
+                    if (chart) chart.destroy();
+
+                    // Exibe o erro real diretamente na tela para facilitar o conserto
+                    msgVazia.innerHTML = `
+                    <i class="fa-solid fa-triangle-exclamation text-4xl mb-3 text-red-500"></i>
+                    <p class="text-slate-700 font-semibold mb-2">Ops! Falha ao carregar dados.</p>
+                    <div class="bg-red-50 text-red-600 border border-red-200 rounded p-3 text-sm max-w-md text-center break-words">
+                        ${error.message}
+                    </div>
+                `;
+                    msgVazia.style.display = 'flex';
+                    console.error("Erro detectado:", error);
                 });
         }
     </script>

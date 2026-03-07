@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 import database
 
 api_routes = Blueprint("api", __name__)
@@ -135,38 +135,46 @@ def api_ultimo():
     )
 
 
-@api_routes.route("/historico_mes")
+@api_routes.route("/api/historico_mes")
 def historico_mes():
 
     ano = request.args.get("ano")
     mes = request.args.get("mes")
 
-    conn = database.conectar()
-    cur = conn.cursor()
+    if not ano or not mes:
+        return jsonify([])
 
-    cur.execute(
+    conn = database.get_db()
+
+    dados = conn.execute(
         """
         SELECT
             strftime('%d', data_hora) as dia,
-            AVG(temperatura),
-            SUM(chuva),
-            MAX(vento)
+            ROUND(AVG(temp), 1) as temperatura,
+            MAX(chuva_hoje) as chuva,
+            MAX(vento_vel) as vento
         FROM historico_clima
         WHERE strftime('%Y', data_hora) = ?
         AND strftime('%m', data_hora) = ?
         GROUP BY dia
         ORDER BY dia
-    """,
+        """,
         (ano, mes),
-    )
-
-    dados = cur.fetchall()
+    ).fetchall()
 
     conn.close()
 
+    if not dados:
+        return jsonify([]), 404
+
     return jsonify(
         [
-            {"dia": d[0], "temperatura": d[1], "chuva": d[2], "vento": d[3]}
+            {
+                "dia": d["dia"], 
+                "temperatura": d["temperatura"], 
+                "chuva": d["chuva"], 
+                "vento": d["vento"]
+            }
             for d in dados
         ]
     )

@@ -1,8 +1,4 @@
 from flask import Flask
-from routes.webhook import webhook_routes
-from routes.public import public_routes
-from routes.api import api_routes
-from routes.admin import admin_routes
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import os
@@ -10,18 +6,18 @@ import os
 app = Flask(__name__)
 
 limiter = Limiter(
-    get_remote_address, app=app, default_limits=["200 per day", "50 per hour"]
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
 )
 
+limiter.init_app(app)
+
+from routes.webhook import webhook_routes
+from routes.public import public_routes
+from routes.api import api_routes
+from routes.admin import admin_routes
+
 app.register_blueprint(webhook_routes)
-
-SECRET_KEY = os.environ.get("SECRET_KEY")
-
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY não configurada")
-
-app.secret_key = SECRET_KEY
-
 app.register_blueprint(public_routes)
 app.register_blueprint(api_routes)
 app.register_blueprint(admin_routes)

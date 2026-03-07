@@ -73,17 +73,14 @@ def unsubscribe():
             "titulo": "Link inválido",
             "texto": "Não foi possível identificar o número para cancelamento.",
             "cor": "#ef4444",
-            "icone": "<i class='fa-solid fa-circle-xmark'></i>"
+            "icone": "<i class='fa-solid fa-circle-xmark'></i>",
         }
 
         return render_template("unsubscribe.html", estado=estado)
 
     conn = database.get_db()
 
-    conn.execute(
-        "UPDATE usuarios SET ativo = 0 WHERE telefone = ?",
-        (telefone,)
-    )
+    conn.execute("UPDATE usuarios SET ativo = 0 WHERE telefone = ?", (telefone,))
 
     conn.commit()
     conn.close()
@@ -92,7 +89,7 @@ def unsubscribe():
         "titulo": "Alertas cancelados",
         "texto": "Você não receberá mais alertas meteorológicos desta estação.",
         "cor": "#22c55e",
-        "icone": "<i class='fa-solid fa-circle-check'></i>"
+        "icone": "<i class='fa-solid fa-circle-check'></i>",
     }
 
     return render_template("unsubscribe.html", estado=estado)

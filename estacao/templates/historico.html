@@ -6,87 +6,173 @@
 
     <div class="max-w-6xl mx-auto px-4 mt-10 space-y-6">
 
-        <h1 class="text-3xl font-bold text-slate-800">
+        <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-3">
+            <i class="fa-solid fa-chart-area text-indigo-500"></i>
             Histórico Meteorológico
         </h1>
 
-        <div class="card">
+        <div class="card flex flex-col sm:flex-row items-start sm:items-end gap-4">
 
-            <label class="text-sm font-medium">Escolher mês</label>
+            <div class="flex-1 w-full sm:max-w-xs">
+                <label for="mesSelecionado" class="block text-sm font-semibold text-slate-700 mb-1">
+                    Mês de referência
+                </label>
+                <input type="month" id="mesSelecionado"
+                    class="w-full border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 transition-all shadow-sm bg-slate-50 focus:bg-white" />
+            </div>
 
-            <input type="month" id="mesSelecionado" class="border rounded px-3 py-2" />
-
-            <button onclick="carregarDados()" class="bg-indigo-600 text-white px-4 py-2 rounded ml-2">
-                Ver dados
+            <button onclick="carregarDados()" id="btnBuscar"
+                class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                Buscar Dados
             </button>
 
         </div>
 
-        <div class="card">
+        <div class="card relative min-h-[400px]">
+            <div id="mensagemVazia" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                <i class="fa-solid fa-calendar-days text-4xl mb-3 opacity-50"></i>
+                <p>Selecione um mês acima para visualizar os dados.</p>
+            </div>
 
-            <canvas id="graficoMes"></canvas>
-
+            <canvas id="graficoMes" class="relative z-10"></canvas>
         </div>
 
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+        // Define a data atual no input ao carregar a página
+        window.onload = () => {
+            const hoje = new Date();
+            const ano = hoje.getFullYear();
+            const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+            document.getElementById("mesSelecionado").value = `${ano}-${mes}`;
+        };
 
         let chart;
 
         function carregarDados() {
-
             const mes = document.getElementById("mesSelecionado").value;
+            const btnBuscar = document.getElementById("btnBuscar");
+            const msgVazia = document.getElementById("mensagemVazia");
 
             if (!mes) return;
 
-            const partes = mes.split("-");
+            // Feedback visual de carregamento
+            btnBuscar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Carregando...';
+            btnBuscar.disabled = true;
 
+            const partes = mes.split("-");
             const ano = partes[0];
             const mesNum = partes[1];
 
             fetch(`/api/historico_mes?ano=${ano}&mes=${mesNum}`)
                 .then(r => r.json())
                 .then(dados => {
+                    // Restaura o botão
+                    btnBuscar.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Buscar Dados';
+                    btnBuscar.disabled = false;
 
-                    const dias = dados.map(d => d.dia);
+                    // Verifica se há dados
+                    if (!dados || dados.length === 0) {
+                        if (chart) chart.destroy();
+                        msgVazia.innerHTML = '<i class="fa-solid fa-cloud-sun text-4xl mb-3 opacity-50 text-orange-400"></i><p>Nenhum dado registrado para este mês.</p>';
+                        msgVazia.style.display = 'flex';
+                        return;
+                    }
+
+                    // Esconde a mensagem vazia
+                    msgVazia.style.display = 'none';
+
+                    const dias = dados.map(d => `${d.dia}/${mesNum}`);
                     const temp = dados.map(d => d.temperatura);
                     const chuva = dados.map(d => d.chuva);
 
                     const ctx = document.getElementById("graficoMes");
-
                     if (chart) chart.destroy();
 
                     chart = new Chart(ctx, {
-
                         type: "bar",
-
                         data: {
-
                             labels: dias,
-
                             datasets: [
-
                                 {
+                                    type: "bar",
                                     label: "Chuva (mm)",
-                                    data: chuva
+                                    data: chuva,
+                                    backgroundColor: "rgba(59, 130, 246, 0.7)", // Azul
+                                    borderColor: "rgb(59, 130, 246)",
+                                    borderWidth: 1,
+                                    borderRadius: 4, // Barras arredondadas
+                                    yAxisID: 'yChuva' // Eixo isolado para chuva
                                 },
-
                                 {
                                     type: "line",
-                                    label: "Temperatura (°C)",
-                                    data: temp
+                                    label: "Temperatura Média (°C)",
+                                    data: temp,
+                                    borderColor: "rgb(249, 115, 22)", // Laranja
+                                    backgroundColor: "rgba(249, 115, 22, 0.1)",
+                                    borderWidth: 3,
+                                    pointBackgroundColor: "rgb(249, 115, 22)",
+                                    pointRadius: 4,
+                                    pointHoverRadius: 6,
+                                    tension: 0.4, // Deixa a linha curvada/suave
+                                    fill: true,
+                                    yAxisID: 'yTemp' // Eixo isolado para temperatura
                                 }
-
                             ]
-
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false, // O tooltip mostra temp e chuva juntos ao passar o mouse na coluna
+                            },
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    labels: { usePointStyle: true, padding: 20 }
+                                },
+                                tooltip: {
+                                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                    titleFont: { size: 14 },
+                                    bodyFont: { size: 13 },
+                                    padding: 12,
+                                    cornerRadius: 8
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { display: false } // Remove linhas verticais para ficar mais limpo
+                                },
+                                yTemp: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                    title: { display: true, text: 'Temperatura (°C)', color: 'rgb(249, 115, 22)' },
+                                    suggestedMin: 10,
+                                    suggestedMax: 45
+                                },
+                                yChuva: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'right',
+                                    title: { display: true, text: 'Chuva (mm)', color: 'rgb(59, 130, 246)' },
+                                    grid: { drawOnChartArea: false }, // Evita que as linhas horizontais da chuva baguncem o gráfico
+                                    suggestedMin: 0
+                                }
+                            }
                         }
-
                     });
-
+                })
+                .catch(error => {
+                    btnBuscar.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Buscar Dados';
+                    btnBuscar.disabled = false;
+                    alert("Ocorreu um erro ao carregar os dados. Tente novamente.");
+                    console.error(error);
                 });
-
         }
-
     </script>
     {% endblock %}

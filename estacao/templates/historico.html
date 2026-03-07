@@ -4,39 +4,45 @@
 
 <div class="pb-12">
 
-    <div class="max-w-6xl mx-auto px-4 mt-10 space-y-6">
+    <div class="card flex flex-col sm:flex-row items-start sm:items-end gap-4">
 
-        <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-3">
-            <i class="fa-solid fa-chart-area text-indigo-500"></i>
-            Histórico Meteorológico
-        </h1>
-
-        <div class="card flex flex-col sm:flex-row items-start sm:items-end gap-4">
-
-            <div class="flex-1 w-full sm:max-w-xs">
-                <label for="mesSelecionado" class="block text-sm font-semibold text-slate-700 mb-1">
-                    Mês de referência
-                </label>
-                <input type="month" id="mesSelecionado"
-                    class="w-full border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 transition-all shadow-sm bg-slate-50 focus:bg-white" />
-            </div>
-
-            <button onclick="carregarDados()" id="btnBuscar"
-                class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                Buscar Dados
-            </button>
-
+        <div class="flex-1 w-full sm:max-w-[200px]">
+            <label class="block text-sm font-semibold text-slate-700 mb-1">
+                Mês
+            </label>
+            <select id="filtroMes"
+                class="w-full border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 transition-all shadow-sm bg-slate-50 focus:bg-white">
+                <option value="01">Janeiro</option>
+                <option value="02">Fevereiro</option>
+                <option value="03" selected>Março</option>
+                <option value="04">Abril</option>
+                <option value="05">Maio</option>
+                <option value="06">Junho</option>
+                <option value="07">Julho</option>
+                <option value="08">Agosto</option>
+                <option value="09">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+            </select>
         </div>
 
-        <div class="card relative min-h-[400px]">
-            <div id="mensagemVazia" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
-                <i class="fa-solid fa-calendar-days text-4xl mb-3 opacity-50"></i>
-                <p>Selecione um mês acima para visualizar os dados.</p>
-            </div>
-
-            <canvas id="graficoMes" class="relative z-10"></canvas>
+        <div class="flex-1 w-full sm:max-w-[120px]">
+            <label class="block text-sm font-semibold text-slate-700 mb-1">
+                Ano
+            </label>
+            <select id="filtroAno"
+                class="w-full border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-700 transition-all shadow-sm bg-slate-50 focus:bg-white">
+                <option value="2025">2025</option>
+                <option value="2026" selected>2026</option>
+            </select>
         </div>
+
+        <button onclick="carregarDados()" id="btnBuscar"
+            class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            Buscar Dados
+        </button>
 
     </div>
 
@@ -53,50 +59,24 @@
         let chart;
 
         function carregarDados() {
-            const mes = document.getElementById("mesSelecionado").value;
-            const btnBuscar = document.getElementById("btnBuscar");
+            const mes = document.getElementById("filtroMes").value;
+            const ano = document.getElementById("filtroAno").value;
+
             const msgVazia = document.getElementById("mensagemVazia");
+            if (msgVazia) msgVazia.style.display = 'none';
 
-            if (!mes) return;
-
-            btnBuscar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Carregando...';
-            btnBuscar.disabled = true;
-
-            const partes = mes.split("-");
-            const ano = partes[0];
-            const mesNum = partes[1];
-
-            fetch(`/api/historico_mes?ano=${ano}&mes=${mesNum}`)
-                .then(async r => {
-                    // Se o servidor do Flask der erro (ex: 500 ou 404), pegamos o erro aqui
-                    if (!r.ok) {
-                        throw new Error(`Erro no servidor (Status ${r.status}). Verifique o terminal do Python.`);
-                    }
-
-                    // Se a resposta for texto puro ou HTML (erro de rota), isso vai falhar e ir para o catch
-                    const text = await r.text();
-                    if (!text) return []; // Se não vier nada, retorna array vazio
-
-                    try {
-                        return JSON.parse(text); // Tenta converter para JSON
-                    } catch (e) {
-                        throw new Error("A API não devolveu um JSON válido. Devolveu: " + text.substring(0, 50) + "...");
-                    }
+            fetch(`/api/historico_mes?ano=${ano}&mes=${mes}`)
+                .then(r => {
+                    if (!r.ok) throw new Error("Sem dados para este período");
+                    return r.json();
                 })
                 .then(dados => {
-                    btnBuscar.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Buscar Dados';
-                    btnBuscar.disabled = false;
-
-                    if (!Array.isArray(dados) || dados.length === 0) {
-                        if (chart) chart.destroy();
-                        msgVazia.innerHTML = '<i class="fa-solid fa-cloud-sun text-4xl mb-3 opacity-50 text-orange-400"></i><p>Nenhum dado registrado para este mês.</p>';
-                        msgVazia.style.display = 'flex';
+                    if (dados.length === 0) {
+                        alert("Nenhum dado encontrado para este mês.");
                         return;
                     }
 
-                    msgVazia.style.display = 'none';
-
-                    const dias = dados.map(d => `${d.dia}/${mesNum}`);
+                    const dias = dados.map(d => d.dia);
                     const temp = dados.map(d => d.temperatura);
                     const chuva = dados.map(d => d.chuva);
 
@@ -109,72 +89,31 @@
                             labels: dias,
                             datasets: [
                                 {
-                                    type: "bar",
                                     label: "Chuva (mm)",
                                     data: chuva,
-                                    backgroundColor: "rgba(59, 130, 246, 0.7)",
-                                    borderColor: "rgb(59, 130, 246)",
-                                    borderWidth: 1,
-                                    borderRadius: 4,
-                                    yAxisID: 'yChuva'
+                                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                                    borderColor: 'rgb(59, 130, 246)',
+                                    borderWidth: 1
                                 },
                                 {
                                     type: "line",
-                                    label: "Temperatura Média (°C)",
+                                    label: "Temp. Média (°C)",
                                     data: temp,
-                                    borderColor: "rgb(249, 115, 22)",
-                                    backgroundColor: "rgba(249, 115, 22, 0.1)",
-                                    borderWidth: 3,
-                                    pointBackgroundColor: "rgb(249, 115, 22)",
-                                    pointRadius: 4,
-                                    pointHoverRadius: 6,
-                                    tension: 0.4,
-                                    fill: true,
-                                    yAxisID: 'yTemp'
+                                    borderColor: 'rgb(249, 115, 22)',
+                                    backgroundColor: 'transparent',
+                                    tension: 0.3
                                 }
                             ]
                         },
                         options: {
                             responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: { mode: 'index', intersect: false },
-                            plugins: {
-                                legend: { position: 'top', labels: { usePointStyle: true, padding: 20 } },
-                                tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }
-                            },
-                            scales: {
-                                x: { grid: { display: false } },
-                                yTemp: {
-                                    type: 'linear', display: true, position: 'left',
-                                    title: { display: true, text: 'Temperatura (°C)', color: 'rgb(249, 115, 22)' },
-                                    suggestedMin: 10, suggestedMax: 45
-                                },
-                                yChuva: {
-                                    type: 'linear', display: true, position: 'right',
-                                    title: { display: true, text: 'Chuva (mm)', color: 'rgb(59, 130, 246)' },
-                                    grid: { drawOnChartArea: false },
-                                    suggestedMin: 0
-                                }
-                            }
+                            maintainAspectRatio: false
                         }
                     });
                 })
-                .catch(error => {
-                    btnBuscar.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Buscar Dados';
-                    btnBuscar.disabled = false;
-
-                    if (chart) chart.destroy();
-
-                    // Exibe o erro real diretamente na tela para facilitar o conserto
-                    msgVazia.innerHTML = `
-                    <i class="fa-solid fa-triangle-exclamation text-4xl mb-3 text-red-500"></i>
-                    <p class="text-slate-700 font-semibold mb-2">Ops! Falha ao carregar dados.</p>
-                    <div class="bg-red-50 text-red-600 border border-red-200 rounded p-3 text-sm max-w-md text-center break-words">
-                        ${error.message}
-                    </div>
-                `;
-                    msgVazia.style.display = 'flex';
-                    console.error("Erro detectado:", error);
+                .catch(err => {
+                    console.error(err);
+                    if (msgVazia) msgVazia.style.display = 'flex';
                 });
         }
     </script>

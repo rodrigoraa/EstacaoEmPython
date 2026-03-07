@@ -1,6 +1,7 @@
 import os
 import requests
-
+from dotenv import load_dotenv
+load_dotenv()
 
 EVOLUTION_URL = os.environ.get("EVOLUTION_URL")
 EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY")
@@ -20,7 +21,7 @@ if not EVOLUTION_INSTANCE:
 def enviar_whatsapp(numero, mensagem):
 
     url = f"{EVOLUTION_URL}/message/sendText/{EVOLUTION_INSTANCE}"
-
+    numero = numero.replace("+", "").replace(" ", "")
     payload = {"number": numero, "text": mensagem}
 
     headers = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}

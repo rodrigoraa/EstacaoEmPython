@@ -137,25 +137,24 @@ def api_ultimo():
 
 @api_routes.route("/api/historico_mes")
 def historico_mes():
-
     ano = request.args.get("ano")
     mes = request.args.get("mes")
 
     if not ano or not mes:
         return jsonify([])
 
-    conn = database.get_db()
+    conn = database.get_db() 
 
     dados = conn.execute(
         """
-        SELECT
+        SELECT 
             strftime('%d', data_hora) as dia,
             ROUND(AVG(temp), 1) as temperatura,
             MAX(chuva_hoje) as chuva,
             MAX(vento_vel) as vento
         FROM historico_clima
-        WHERE strftime('%Y', data_hora) = ?
-        AND strftime('%m', data_hora) = ?
+        WHERE strftime('%Y', data_hora) = ? 
+          AND strftime('%m', data_hora) = ?
         GROUP BY dia
         ORDER BY dia
         """,
@@ -164,17 +163,4 @@ def historico_mes():
 
     conn.close()
 
-    if not dados:
-        return jsonify([]), 404
-
-    return jsonify(
-        [
-            {
-                "dia": d["dia"], 
-                "temperatura": d["temperatura"], 
-                "chuva": d["chuva"], 
-                "vento": d["vento"]
-            }
-            for d in dados
-        ]
-    )
+    return jsonify([dict(d) for d in dados])

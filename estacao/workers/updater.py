@@ -23,7 +23,7 @@ def log(msg):
 
 
 def salvar_leitura(dados):
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL;")
     cursor = conn.cursor()
     agora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -77,14 +77,15 @@ def salvar_estado(estado):
 
 def enviar_alerta(mensagem):
     log(f"🚨 Enviando Resumo de Alerta...")
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=10)
     conn.row_factory = sqlite3.Row
 
     usuarios = conn.execute(
         """
         SELECT nome, telefone
         FROM usuarios
-        WHERE ativo = 1 OR ativo IS NULL
+        WHERE (ativo = 1 OR ativo IS NULL)
+        AND receber_whatsapp = 1
         """
     ).fetchall()
     conn.close()
@@ -94,7 +95,7 @@ def enviar_alerta(mensagem):
         if not telefone.startswith("55"):
             telefone = "55" + telefone
 
-        link_cancelar = "http://meteo.eesjv.com.br/unsubscribe"
+        link_cancelar = f"http://meteo.eesjv.com.br/unsubscribe?tel={telefone}"
 
         mensagem_final = f"⚠️ *Alerta Meteorológico*\n\n{mensagem}\n\n🛑 Para parar de receber alertas, acesse:\n{link_cancelar}"
 

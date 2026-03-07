@@ -15,7 +15,7 @@ body {
 
     background-size: cover;
     background-position: center;
-    background-attachment: fixed;
+    background-attachment: scroll;
     background-repeat: no-repeat;
 }
 
@@ -145,6 +145,35 @@ body {
 
     letter-spacing: -1px;
 
+}
+
+
+/* =========================================================
+   VARIAÇÕES DE COR DOS CARDS
+   ========================================================= */
+
+.card-temp {
+    border-left: 4px solid #f97316;
+}
+
+.card-vento {
+    border-left: 4px solid #14b8a6;
+}
+
+.card-chuva {
+    border-left: 4px solid #3b82f6;
+}
+
+.card-pressao {
+    border-left: 4px solid #6366f1;
+}
+
+.card-uv {
+    border-left: 4px solid #facc15;
+}
+
+.card-radiacao {
+    border-left: 4px solid #f59e0b;
 }
 
 

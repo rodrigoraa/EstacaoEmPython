@@ -3,8 +3,16 @@ from routes.webhook import webhook_routes
 from routes.public import public_routes
 from routes.api import api_routes
 from routes.admin import admin_routes
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import os
+
 app = Flask(__name__)
+
+limiter = Limiter(
+    get_remote_address, app=app, default_limits=["200 per day", "50 per hour"]
+)
+
 app.register_blueprint(webhook_routes)
 
 SECRET_KEY = os.environ.get("SECRET_KEY")

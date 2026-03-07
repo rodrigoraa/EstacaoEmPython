@@ -7,16 +7,17 @@ from flask import (
     url_for,
     session,
     flash,
-    redirect,
-    url_for,
 )
 import database
 
 admin_routes = Blueprint("admin", __name__)
 
 SENHA_ADMIN = os.environ.get("ADMIN_PASSWORD")
+if not SENHA_ADMIN:
+    raise RuntimeError("ADMIN_PASSWORD não configurado")
 
-@admin_routes.route("/admin/deletar/<int:id>")
+
+@admin_routes.route("/admin/deletar/<int:id>", methods=["POST"])
 def deletar_usuario(id):
 
     if not session.get("logado"):

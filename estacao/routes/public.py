@@ -1,12 +1,14 @@
 from flask import Blueprint, render_template, request
+from datetime import datetime, timedelta
+from app import limiter
 import database
 import sqlite3
-from datetime import datetime, timedelta
 
 public_routes = Blueprint("public", __name__)
 
 
 @public_routes.route("/", methods=["GET", "POST"])
+@limiter.limit("5 per hour")
 def index():
 
     mensagem = ""
@@ -16,6 +18,8 @@ def index():
         nome = request.form.get("nome", "").strip()
         telefone = request.form.get("telefone", "")
         endereco = request.form.get("endereco", "").strip()
+        whatsapp = request.form.get("whatsapp")
+        receber_whatsapp = 1 if whatsapp else 0
 
         telefone = "".join(filter(str.isdigit, telefone))
 
@@ -29,8 +33,8 @@ def index():
             try:
 
                 cursor.execute(
-                    "INSERT INTO usuarios (nome, telefone, endereco) VALUES (?, ?, ?)",
-                    (nome, telefone, endereco),
+                    "INSERT INTO usuarios (nome, telefone, endereco, receber_whatsapp) VALUES (?, ?, ?, ?)",
+                    (nome, telefone, endereco, receber_whatsapp),
                 )
 
                 conn.commit()
@@ -56,3 +60,39 @@ def index():
         )
 
     return render_template("index.html", mensagem=mensagem, dias_chuva=dias_chuva)
+
+
+@public_routes.route("/unsubscribe")
+def unsubscribe():
+
+    telefone = request.args.get("tel")
+
+    if not telefone:
+
+        estado = {
+            "titulo": "Link inválido",
+            "texto": "Não foi possível identificar o número para cancelamento.",
+            "cor": "#ef4444",
+            "icone": "<i class='fa-solid fa-circle-xmark'></i>"
+        }
+
+        return render_template("unsubscribe.html", estado=estado)
+
+    conn = database.get_db()
+
+    conn.execute(
+        "UPDATE usuarios SET ativo = 0 WHERE telefone = ?",
+        (telefone,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    estado = {
+        "titulo": "Alertas cancelados",
+        "texto": "Você não receberá mais alertas meteorológicos desta estação.",
+        "cor": "#22c55e",
+        "icone": "<i class='fa-solid fa-circle-check'></i>"
+    }
+
+    return render_template("unsubscribe.html", estado=estado)

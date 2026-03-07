@@ -45,8 +45,14 @@ def deploy_python():
 
     payload = request.get_json(silent=True)
 
+
     if not payload:
         return "payload inválido"
+
+    repo = payload.get("repository", {}).get("full_name")
+
+    if repo != "rodrigoraa/EstacaoEmPython":
+        return "repo ignorado"
 
     if payload.get("ref") != "refs/heads/main":
         return "branch ignorada"

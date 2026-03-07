@@ -34,6 +34,16 @@ def obter_dados():
 
     raw = dados["data"][0].get("lastData", dados["data"][0])
 
+    timestamp = raw.get("dateutc")
+
+    if timestamp:
+        import time
+
+        agora = int(time.time() * 1000)
+
+        if agora - timestamp > 600000:
+            return None
+
     temp = f_to_c(raw.get("tempf", 32))
     sensacao = f_to_c(raw.get("feelsLike", raw.get("tempf", 32)))
     umidade = raw.get("humidity", 0)

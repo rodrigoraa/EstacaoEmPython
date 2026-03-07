@@ -75,13 +75,19 @@
                                 </span>
                             </td>
                             <td class="px-6 py-4 text-center">
-                                <a href="/admin/deletar/{{ row['id'] }}"
-                                    onclick="return confirm('Apagar este utilizador?')"
-                                    class="bg-rose-500 hover:bg-rose-600 text-white text-xs px-3 py-1 rounded shadow-sm">
 
-                                    <i class="fa-solid fa-trash"></i>
+                                <form class="inline" action="/admin/deletar/{{ row['id'] }}" method="POST"
+                                    onsubmit="return confirm('Apagar este utilizador?')">
 
-                                </a>
+                                    <button type="submit"
+                                        class="bg-rose-500 hover:bg-rose-600 text-white text-xs px-3 py-1 rounded shadow-sm">
+
+                                        <i class="fa-solid fa-trash"></i>
+
+                                    </button>
+
+                                </form>
+
                             </td>
                         </tr>
                         {% else %}

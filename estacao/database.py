@@ -51,9 +51,8 @@ def init_db():
         nome TEXT NOT NULL,
         telefone TEXT NOT NULL UNIQUE,
         endereco TEXT,
-
         ativo INTEGER DEFAULT 1,
-
+        receber_whatsapp INTEGER DEFAULT 0,
         criado_em TEXT DEFAULT CURRENT_TIMESTAMP
     )
     """)

@@ -2,7 +2,6 @@
 <html lang="pt-BR">
 
 <head>
-
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -16,37 +15,80 @@
         rel="stylesheet" />
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-
 </head>
 
 <body class="bg-slate-50 font-[Inter]">
 
-    <div class="flex min-h-screen">
+    <!-- BOTÃO MENU MOBILE -->
+
+    <div class="md:hidden bg-white border-b px-4 py-3 flex items-center justify-between">
+
+        <button onclick="toggleMenu()" class="text-slate-700 text-xl">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+
+        <span class="font-semibold text-slate-700">
+            Estação Meteorológica
+        </span>
+
+    </div>
+
+    <!-- OVERLAY MOBILE -->
+
+    <div id="menuOverlay" onclick="toggleMenu()" class="fixed inset-0 bg-black/40 hidden z-40 md:hidden">
+    </div>
+
+    <div class="flex">
 
         <!-- MENU LATERAL -->
 
-        <aside class="w-64 bg-white border-r border-slate-200 p-6 fixed h-screen">
+        <aside id="menuLateral" class="fixed md:static top-0 left-0 h-screen w-64 bg-white border-r border-slate-200 p-6 z-50
+                  transform -translate-x-full md:translate-x-0 transition-transform duration-200">
 
             <h2 class="text-lg font-bold text-slate-800 mb-6">
+
                 <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
+
                 Estação Meteorológica
+
             </h2>
 
             <nav class="space-y-2 text-sm">
 
-                <a href="/" class="flex items-center gap-2 p-2 rounded hover:bg-slate-100">
+                <a href="/" class="flex items-center gap-2 p-2 rounded
+     {% if request.path == '/' %}
+       bg-indigo-50 text-indigo-600 font-semibold
+     {% else %}
+       hover:bg-slate-100 text-slate-700
+     {% endif %}">
+
                     <i class="fa-solid fa-house"></i>
                     Dashboard
+
                 </a>
 
-                <a href="/historico" class="flex items-center gap-2 p-2 rounded hover:bg-slate-100">
+                <a href="/historico" class="flex items-center gap-2 p-2 rounded
+     {% if request.path.startswith('/historico') %}
+       bg-indigo-50 text-indigo-600 font-semibold
+     {% else %}
+       hover:bg-slate-100 text-slate-700
+     {% endif %}">
+
                     <i class="fa-solid fa-chart-line"></i>
                     Histórico
+
                 </a>
 
-                <a href="/sobre" class="flex items-center gap-2 p-2 rounded hover:bg-slate-100">
+                <a href="/sobre" class="flex items-center gap-2 p-2 rounded
+     {% if request.path.startswith('/sobre') %}
+       bg-indigo-50 text-indigo-600 font-semibold
+     {% else %}
+       hover:bg-slate-100 text-slate-700
+     {% endif %}">
+
                     <i class="fa-solid fa-circle-info"></i>
                     Sobre a estação
+
                 </a>
 
             </nav>
@@ -55,13 +97,27 @@
 
         <!-- CONTEÚDO -->
 
-        <main class="flex-1 p-8 ml-64">
+        <main class="flex-1 p-4 md:p-8 md:ml-64">
 
             {% block conteudo %}{% endblock %}
 
         </main>
 
     </div>
+
+    <script>
+
+        function toggleMenu() {
+
+            const menu = document.getElementById("menuLateral");
+            const overlay = document.getElementById("menuOverlay");
+
+            menu.classList.toggle("-translate-x-full");
+            overlay.classList.toggle("hidden");
+
+        }
+
+    </script>
 
 </body>
 

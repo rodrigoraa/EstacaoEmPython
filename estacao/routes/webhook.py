@@ -3,7 +3,8 @@ import subprocess
 import hmac
 import hashlib
 import os
-
+import logging
+logging.warning("Webhook recebido: deploy python")
 webhook_routes = Blueprint("webhook", __name__)
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
@@ -49,7 +50,7 @@ def deploy_python():
     if payload.get("ref") != "refs/heads/main":
         return "branch ignorada"
 
-    subprocess.Popen(["/var/www/deploy/deploy-python.sh"])
+    subprocess.Popen(["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-python.sh"])
 
     return "deploy python iniciado"
 
@@ -60,6 +61,6 @@ def deploy_php():
     if not verificar_github(request):
         abort(403)
 
-    subprocess.Popen(["/var/www/deploy/deploy-php.sh"])
+    subprocess.Popen(["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-php.sh"])
 
     return "deploy php iniciado"

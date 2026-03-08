@@ -57,16 +57,22 @@ def carregar_estado():
     if not os.path.exists(STATE_FILE):
         return {
             "data": "",
-            "chuva_next": 40,
-            "vento_next": 50,
-            "temp_next": 38,
+            "chuva_next": 20,
+            "vento_next": 35,
+            "temp_next": 36,
+            "alerta_enviado_hoje": False,
+            "resumo_enviado_hoje": False,
         }
     with open(STATE_FILE, "r") as f:
         estado = json.load(f)
         if "chuva_next" not in estado:
-            estado["chuva_next"] = 40
-            estado["vento_next"] = 50
-            estado["temp_next"] = 38
+            estado["chuva_next"] = 20
+            estado["vento_next"] = 35
+            estado["temp_next"] = 36
+        if "alerta_enviado_hoje" not in estado:
+            estado["alerta_enviado_hoje"] = False
+        if "resumo_enviado_hoje" not in estado:
+            estado["resumo_enviado_hoje"] = False
         return estado
 
 
@@ -106,16 +112,61 @@ def enviar_alerta(mensagem):
             log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
 
 
+def enviar_resumo_diario():
+    log("📊 A gerar o resumo diário geral da estação (18h)...")
+    try:
+        conn = sqlite3.connect(DB, timeout=10)
+        conn.row_factory = sqlite3.Row
+        hoje_str = datetime.date.today().strftime("%Y-%m-%d")
+
+        resumo = conn.execute(
+            """
+            SELECT 
+                MIN(temp) as temp_min,
+                MAX(temp) as temp_max,
+                MIN(umidade) as umidade_min,
+                MAX(umidade) as umidade_max,
+                MAX(vento_rajada) as max_vento,
+                MAX(chuva_hoje) as chuva_total,
+                MAX(uv) as uv_max,
+                MAX(pressao) as pressao_max,
+                MIN(pressao) as pressao_min
+            FROM historico_clima
+            WHERE date(data_hora) = ?
+        """,
+            (hoje_str,),
+        ).fetchone()
+        conn.close()
+
+        if resumo and resumo["temp_max"] is not None:
+            mensagem = "🌅 *Resumo Meteorológico do Dia*\n\n"
+            mensagem += "Nenhum alerta crítico foi registado hoje. Confira os dados da estação:\n\n"
+            mensagem += f"🌡 *Temperatura*: {resumo['temp_min']:.1f}°C a {resumo['temp_max']:.1f}°C\n"
+            mensagem += f"💧 *Humidade*: {resumo['umidade_min']:.0f}% a {resumo['umidade_max']:.0f}%\n"
+            mensagem += f"💨 *Vento Máximo*: {resumo['max_vento']:.1f} km/h\n"
+            mensagem += f"🌧 *Chuva Acumulada*: {resumo['chuva_total']:.1f} mm\n"
+            mensagem += f"☀️ *Índice UV (Máx)*: {resumo['uv_max']:.1f}\n"
+            mensagem += f"🧭 *Pressão Atmosférica*: {resumo['pressao_min']:.1f} a {resumo['pressao_max']:.1f} hPa\n\n"
+            mensagem += "📍 _Vicentina MS - Distrito de São José_"
+
+            enviar_alerta(mensagem)
+    except Exception as e:
+        log(f"❌ Erro ao gerar resumo diário: {e}")
+
+
 def verificar_alertas(temp, vento, chuva_hoje):
     estado = carregar_estado()
     hoje = datetime.date.today().isoformat()
+    agora = datetime.datetime.now()
 
     if estado.get("data") != hoje:
         estado = {
             "data": hoje,
-            "chuva_next": 40,
-            "vento_next": 50,
-            "temp_next": 38,
+            "chuva_next": 20,
+            "vento_next": 35,
+            "temp_next": 36,
+            "alerta_enviado_hoje": False,
+            "resumo_enviado_hoje": False,
         }
 
     alerta_acionado = False
@@ -140,6 +191,8 @@ def verificar_alertas(temp, vento, chuva_hoje):
         alerta_acionado = True
 
     if alerta_acionado:
+        estado["alerta_enviado_hoje"] = True
+
         mensagem = "*Motivos do Alerta:*\n- " + "\n- ".join(motivos) + "\n\n"
         mensagem += "*📊 Condições neste exato momento:*\n"
         mensagem += f"🌡 Temperatura: {temp:.1f}°C\n"
@@ -148,6 +201,14 @@ def verificar_alertas(temp, vento, chuva_hoje):
         mensagem += "📍 _Vicentina MS - Distrito de São José_"
 
         enviar_alerta(mensagem)
+
+    if (
+        agora.hour >= 18
+        and not estado["alerta_enviado_hoje"]
+        and not estado["resumo_enviado_hoje"]
+    ):
+        enviar_resumo_diario()
+        estado["resumo_enviado_hoje"] = True
 
     salvar_estado(estado)
 
@@ -179,7 +240,7 @@ def executar():
 
         log(f"🌡 {temp}°C | 💧 {umidade}% | 💨 {vento} km/h | 🌧 {chuva_hoje} mm")
 
-        verificar_alertas(temp, vento, chuva_hoje)
+        verificar_alertas(temp, rajada, chuva_hoje)
 
         salvar_leitura(
             (

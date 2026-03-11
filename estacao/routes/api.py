@@ -195,3 +195,44 @@ def historico_mes():
     conn.close()
 
     return jsonify([dict(d) for d in dados])
+
+
+# ================= RECORDES DO MÊS (MÁXIMAS) =================
+
+
+@api_routes.route("/api/recordes_mes")
+def api_recordes_mes():
+    ano = request.args.get("ano")
+    mes = request.args.get("mes")
+
+    if not ano or not mes:
+        return jsonify({})
+
+    conn = database.get_db()
+
+    row = conn.execute(
+        """
+        SELECT
+            MAX(temp) as max_temp,
+            MAX(vento_vel) as max_vento,
+            MAX(chuva_hoje) as max_chuva
+        FROM historico_clima
+        WHERE strftime('%Y', data_hora) = ?
+          AND strftime('%m', data_hora) = ?
+        """,
+        (ano, mes),
+    ).fetchone()
+
+    conn.close()
+
+    # Se não houver dados ainda, retorna tudo zerado
+    if not row or row["max_temp"] is None:
+        return jsonify({"max_temp": 0, "max_vento": 0, "max_chuva": 0})
+
+    return jsonify(
+        {
+            "max_temp": row["max_temp"],
+            "max_vento": row["max_vento"],
+            "max_chuva": row["max_chuva"],
+        }
+    )

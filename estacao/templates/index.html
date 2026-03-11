@@ -324,13 +324,16 @@
   </div>
 
   <div class="card">
-    <h3 class="text-base font-bold text-slate-800 mb-6">
-      <i class="fa-solid fa-chart-area text-indigo-500 mr-2"></i>
-      Condições Meteorológicas
+    <h3
+      id="titulo-grafico-recordes"
+      class="text-base font-bold text-slate-800 mb-6"
+    >
+      <i class="fa-solid fa-trophy text-yellow-500 mr-2"></i>
+      Recordes do Mês
     </h3>
 
     <div style="height: 260px">
-      <canvas id="graficoMeteo"></canvas>
+      <canvas id="graficoRecordes"></canvas>
     </div>
   </div>
 </div>
@@ -458,54 +461,6 @@
           options: { responsive: true, maintainAspectRatio: false },
         });
 
-        // GRAFICO METEO GERAL
-        const ctxMeteo = document
-          .getElementById("graficoMeteo")
-          .getContext("2d");
-        if (chartMeteo) chartMeteo.destroy();
-        chartMeteo = new Chart(ctxMeteo, {
-          data: {
-            labels: labelsTemp,
-            datasets: [
-              {
-                type: "line",
-                label: "Temperatura °C",
-                data: temps,
-                borderColor: "#f97316",
-                yAxisID: "y",
-              },
-              {
-                type: "line",
-                label: "Vento km/h",
-                data: ventos,
-                borderColor: "#14b8a6",
-                yAxisID: "y1",
-              },
-              {
-                type: "bar",
-                label: "Chuva mm",
-                data: chuvas,
-                backgroundColor: "#3b82f6",
-                yAxisID: "y2",
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            scales: {
-              y: { type: "linear", position: "left" },
-              y1: {
-                type: "linear",
-                position: "right",
-                grid: { drawOnChartArea: false },
-              },
-              y2: { type: "linear", position: "right", display: false },
-            },
-          },
-        });
-
         // ALERTA DE TEMPESTADE
         const ventoAtual = ventos[ventos.length - 1];
         const chuvaAtual = chuvas[chuvas.length - 1];
@@ -626,6 +581,58 @@
       });
   }
 
+  let chartRecordes; // Adicione isso no topo onde você declara as variáveis dos gráficos, se quiser
+
+  // GRÁFICO DE RECORDES (MÁXIMAS DO MÊS)
+  function renderizarGraficoRecordes() {
+    const agora = new Date();
+    const ano = agora.getFullYear();
+    const mes = String(agora.getMonth() + 1).padStart(2, "0");
+
+    // Nome do mês dinâmico para o título
+    const nomeMes = agora.toLocaleString("pt-BR", { month: "long" });
+    const tituloMes = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1);
+    document.getElementById("titulo-grafico-recordes").innerHTML =
+      `<i class="fa-solid fa-trophy text-yellow-500 mr-2"></i> Máximas em ${tituloMes}`;
+
+    fetch(`/api/recordes_mes?ano=${ano}&mes=${mes}`)
+      .then((res) => res.json())
+      .then((dados) => {
+        const ctxRecordes = document
+          .getElementById("graficoRecordes")
+          .getContext("2d");
+        if (chartRecordes) chartRecordes.destroy();
+
+        chartRecordes = new Chart(ctxRecordes, {
+          type: "bar",
+          data: {
+            labels: ["Temp Máx (°C)", "Vento Máx (km/h)", "Chuva Máx (mm)"],
+            datasets: [
+              {
+                label: "Valor Máximo",
+                data: [dados.max_temp, dados.max_vento, dados.max_chuva],
+                backgroundColor: [
+                  "#f97316", // Laranja para Temperatura
+                  "#14b8a6", // Teal para Vento
+                  "#3b82f6", // Azul para Chuva
+                ],
+                borderRadius: 6,
+                barThickness: 35,
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y", // Isso transforma as barras em horizontais
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false }, // Oculta a legenda para ficar mais limpo
+            },
+          },
+        });
+      });
+  }
+
   function abrirCadastro() {
     const modal = document.getElementById("modalCadastro");
     modal.classList.remove("hidden");
@@ -659,6 +666,7 @@
     renderizarGraficosDiarios();
     renderizarGraficoSemana();
     renderizarGraficoMes();
+    renderizarGraficoRecordes();
 
     // Atualiza clima a cada 10s e gráficos a cada 1 minuto
     setInterval(buscarClima, 10000);
@@ -666,6 +674,7 @@
       renderizarGraficosDiarios();
       renderizarGraficoSemana();
       renderizarGraficoMes();
+      renderizarGraficoRecordes();
     }, 60000);
 
     const telInput = document.getElementById("telefone");

@@ -154,12 +154,14 @@ def enviar_resumo_diario():
         log(f"❌ Erro ao gerar resumo diário: {e}")
 
 
-def verificar_alertas(temp, vento, chuva_hoje):
+def verificar_alertas(temp, rajada, chuva_hoje):
     estado = carregar_estado()
     hoje = datetime.date.today().isoformat()
     agora = datetime.datetime.now()
 
     if estado.get("data") != hoje:
+        if estado.get("data") != "":
+            salvar_resumo_diario_banco(estado["data"])
         estado = {
             "data": hoje,
             "chuva_next": 20,
@@ -178,9 +180,9 @@ def verificar_alertas(temp, vento, chuva_hoje):
             estado["chuva_next"] += 20
         alerta_acionado = True
 
-    if vento >= estado["vento_next"]:
-        motivos.append(f"💨 *Rajadas de Vento* de {vento:.1f} km/h")
-        while estado["vento_next"] <= vento:
+    if rajada >= estado["vento_next"]:
+        motivos.append(f"💨 *Rajadas de Vento* de {rajada:.1f} km/h")
+        while estado["vento_next"] <= rajada:
             estado["vento_next"] += 10
         alerta_acionado = True
 
@@ -196,7 +198,7 @@ def verificar_alertas(temp, vento, chuva_hoje):
         mensagem = "*Motivos do Alerta:*\n- " + "\n- ".join(motivos) + "\n\n"
         mensagem += "*📊 Condições neste exato momento:*\n"
         mensagem += f"🌡 Temperatura: {temp:.1f}°C\n"
-        mensagem += f"💨 Ventos: {vento:.1f} km/h\n"
+        mensagem += f"💨 Ventos: {rajada:.1f} km/h\n"
         mensagem += f"🌧 Chuva Hoje: {chuva_hoje:.1f} mm\n\n"
         mensagem += "📍 _Vicentina MS - Distrito de São José_"
 
@@ -261,6 +263,63 @@ def executar():
 
     except Exception as e:
         log(f"❌ Erro {e}")
+
+
+def salvar_resumo_diario_banco(data_ontem_str):
+    log(f"💾 Salvando resumo diário definitivo de {data_ontem_str}...")
+    try:
+        conn = sqlite3.connect(DB, timeout=10)
+
+        # 1. Calcula os extremos do dia que acabou de passar
+        resumo = conn.execute(
+            """
+            SELECT 
+                MIN(temp) as temp_min,
+                MAX(temp) as temp_max,
+                AVG(temp) as temp_media,
+                MIN(umidade) as umidade_min,
+                MAX(umidade) as umidade_max,
+                MAX(vento_rajada) as vento_rajada_max,
+                MAX(chuva_hoje) as chuva_total,
+                MIN(pressao) as pressao_min,
+                MAX(pressao) as pressao_max,
+                MAX(uv) as uv_max
+            FROM historico_clima
+            WHERE date(data_hora) = ?
+        """,
+            (data_ontem_str,),
+        ).fetchone()
+
+        # 2. Salva na nova tabela definitiva
+        if resumo and resumo[0] is not None:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO historico_diario (
+                    data, temp_min, temp_max, temp_media, 
+                    umidade_min, umidade_max, vento_rajada_max, 
+                    chuva_total, pressao_min, pressao_max, uv_max
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    data_ontem_str,
+                    resumo[0],
+                    resumo[1],
+                    round(resumo[2], 1),
+                    resumo[3],
+                    resumo[4],
+                    resumo[5],
+                    resumo[6],
+                    resumo[7],
+                    resumo[8],
+                    resumo[9],
+                ),
+            )
+            conn.commit()
+            log("✅ Resumo diário salvo com sucesso no banco!")
+
+        conn.close()
+    except Exception as e:
+        log(f"❌ Erro ao salvar resumo no banco: {e}")
 
 
 if __name__ == "__main__":

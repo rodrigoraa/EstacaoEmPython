@@ -292,7 +292,10 @@
     <!-- CHUVA DO MÊS -->
 
     <div class="card">
-      <h3 class="text-base font-bold text-slate-800 mb-6">
+      <h3
+        id="titulo-grafico-mes"
+        class="text-base font-bold text-slate-800 mb-6"
+      >
         <i class="fa-solid fa-calendar text-indigo-500 mr-2"></i>
         Chuva do Mês
       </h3>
@@ -563,29 +566,38 @@
   }
 
   // GRÁFICO DO MÊS (DIA 1 ATÉ 30/31)
+  // GRÁFICO DO MÊS (DIA 1 ATÉ 30/31)
   function renderizarGraficoMes() {
     const agora = new Date();
     const ano = agora.getFullYear();
-    const mes = String(agora.getMonth() + 1).padStart(2, "0"); // Mês atual formatado (ex: 09, 10)
+    const mes = String(agora.getMonth() + 1).padStart(2, "0"); // Mês atual formatado para a API (ex: 09, 10)
+
+    // 1. Pega o nome do mês em português e coloca no título
+    const nomeMes = agora.toLocaleString("pt-BR", { month: "long" });
+    const tituloMes = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1); // Deixa a 1ª letra maiúscula
+    document.getElementById("titulo-grafico-mes").innerHTML =
+      `<i class="fa-solid fa-calendar text-indigo-500 mr-2"></i> Chuva em ${tituloMes}`;
 
     fetch(`/api/historico_mes?ano=${ano}&mes=${mes}`)
       .then((res) => res.json())
       .then((dados) => {
-        // Pega quantos dias tem o mês atual
+        // Pega quantos dias tem o mês atual (ex: 28, 30 ou 31)
         const diasNoMes = new Date(ano, agora.getMonth() + 1, 0).getDate();
 
-        // Cria um mapa com todos os dias (01, 02, 03... até o fim do mês) zerados
+        // Cria um mapa com todos os dias (1, 2, 3... até o fim do mês) zerados
         const mapValores = {};
         for (let i = 1; i <= diasNoMes; i++) {
-          mapValores[String(i).padStart(2, "0")] = 0;
+          mapValores[String(i)] = 0; // Guardando como "1", "2" (sem o zero na frente)
         }
 
         // Preenche com os dias que realmente choveram
         dados.forEach((d) => {
-          mapValores[d.dia] = d.chuva;
+          // A API devolve "01", "02". Convertemos para número "1", "2" para bater com nosso mapa
+          const diaLimpo = String(parseInt(d.dia, 10));
+          mapValores[diaLimpo] = d.chuva;
         });
 
-        const labels = Object.keys(mapValores);
+        const labels = Object.keys(mapValores); // Os rótulos do eixo X (1, 2, 3...)
         const chuvaMes = Object.values(mapValores);
 
         // Soma o total do mês atual até o momento

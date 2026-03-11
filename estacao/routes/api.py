@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 import database
+import calendar
 
 api_routes = Blueprint("api", __name__)
 
@@ -234,5 +235,88 @@ def api_recordes_mes():
             "max_temp": row["max_temp"],
             "max_vento": row["max_vento"],
             "max_chuva": row["max_chuva"],
+        }
+    )
+
+
+# ================= HISTÓRICO MENSAL PROFISSIONAL =================
+
+
+@api_routes.route("/api/historico_consulta")
+def api_historico_consulta():
+    ano = request.args.get("ano")
+    mes = request.args.get("mes")
+
+    if not ano or not mes:
+        return jsonify({"erro": "Ano e mês são obrigatórios"}), 400
+
+    try:
+        ano_int = int(ano)
+        mes_int = int(mes)
+    except ValueError:
+        return jsonify({"erro": "Ano e mês inválidos"}), 400
+
+    # Descobre quantos dias tem no mês solicitado (Ex: Fevereiro de 2024 = 29 dias)
+    _, num_dias = calendar.monthrange(ano_int, mes_int)
+
+    # Cria listas vazias para todos os dias do mês
+    dias_lista = list(range(1, num_dias + 1))
+    chuva_lista = [0.0] * num_dias
+    temp_lista = [0.0] * num_dias
+
+    # Variáveis para os cards de resumo
+    total_chuva = 0.0
+    max_temp = 0.0
+    max_vento = 0.0
+
+    # Conecta no banco (ajuste 'database.get_db()' para a forma que você conecta aí, caso seja diferente)
+    conn = database.get_db()
+
+    # Busca na tabela diária! Muito mais rápido e leve!
+    linhas = conn.execute(
+        """
+        SELECT 
+            strftime('%d', data) as dia,
+            chuva_total,
+            temp_max,
+            vento_rajada_max
+        FROM historico_diario
+        WHERE strftime('%Y', data) = ? AND strftime('%m', data) = ?
+        """,
+        (ano, mes),
+    ).fetchall()
+
+    conn.close()
+
+    # Povoa as listas zeradas com os dados reais que encontramos no banco
+    for row in linhas:
+        # Pega o dia e converte para índice (Dia 1 fica no índice 0 da lista)
+        dia_idx = int(row["dia"]) - 1
+
+        # Se for NULL no banco, consideramos 0.0
+        chuva_dia = row["chuva_total"] or 0.0
+        temp_dia = row["temp_max"] or 0.0
+        vento_dia = row["vento_rajada_max"] or 0.0
+
+        # Coloca o valor exato na posição correta do gráfico
+        chuva_lista[dia_idx] = chuva_dia
+        temp_lista[dia_idx] = temp_dia
+
+        # Soma e calcula as máximas para os cards
+        total_chuva += chuva_dia
+        if temp_dia > max_temp:
+            max_temp = temp_dia
+        if vento_dia > max_vento:
+            max_vento = vento_dia
+
+    # Retorna o pacote completo e organizado para o JavaScript montar a tela
+    return jsonify(
+        {
+            "dias": dias_lista,
+            "chuva": chuva_lista,
+            "temperatura": temp_lista,
+            "total_chuva": total_chuva,
+            "max_temp": max_temp,
+            "max_vento": max_vento,
         }
     )

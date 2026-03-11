@@ -1,116 +1,204 @@
-{% extends "layout.html" %}
-
-{% block conteudo %}
+{% extends "layout.html" %} {% block conteudo %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <div class="max-w-6xl mx-auto px-4 mt-10 space-y-6 pb-12">
+  <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-3">
+    <i class="fa-solid fa-chart-area text-indigo-500"></i>
+    Histórico Meteorológico
+  </h1>
 
-    <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-3">
-        <i class="fa-solid fa-chart-area text-indigo-500"></i>
-        Histórico Meteorológico
-    </h1>
-
-    <div class="card flex flex-col sm:flex-row items-start sm:items-end gap-4">
-        <div class="flex-1 w-full sm:max-w-[200px]">
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Mês</label>
-            <select id="filtroMes"
-                class="w-full border border-slate-300 rounded-lg px-4 py-2.5 outline-none shadow-sm bg-slate-50">
-                <option value="01">Janeiro</option>
-                <option value="02">Fevereiro</option>
-                <option value="03" selected>Março</option>
-                <option value="04">Abril</option>
-                <option value="05">Maio</option>
-                <option value="06">Junho</option>
-                <option value="07">Julho</option>
-                <option value="08">Agosto</option>
-                <option value="09">Setembro</option>
-                <option value="10">Outubro</option>
-                <option value="11">Novembro</option>
-                <option value="12">Dezembro</option>
-            </select>
-        </div>
-
-        <div class="flex-1 w-full sm:max-w-[120px]">
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Ano</label>
-            <select id="filtroAno"
-                class="w-full border border-slate-300 rounded-lg px-4 py-2.5 outline-none shadow-sm bg-slate-50">
-                <option value="2025">2025</option>
-                <option value="2026" selected>2026</option>
-            </select>
-        </div>
-
-        <button onclick="carregarDados()"
-            class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg flex items-center justify-center gap-2">
-            <i class="fa-solid fa-magnifying-glass"></i> Buscar
-        </button>
+  <div class="card flex flex-col sm:flex-row items-start sm:items-end gap-4">
+    <div class="flex-1 w-full sm:max-w-[200px]">
+      <label class="block text-sm font-semibold text-slate-700 mb-1">Mês</label>
+      <select
+        id="filtroMes"
+        class="w-full border border-slate-300 rounded-lg px-4 py-2.5 outline-none shadow-sm bg-slate-50"
+      >
+        <option value="01">Janeiro</option>
+        <option value="02">Fevereiro</option>
+        <option value="03">Março</option>
+        <option value="04">Abril</option>
+        <option value="05">Maio</option>
+        <option value="06">Junho</option>
+        <option value="07">Julho</option>
+        <option value="08">Agosto</option>
+        <option value="09">Setembro</option>
+        <option value="10">Outubro</option>
+        <option value="11">Novembro</option>
+        <option value="12">Dezembro</option>
+      </select>
     </div>
 
-    <div class="card relative min-h-[400px]">
-        <div id="mensagemVazia" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
-            <i class="fa-solid fa-calendar-days text-4xl mb-3 opacity-50"></i>
-            <p>Selecione o período e clique em Buscar.</p>
-        </div>
-        <canvas id="graficoMes" class="relative z-10"></canvas>
+    <div class="flex-1 w-full sm:max-w-[120px]">
+      <label class="block text-sm font-semibold text-slate-700 mb-1">Ano</label>
+      <select
+        id="filtroAno"
+        class="w-full border border-slate-300 rounded-lg px-4 py-2.5 outline-none shadow-sm bg-slate-50"
+      >
+        <option value="2024">2024</option>
+        <option value="2025">2025</option>
+        <option value="2026">2026</option>
+      </select>
     </div>
 
+    <button
+      onclick="carregarDados()"
+      class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg flex items-center justify-center gap-2"
+    >
+      <i class="fa-solid fa-magnifying-glass"></i> Buscar
+    </button>
+  </div>
+
+  <div id="cardsResumo" class="grid grid-cols-1 md:grid-cols-3 gap-4 hidden">
+    <div class="card bg-blue-50 border-l-4 border-blue-500">
+      <p class="text-sm text-slate-500 font-semibold mb-1">Total de Chuva</p>
+      <p class="text-2xl font-bold text-blue-700" id="resumoChuva">-- mm</p>
+    </div>
+    <div class="card bg-orange-50 border-l-4 border-orange-500">
+      <p class="text-sm text-slate-500 font-semibold mb-1">Maior Temperatura</p>
+      <p class="text-2xl font-bold text-orange-700" id="resumoTempMax">-- °C</p>
+    </div>
+    <div class="card bg-teal-50 border-l-4 border-teal-500">
+      <p class="text-sm text-slate-500 font-semibold mb-1">Maior Rajada</p>
+      <p class="text-2xl font-bold text-teal-700" id="resumoVento">-- km/h</p>
+    </div>
+  </div>
+
+  <div class="card relative min-h-[400px]">
+    <div
+      id="mensagemVazia"
+      class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-white z-20"
+    >
+      <i class="fa-solid fa-calendar-days text-4xl mb-3 opacity-50"></i>
+      <p id="textoMensagem">Selecione o período e clique em Buscar.</p>
+    </div>
+    <div style="height: 400px">
+      <canvas id="graficoMes" class="relative z-10"></canvas>
+    </div>
+  </div>
 </div>
 
 <script>
-    let chart;
+  let chart;
 
-    function carregarDados() {
-        const mes = document.getElementById("filtroMes").value;
-        const ano = document.getElementById("filtroAno").value;
-        const msgVazia = document.getElementById("mensagemVazia");
+  // Função para selecionar o mês e ano atual automaticamente ao abrir a página
+  document.addEventListener("DOMContentLoaded", () => {
+    const agora = new Date();
+    document.getElementById("filtroMes").value = String(
+      agora.getMonth() + 1,
+    ).padStart(2, "0");
 
-        // Faz a chamada para a API
-        fetch(`/api/historico_mes?ano=${ano}&mes=${mes}`)
-            .then(r => r.json())
-            .then(dados => {
-                if (!dados || dados.length === 0) {
-                    alert("Nenhum dado encontrado para este mês.");
-                    return;
-                }
-
-                // Esconde a mensagem de "selecione"
-                if (msgVazia) msgVazia.style.display = 'none';
-
-                const ctx = document.getElementById("graficoMes").getContext('2d');
-
-                // Se já existir um gráfico, destrói para criar o novo (evita sobreposição)
-                if (chart) chart.destroy();
-
-                chart = new Chart(ctx, {
-                    type: "bar",
-                    data: {
-                        labels: dados.map(d => d.dia),
-                        datasets: [
-                            {
-                                label: "Chuva (mm)",
-                                data: dados.map(d => d.chuva),
-                                backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                                borderColor: 'rgb(59, 130, 246)',
-                                borderWidth: 1
-                            },
-                            {
-                                type: "line",
-                                label: "Temp. Média (°C)",
-                                data: dados.map(d => d.temperatura),
-                                borderColor: 'rgb(249, 115, 22)',
-                                tension: 0.3
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false
-                    }
-                });
-            })
-            .catch(err => {
-                console.error("Erro ao buscar dados:", err);
-                alert("Erro ao carregar os dados do servidor.");
-            });
+    // Verifica se o ano atual existe nas opções, se não, adiciona
+    const anoAtual = String(agora.getFullYear());
+    const selectAno = document.getElementById("filtroAno");
+    let anoExiste = Array.from(selectAno.options).some(
+      (opt) => opt.value === anoAtual,
+    );
+    if (!anoExiste) {
+      selectAno.add(new Option(anoAtual, anoAtual));
     }
+    selectAno.value = anoAtual;
+  });
+
+  function carregarDados() {
+    const mes = document.getElementById("filtroMes").value;
+    const ano = document.getElementById("filtroAno").value;
+    const msgVazia = document.getElementById("mensagemVazia");
+    const textoMsg = document.getElementById("textoMensagem");
+    const cardsResumo = document.getElementById("cardsResumo");
+
+    msgVazia.style.display = "flex";
+    textoMsg.innerText = "Buscando dados...";
+    cardsResumo.classList.add("hidden"); // Esconde os cards até carregar
+
+    fetch(`/api/historico_consulta?ano=${ano}&mes=${mes}`)
+      .then((r) => r.json())
+      .then((dados) => {
+        // Verifica se veio sem dados ou com dados zerados
+        if (
+          !dados ||
+          dados.dias.length === 0 ||
+          (dados.total_chuva === 0 && dados.max_temp === 0)
+        ) {
+          textoMsg.innerText = "Nenhum registro encontrado para este mês.";
+          if (chart) chart.destroy();
+          return;
+        }
+
+        // Esconde a mensagem e mostra os cards
+        msgVazia.style.display = "none";
+        cardsResumo.classList.remove("hidden");
+
+        // Preenche os cards de resumo
+        document.getElementById("resumoChuva").innerText =
+          `${dados.total_chuva.toFixed(1)} mm`;
+        document.getElementById("resumoTempMax").innerText =
+          `${dados.max_temp.toFixed(1)} °C`;
+        document.getElementById("resumoVento").innerText =
+          `${dados.max_vento.toFixed(1)} km/h`;
+
+        const ctx = document.getElementById("graficoMes").getContext("2d");
+        if (chart) chart.destroy();
+
+        chart = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: dados.dias, // Ex: [1, 2, 3, 4 ... 31]
+            datasets: [
+              {
+                type: "bar",
+                label: "Chuva Acumulada (mm)",
+                data: dados.chuva,
+                backgroundColor: "#3b82f6", // Azul Tailwind
+                borderRadius: 4,
+                yAxisID: "y", // Associa ao eixo Y da esquerda
+              },
+              {
+                type: "line",
+                label: "Temperatura Máx (°C)",
+                data: dados.temperatura,
+                borderColor: "#f97316", // Laranja Tailwind
+                backgroundColor: "#f97316",
+                tension: 0.3,
+                borderWidth: 3,
+                pointRadius: 2,
+                yAxisID: "y1", // Associa ao eixo Y da direita
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+              },
+              y: {
+                type: "linear",
+                display: true,
+                position: "left",
+                title: { display: true, text: "Chuva (mm)" },
+                min: 0,
+              },
+              y1: {
+                type: "linear",
+                display: true,
+                position: "right",
+                title: { display: true, text: "Temperatura (°C)" },
+                grid: { drawOnChartArea: false }, // Não desenha linhas de grade para não poluir
+              },
+            },
+          },
+        });
+      })
+      .catch((err) => {
+        console.error("Erro ao buscar dados:", err);
+        textoMsg.innerText = "Erro ao carregar os dados. Tente novamente.";
+      });
+  }
 </script>
 {% endblock %}

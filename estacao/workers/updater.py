@@ -54,26 +54,28 @@ def salvar_leitura(dados):
 
 
 def carregar_estado():
+    padrao = {
+        "data": "",
+        "nivel_calor": 0,
+        "nivel_frio": 0,
+        "nivel_vento": 0,
+        "nivel_chuva": 0,
+        "nivel_umidade": 0,
+        "nivel_uv": 0,
+    }
+
     if not os.path.exists(STATE_FILE):
-        return {
-            "data": "",
-            "chuva_next": 20,
-            "vento_next": 35,
-            "temp_next": 36,
-            "alerta_enviado_hoje": False,
-            "resumo_enviado_hoje": False,
-        }
-    with open(STATE_FILE, "r") as f:
-        estado = json.load(f)
-        if "chuva_next" not in estado:
-            estado["chuva_next"] = 20
-            estado["vento_next"] = 35
-            estado["temp_next"] = 36
-        if "alerta_enviado_hoje" not in estado:
-            estado["alerta_enviado_hoje"] = False
-        if "resumo_enviado_hoje" not in estado:
-            estado["resumo_enviado_hoje"] = False
-        return estado
+        return padrao
+
+    try:
+        with open(STATE_FILE, "r") as f:
+            estado = json.load(f)
+            for chave, valor in padrao.items():
+                if chave not in estado:
+                    estado[chave] = valor
+            return estado
+    except:
+        return padrao
 
 
 def salvar_estado(estado):
@@ -82,7 +84,7 @@ def salvar_estado(estado):
 
 
 def enviar_alerta(mensagem):
-    log(f"🚨 Enviando Resumo de Alerta...")
+    log(f"🚨 Disparando Alerta Crítico para usuários...")
     conn = sqlite3.connect(DB, timeout=10)
     conn.row_factory = sqlite3.Row
 
@@ -103,7 +105,8 @@ def enviar_alerta(mensagem):
 
         link_cancelar = f"http://meteo.eesjv.com.br/unsubscribe?tel={telefone}"
 
-        mensagem_final = f"⚠️ *Alerta Meteorológico*\n\n{mensagem}\n\n🛑 Para parar de receber alertas, acesse:\n{link_cancelar}"
+        # Estrutura base da mensagem para todos os alertas
+        mensagem_final = f"{mensagem}\n\n📍 _Vicentina MS - Distrito de São José_\n🛑 Para cancelar alertas, acesse:\n{link_cancelar}"
 
         try:
             enviar_whatsapp(telefone, mensagem_final)
@@ -112,107 +115,115 @@ def enviar_alerta(mensagem):
             log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
 
 
-def enviar_resumo_diario():
-    log("📊 A gerar o resumo diário geral da estação (18h)...")
-    try:
-        conn = sqlite3.connect(DB, timeout=10)
-        conn.row_factory = sqlite3.Row
-        hoje_str = datetime.date.today().strftime("%Y-%m-%d")
-
-        resumo = conn.execute(
-            """
-            SELECT 
-                MIN(temp) as temp_min,
-                MAX(temp) as temp_max,
-                MIN(umidade) as umidade_min,
-                MAX(umidade) as umidade_max,
-                MAX(vento_rajada) as max_vento,
-                MAX(chuva_hoje) as chuva_total,
-                MAX(uv) as uv_max,
-                MAX(pressao) as pressao_max,
-                MIN(pressao) as pressao_min
-            FROM historico_clima
-            WHERE date(data_hora) = ?
-        """,
-            (hoje_str,),
-        ).fetchone()
-        conn.close()
-
-        if resumo and resumo["temp_max"] is not None:
-            mensagem = "🌅 *Resumo Meteorológico do Dia*\n\n"
-            mensagem += "Nenhum alerta crítico foi registado hoje. Confira os dados da estação:\n\n"
-            mensagem += f"🌡 *Temperatura*: {resumo['temp_min']:.1f}°C a {resumo['temp_max']:.1f}°C\n"
-            mensagem += f"💧 *Humidade*: {resumo['umidade_min']:.0f}% a {resumo['umidade_max']:.0f}%\n"
-            mensagem += f"💨 *Vento Máximo*: {resumo['max_vento']:.1f} km/h\n"
-            mensagem += f"🌧 *Chuva Acumulada*: {resumo['chuva_total']:.1f} mm\n"
-            mensagem += f"☀️ *Índice UV (Máx)*: {resumo['uv_max']:.1f}\n"
-            mensagem += f"🧭 *Pressão Atmosférica*: {resumo['pressao_min']:.1f} a {resumo['pressao_max']:.1f} hPa\n\n"
-            mensagem += "📍 _Vicentina MS - Distrito de São José_"
-
-            enviar_alerta(mensagem)
-    except Exception as e:
-        log(f"❌ Erro ao gerar resumo diário: {e}")
-
-
-def verificar_alertas(temp, rajada, chuva_hoje):
+def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
     estado = carregar_estado()
     hoje = datetime.date.today().isoformat()
-    agora = datetime.datetime.now()
 
+    # Mudança de dia: Salva o resumo de ontem no banco de dados e zera a memória de alertas
     if estado.get("data") != hoje:
         if estado.get("data") != "":
             salvar_resumo_diario_banco(estado["data"])
+
         estado = {
             "data": hoje,
-            "chuva_next": 20,
-            "vento_next": 35,
-            "temp_next": 36,
-            "alerta_enviado_hoje": False,
-            "resumo_enviado_hoje": False,
+            "nivel_calor": 0,
+            "nivel_frio": 0,
+            "nivel_vento": 0,
+            "nivel_chuva": 0,
+            "nivel_umidade": 0,
+            "nivel_uv": 0,
         }
+        salvar_estado(estado)
 
-    alerta_acionado = False
-    motivos = []
+    # ================= REGRAS DE TEMPERATURA (CALOR) =================
+    if temp >= 40 and estado["nivel_calor"] < 2:
+        msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{temp:.1f}°C*. Risco iminente de insolação. Evite exposição ao sol e hidrate-se imediatamente!"
+        enviar_alerta(msg)
+        estado["nivel_calor"] = 2
+        salvar_estado(estado)
 
-    if chuva_hoje >= estado["chuva_next"]:
-        motivos.append(f"🌧️ *Chuva* atingiu {chuva_hoje:.1f} mm")
-        while estado["chuva_next"] <= chuva_hoje:
-            estado["chuva_next"] += 20
-        alerta_acionado = True
+    elif temp >= 35 and estado["nivel_calor"] < 1:
+        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C*. Calor forte na região com risco de desconforto térmico. Beba bastante água."
+        enviar_alerta(msg)
+        estado["nivel_calor"] = 1
+        salvar_estado(estado)
 
-    if rajada >= estado["vento_next"]:
-        motivos.append(f"💨 *Rajadas de Vento* de {rajada:.1f} km/h")
-        while estado["vento_next"] <= rajada:
-            estado["vento_next"] += 10
-        alerta_acionado = True
+    # ================= REGRAS DE TEMPERATURA (FRIO) =================
+    if temp <= 0 and estado["nivel_frio"] < 3:
+        msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C*. Condição extrema com alto risco de geada severa, danos às lavouras e hipotermia. Proteja pessoas vulneráveis, animais e plantas sensíveis imediatamente!"
+        enviar_alerta(msg)
+        estado["nivel_frio"] = 3
+        salvar_estado(estado)
 
-    if temp >= estado["temp_next"]:
-        motivos.append(f"🌡️ *Temperatura* bateu {temp:.1f}°C")
-        while estado["temp_next"] <= temp:
-            estado["temp_next"] += 2
-        alerta_acionado = True
+    elif temp <= 5 and estado["nivel_frio"] < 2:
+        msg = f"🧊 *ALERTA CRÍTICO: Frio Extremo!*\nA temperatura caiu para *{temp:.1f}°C*. Risco grave à saúde humana e animal. Proteja-se do frio intenso."
+        enviar_alerta(msg)
+        estado["nivel_frio"] = 2
+        salvar_estado(estado)
 
-    if alerta_acionado:
-        estado["alerta_enviado_hoje"] = True
+    elif temp <= 12 and estado["nivel_frio"] < 1:
+        msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C*. Frio incomum para a região. Agasalhe-se bem."
+        enviar_alerta(msg)
+        estado["nivel_frio"] = 1
+        salvar_estado(estado)
 
-        mensagem = "*Motivos do Alerta:*\n- " + "\n- ".join(motivos) + "\n\n"
-        mensagem += "*📊 Condições neste exato momento:*\n"
-        mensagem += f"🌡 Temperatura: {temp:.1f}°C\n"
-        mensagem += f"💨 Ventos: {rajada:.1f} km/h\n"
-        mensagem += f"🌧 Chuva Hoje: {chuva_hoje:.1f} mm\n\n"
-        mensagem += "📍 _Vicentina MS - Distrito de São José_"
+    # ================= REGRAS DE VENTO =================
+    if rajada >= 100 and estado["nivel_vento"] < 3:
+        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*. Alto risco de destelhamentos e queda de árvores. Permaneça em local seguro!"
+        enviar_alerta(msg)
+        estado["nivel_vento"] = 3
+        salvar_estado(estado)
 
-        enviar_alerta(mensagem)
+    elif rajada >= 70 and estado["nivel_vento"] < 2:
+        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*. Possibilidade de danos na infraestrutura e rede elétrica. Atenção redobrada."
+        enviar_alerta(msg)
+        estado["nivel_vento"] = 2
+        salvar_estado(estado)
 
-    if (
-        agora.hour >= 18
-        and not estado["alerta_enviado_hoje"]
-        and not estado["resumo_enviado_hoje"]
-    ):
-        enviar_resumo_diario()
-        estado["resumo_enviado_hoje"] = True
+    elif rajada >= 40 and estado["nivel_vento"] < 1:
+        msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*. Risco de queda de galhos e objetos soltos."
+        enviar_alerta(msg)
+        estado["nivel_vento"] = 1
+        salvar_estado(estado)
 
-    salvar_estado(estado)
+    # ================= REGRAS DE CHUVA =================
+    if chuva_hoje >= 100 and estado["nivel_chuva"] < 2:
+        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje. Risco grave de enxurradas e transbordamentos. Evite áreas de risco!"
+        enviar_alerta(msg)
+        estado["nivel_chuva"] = 2
+        salvar_estado(estado)
+
+    elif chuva_hoje >= 50 and estado["nivel_chuva"] < 1:
+        msg = f"🌧️ *ALERTA: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm*. Risco de alagamentos em pontos isolados. Dirija com cuidado."
+        enviar_alerta(msg)
+        estado["nivel_chuva"] = 1
+        salvar_estado(estado)
+
+    # ================= REGRAS DE UMIDADE =================
+    if umidade <= 20 and estado["nivel_umidade"] < 2:
+        msg = f"🆘 *ALERTA CRÍTICO: Umidade Muito Baixa!*\nAr extremamente seco, registrando apenas *{umidade}%*. Grave risco à saúde e alto potencial de incêndios. Evite exercícios físicos e umidifique o ambiente."
+        enviar_alerta(msg)
+        estado["nivel_umidade"] = 2
+        salvar_estado(estado)
+
+    elif umidade <= 30 and estado["nivel_umidade"] < 1:
+        msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*. Causa desconforto respiratório. Beba bastante água."
+        enviar_alerta(msg)
+        estado["nivel_umidade"] = 1
+        salvar_estado(estado)
+
+    # ================= REGRAS DE RADIAÇÃO UV =================
+    if uv >= 11 and estado.get("nivel_uv", 0) < 2:
+        msg = f"🟣 *ALERTA CRÍTICO: Radiação UV Extrema!*\nO Índice UV atingiu o nível máximo de *{uv:.1f}*. Risco extremo de queimaduras severas na pele em poucos minutos. Evite totalmente o sol, busque sombra e use proteção máxima!"
+        enviar_alerta(msg)
+        estado["nivel_uv"] = 2
+        salvar_estado(estado)
+
+    elif uv >= 8 and estado.get("nivel_uv", 0) < 1:
+        msg = f"🔴 *ALERTA FORTE: Radiação UV Muito Alta!*\nO Índice UV está em *{uv:.1f}*. Risco alto de insolação e danos à pele. Se precisar sair, use chapéu, óculos escuros e bastante protetor solar."
+        enviar_alerta(msg)
+        estado["nivel_uv"] = 1
+        salvar_estado(estado)
 
 
 def executar():
@@ -240,9 +251,11 @@ def executar():
         chuva_evento = dados["chuva_evento"]
         chuva_hoje = dados["chuva_hoje"]
 
-        log(f"🌡 {temp}°C | 💧 {umidade}% | 💨 {vento} km/h | 🌧 {chuva_hoje} mm")
+        log(
+            f"🌡 {temp}°C | 💧 {umidade}% | 💨 {rajada} km/h (Rajada) | 🌧 {chuva_hoje} mm | ☀️ UV: {uv}"
+        )
 
-        verificar_alertas(temp, rajada, chuva_hoje)
+        verificar_alertas(temp, rajada, chuva_hoje, umidade, uv)
 
         salvar_leitura(
             (
@@ -270,7 +283,6 @@ def salvar_resumo_diario_banco(data_ontem_str):
     try:
         conn = sqlite3.connect(DB, timeout=10)
 
-        # 1. Calcula os extremos do dia que acabou de passar
         resumo = conn.execute(
             """
             SELECT 
@@ -290,7 +302,6 @@ def salvar_resumo_diario_banco(data_ontem_str):
             (data_ontem_str,),
         ).fetchone()
 
-        # 2. Salva na nova tabela definitiva
         if resumo and resumo[0] is not None:
             conn.execute(
                 """

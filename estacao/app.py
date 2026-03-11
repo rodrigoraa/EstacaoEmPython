@@ -7,6 +7,11 @@ import os
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
+
+# --- ADICIONE ESTA LINHA PARA DESLIGAR O LIMITE COMPLETAMENTE ---
+app.config["RATELIMIT_ENABLED"] = False 
+# ----------------------------------------------------------------
+
 limiter = Limiter(
     key_func=get_remote_address
 )

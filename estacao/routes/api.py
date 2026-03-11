@@ -9,7 +9,6 @@ api_routes = Blueprint("api", __name__)
 
 @api_routes.route("/api/clima")
 def api_clima():
-
     conn = database.get_db()
 
     row = conn.execute(
@@ -65,7 +64,6 @@ def api_clima():
 
 @api_routes.route("/api/historico")
 def api_historico():
-
     conn = database.get_db()
 
     dados = conn.execute(
@@ -104,7 +102,6 @@ def api_historico():
 
 @api_routes.route("/api/ultimo")
 def api_ultimo():
-
     conn = database.get_db()
 
     row = conn.execute(
@@ -135,6 +132,40 @@ def api_ultimo():
     )
 
 
+# ================= HISTÓRICO DA SEMANA =================
+
+
+@api_routes.route("/api/historico_semana")
+def api_historico_semana():
+    conn = database.get_db()
+
+    # strftime('%W') = Agrupa pela semana atual do ano
+    # strftime('%w') = Pega o dia da semana (0=Dom, 1=Seg, 2=Ter, etc)
+    dados = conn.execute(
+        """
+        SELECT
+            strftime('%w', data_hora) as dia_semana,
+            MAX(chuva_hoje) as chuva
+        FROM historico_clima
+        WHERE strftime('%W', data_hora) = strftime('%W', 'now', 'localtime')
+          AND strftime('%Y', data_hora) = strftime('%Y', 'now', 'localtime')
+        GROUP BY dia_semana
+        ORDER BY dia_semana ASC
+        """
+    ).fetchall()
+
+    conn.close()
+
+    resultado = []
+    for row in dados:
+        resultado.append({"dia_semana": row["dia_semana"], "chuva": row["chuva"]})
+
+    return jsonify(resultado)
+
+
+# ================= HISTÓRICO DO MÊS =================
+
+
 @api_routes.route("/api/historico_mes")
 def historico_mes():
     ano = request.args.get("ano")
@@ -143,7 +174,7 @@ def historico_mes():
     if not ano or not mes:
         return jsonify([])
 
-    conn = database.get_db() 
+    conn = database.get_db()
 
     dados = conn.execute(
         """

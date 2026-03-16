@@ -306,10 +306,7 @@
         document.getElementById("resumoVento").innerText =
           `${dados.max_vento.toFixed(1)} km/h`;
 
-        // Cores padrão exigidas:
-        // Azul: #3b82f6 | Vermelho: #ef4444 | Laranja: #f97316 | Branco: #ffffff
-
-        // 1. Gráfico de Chuva (Apenas Azul)
+        // 1. Gráfico de Chuva (Azul)
         renderizarGrafico("graficoChuva", "bar", dados.dias, [
           {
             label: "Chuva (mm)",
@@ -319,7 +316,7 @@
           },
         ]);
 
-        // 2. Gráfico de Temperaturas
+        // 2. Gráfico de Temperaturas (Vermelho, Branco/Laranja, Azul - Excelente Contraste)
         renderizarGrafico("graficoTemp", "bar", dados.dias, [
           {
             label: "Máxima",
@@ -330,20 +327,20 @@
           {
             label: "Média",
             data: dados.temp_media,
-            backgroundColor: "#f97316", // LARANJA
+            backgroundColor: "#ffffff", // BRANCO
+            borderColor: "#f97316", // Borda LARANJA (Cria barreira visual)
+            borderWidth: 2,
             borderRadius: 4,
           },
           {
             label: "Mínima",
             data: dados.temp_min,
-            backgroundColor: "#ffffff", // BRANCO
-            borderColor: "#3b82f6", // Borda azul para não sumir no fundo branco
-            borderWidth: 2,
+            backgroundColor: "#3b82f6", // AZUL
             borderRadius: 4,
           },
         ]);
 
-        // 3. Gráfico de Vento e UV
+        // 3. Gráfico de Vento e UV (Laranja e Azul - Excelente Contraste)
         renderizarGrafico(
           "graficoVentoUv",
           "bar",
@@ -359,7 +356,7 @@
             {
               label: "Rajada (km/h)",
               data: dados.vento,
-              backgroundColor: "#ef4444", // VERMELHO
+              backgroundColor: "#3b82f6", // AZUL
               borderRadius: 4,
               yAxisID: "y",
             },
@@ -381,7 +378,7 @@
           },
         );
 
-        // 4. Gráfico de Umidade
+        // 4. Gráfico de Umidade (Azul e Branco/Vermelho)
         renderizarGrafico("graficoUmidade", "bar", dados.dias, [
           {
             label: "Umidade Máxima (%)",
@@ -393,7 +390,7 @@
             label: "Umidade Mínima (%)",
             data: dados.umidade_min,
             backgroundColor: "#ffffff", // BRANCO
-            borderColor: "#f97316", // Borda Laranja
+            borderColor: "#ef4444", // Borda VERMELHA
             borderWidth: 2,
             borderRadius: 4,
           },

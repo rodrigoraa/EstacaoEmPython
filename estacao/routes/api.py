@@ -353,3 +353,32 @@ def api_historico_consulta():
             "max_vento": max_vento,
         }
     )
+
+
+@api_routes.route("/api/anos_disponiveis")
+def api_anos_disponiveis():
+    conn = database.get_db()
+    # Pega apenas os anos de forma única (sem repetir) e em ordem decrescente
+    linhas = conn.execute(
+        """
+        SELECT DISTINCT strftime('%Y', data) as ano 
+        FROM historico_diario 
+        WHERE data IS NOT NULL 
+        ORDER BY ano DESC
+    """
+    ).fetchall()
+    conn.close()
+
+    anos = [row["ano"] for row in linhas if row["ano"]]
+
+    # Se o banco for novo e estiver vazio, mostra pelo menos o ano atual
+    import datetime
+
+    ano_atual = str(datetime.datetime.now().year)
+
+    if not anos:
+        anos = [ano_atual]
+    elif ano_atual not in anos:
+        anos.insert(0, ano_atual)  # Garante que o ano atual sempre esteja na lista
+
+    return jsonify(anos)

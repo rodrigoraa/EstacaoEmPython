@@ -36,11 +36,7 @@
       <select
         id="filtroAno"
         class="w-full border border-slate-300 rounded-lg px-4 py-2.5 outline-none shadow-sm bg-slate-50"
-      >
-        <option value="2024">2024</option>
-        <option value="2025">2025</option>
-        <option value="2026">2026</option>
-      </select>
+      ></select>
     </div>
 
     <button
@@ -49,6 +45,7 @@
     >
       <i class="fa-solid fa-magnifying-glass"></i> Buscar Dados
     </button>
+    <p>Os dados registrados a partir do dia 11/03/2026</p>
   </div>
 
   <div id="cardsResumo" class="grid grid-cols-2 md:grid-cols-4 gap-4 hidden">
@@ -180,15 +177,39 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     const agora = new Date();
+    const anoAtual = String(agora.getFullYear());
+
+    // Já deixa o mês atual selecionado
     document.getElementById("filtroMes").value = String(
       agora.getMonth() + 1,
     ).padStart(2, "0");
-    const anoAtual = String(agora.getFullYear());
-    const selectAno = document.getElementById("filtroAno");
-    if (!Array.from(selectAno.options).some((opt) => opt.value === anoAtual)) {
-      selectAno.add(new Option(anoAtual, anoAtual));
-    }
-    selectAno.value = anoAtual;
+
+    // Busca no banco de dados quais anos existem
+    fetch("/api/anos_disponiveis")
+      .then((res) => res.json())
+      .then((anos) => {
+        const selectAno = document.getElementById("filtroAno");
+        selectAno.innerHTML = ""; // Limpa qualquer opção fantasma
+
+        // Cria uma opção no menu para cada ano encontrado no banco
+        anos.forEach((ano) => {
+          selectAno.add(new Option(ano, ano));
+        });
+
+        // Tenta selecionar o ano atual automaticamente.
+        // Se não tiver, seleciona o último ano que tem no banco
+        if (anos.includes(anoAtual)) {
+          selectAno.value = anoAtual;
+        } else {
+          selectAno.value = anos[0];
+        }
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar anos:", err);
+        // Em caso de erro na internet, cria pelo menos o ano atual para não quebrar a tela
+        const selectAno = document.getElementById("filtroAno");
+        selectAno.add(new Option(anoAtual, anoAtual));
+      });
   });
 
   function fecharDetalhes() {

@@ -294,7 +294,6 @@
         document.getElementById("resumoVento").innerText =
           `${dados.max_vento.toFixed(1)} km/h`;
 
-        // 1. Gráfico de Chuva (Barras)
         renderizarGrafico("graficoChuva", "bar", dados.dias, [
           {
             label: "Chuva (mm)",
@@ -304,49 +303,42 @@
           },
         ]);
 
-        // 2. Gráfico de Temperaturas (Linhas Máx, Mín e Média)
-        renderizarGrafico("graficoTemp", "line", dados.dias, [
+        // 2. Gráfico de Temperaturas (Tudo em Barras Agrupadas)
+        renderizarGrafico("graficoTemp", "bar", dados.dias, [
           {
             label: "Máxima",
             data: dados.temp_max,
-            borderColor: "#ef4444",
             backgroundColor: "#ef4444",
-            tension: 0.3,
+            borderRadius: 4,
           },
           {
             label: "Média",
             data: dados.temp_media,
-            borderColor: "#10b981",
             backgroundColor: "#10b981",
-            tension: 0.3,
-            borderDash: [5, 5],
+            borderRadius: 4,
           },
           {
             label: "Mínima",
             data: dados.temp_min,
-            borderColor: "#06b6d4",
             backgroundColor: "#06b6d4",
-            tension: 0.3,
+            borderRadius: 4,
           },
         ]);
 
-        // 3. Gráfico de Vento e UV (Misto)
+        // 3. Gráfico de Vento e UV (Tudo em Barras Agrupadas)
         renderizarGrafico(
           "graficoVentoUv",
           "bar",
           dados.dias,
           [
             {
-              type: "line",
               label: "Índice UV",
               data: dados.uv,
-              borderColor: "#a855f7",
               backgroundColor: "#a855f7",
+              borderRadius: 4,
               yAxisID: "y1",
-              tension: 0.3,
             },
             {
-              type: "bar",
               label: "Rajada (km/h)",
               data: dados.vento,
               backgroundColor: "#94a3b8",
@@ -371,22 +363,19 @@
           },
         );
 
-        // 4. Gráfico de Umidade (Linhas)
-        renderizarGrafico("graficoUmidade", "line", dados.dias, [
+        // 4. Gráfico de Umidade (Barras Agrupadas)
+        renderizarGrafico("graficoUmidade", "bar", dados.dias, [
           {
             label: "Umidade Máxima (%)",
             data: dados.umidade_max,
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59, 130, 246, 0.1)",
-            fill: true,
-            tension: 0.3,
+            backgroundColor: "#3b82f6",
+            borderRadius: 4,
           },
           {
             label: "Umidade Mínima (%)",
             data: dados.umidade_min,
-            borderColor: "#eab308",
-            backgroundColor: "transparent",
-            tension: 0.3,
+            backgroundColor: "#eab308",
+            borderRadius: 4,
           },
         ]);
       })

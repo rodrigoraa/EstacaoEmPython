@@ -45,7 +45,7 @@
     >
       <i class="fa-solid fa-magnifying-glass"></i> Buscar Dados
     </button>
-    <p>Os dados registrados a partir do dia 11/03/2026</p>
+    <p>Dados registrados a partir do dia 11/03/2026</p>
   </div>
 
   <div id="cardsResumo" class="grid grid-cols-2 md:grid-cols-4 gap-4 hidden">
@@ -173,31 +173,26 @@
 
 <script>
   let charts = {};
-  let dadosGlobais = {}; // Salva os dados para preencher o painel ao clicar
+  let dadosGlobais = {};
 
   document.addEventListener("DOMContentLoaded", () => {
     const agora = new Date();
     const anoAtual = String(agora.getFullYear());
 
-    // Já deixa o mês atual selecionado
     document.getElementById("filtroMes").value = String(
       agora.getMonth() + 1,
     ).padStart(2, "0");
 
-    // Busca no banco de dados quais anos existem
     fetch("/api/anos_disponiveis")
       .then((res) => res.json())
       .then((anos) => {
         const selectAno = document.getElementById("filtroAno");
-        selectAno.innerHTML = ""; // Limpa qualquer opção fantasma
+        selectAno.innerHTML = "";
 
-        // Cria uma opção no menu para cada ano encontrado no banco
         anos.forEach((ano) => {
           selectAno.add(new Option(ano, ano));
         });
 
-        // Tenta selecionar o ano atual automaticamente.
-        // Se não tiver, seleciona o último ano que tem no banco
         if (anos.includes(anoAtual)) {
           selectAno.value = anoAtual;
         } else {
@@ -206,7 +201,6 @@
       })
       .catch((err) => {
         console.error("Erro ao carregar anos:", err);
-        // Em caso de erro na internet, cria pelo menos o ano atual para não quebrar a tela
         const selectAno = document.getElementById("filtroAno");
         selectAno.add(new Option(anoAtual, anoAtual));
       });
@@ -216,7 +210,6 @@
     document.getElementById("painelDiaDetalhe").classList.add("hidden");
   }
 
-  // A mágica acontece aqui: ao clicar no gráfico, mostra todos os detalhes do dia!
   function mostrarDetalhesDoDia(index) {
     if (!dadosGlobais.dias) return;
 
@@ -248,7 +241,6 @@
     document.getElementById("detPressMin").innerText =
       dadosGlobais.pressao_min[index] + " hPa";
 
-    // Rola a tela suavemente para os detalhes
     document
       .getElementById("painelDiaDetalhe")
       .scrollIntoView({ behavior: "smooth", block: "center" });
@@ -300,12 +292,11 @@
           return;
         }
 
-        dadosGlobais = dados; // Salva para o painel de clique
+        dadosGlobais = dados;
         msgVazia.style.display = "none";
         document.getElementById("cardsResumo").classList.remove("hidden");
         document.getElementById("areaGraficos").classList.remove("hidden");
 
-        // Atualiza os Cards Superiores
         document.getElementById("resumoChuva").innerText =
           `${dados.total_chuva.toFixed(1)} mm`;
         document.getElementById("resumoTempMax").innerText =
@@ -315,38 +306,44 @@
         document.getElementById("resumoVento").innerText =
           `${dados.max_vento.toFixed(1)} km/h`;
 
+        // Cores padrão exigidas:
+        // Azul: #3b82f6 | Vermelho: #ef4444 | Laranja: #f97316 | Branco: #ffffff
+
+        // 1. Gráfico de Chuva (Apenas Azul)
         renderizarGrafico("graficoChuva", "bar", dados.dias, [
           {
             label: "Chuva (mm)",
             data: dados.chuva,
-            backgroundColor: "#3b82f6",
+            backgroundColor: "#3b82f6", // AZUL
             borderRadius: 4,
           },
         ]);
 
-        // 2. Gráfico de Temperaturas (Tudo em Barras Agrupadas)
+        // 2. Gráfico de Temperaturas
         renderizarGrafico("graficoTemp", "bar", dados.dias, [
           {
             label: "Máxima",
             data: dados.temp_max,
-            backgroundColor: "#ef4444",
+            backgroundColor: "#ef4444", // VERMELHO
             borderRadius: 4,
           },
           {
             label: "Média",
             data: dados.temp_media,
-            backgroundColor: "#10b981",
+            backgroundColor: "#f97316", // LARANJA
             borderRadius: 4,
           },
           {
             label: "Mínima",
             data: dados.temp_min,
-            backgroundColor: "#06b6d4",
+            backgroundColor: "#ffffff", // BRANCO
+            borderColor: "#3b82f6", // Borda azul para não sumir no fundo branco
+            borderWidth: 2,
             borderRadius: 4,
           },
         ]);
 
-        // 3. Gráfico de Vento e UV (Tudo em Barras Agrupadas)
+        // 3. Gráfico de Vento e UV
         renderizarGrafico(
           "graficoVentoUv",
           "bar",
@@ -355,14 +352,14 @@
             {
               label: "Índice UV",
               data: dados.uv,
-              backgroundColor: "#a855f7",
+              backgroundColor: "#f97316", // LARANJA
               borderRadius: 4,
               yAxisID: "y1",
             },
             {
               label: "Rajada (km/h)",
               data: dados.vento,
-              backgroundColor: "#94a3b8",
+              backgroundColor: "#ef4444", // VERMELHO
               borderRadius: 4,
               yAxisID: "y",
             },
@@ -384,18 +381,20 @@
           },
         );
 
-        // 4. Gráfico de Umidade (Barras Agrupadas)
+        // 4. Gráfico de Umidade
         renderizarGrafico("graficoUmidade", "bar", dados.dias, [
           {
             label: "Umidade Máxima (%)",
             data: dados.umidade_max,
-            backgroundColor: "#3b82f6",
+            backgroundColor: "#3b82f6", // AZUL
             borderRadius: 4,
           },
           {
             label: "Umidade Mínima (%)",
             data: dados.umidade_min,
-            backgroundColor: "#eab308",
+            backgroundColor: "#ffffff", // BRANCO
+            borderColor: "#f97316", // Borda Laranja
+            borderWidth: 2,
             borderRadius: 4,
           },
         ]);

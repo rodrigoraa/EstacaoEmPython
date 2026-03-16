@@ -242,6 +242,9 @@ def api_recordes_mes():
 # ================= HISTÓRICO MENSAL PROFISSIONAL =================
 
 
+# ================= HISTÓRICO MENSAL PROFISSIONAL =================
+
+
 @api_routes.route("/api/historico_consulta")
 def api_historico_consulta():
     ano = request.args.get("ano")
@@ -256,67 +259,96 @@ def api_historico_consulta():
     except ValueError:
         return jsonify({"erro": "Ano e mês inválidos"}), 400
 
-    # Descobre quantos dias tem no mês solicitado (Ex: Fevereiro de 2024 = 29 dias)
     _, num_dias = calendar.monthrange(ano_int, mes_int)
 
-    # Cria listas vazias para todos os dias do mês
+    # Cria listas vazias para todos os dias do mês para TODOS os dados
     dias_lista = list(range(1, num_dias + 1))
     chuva_lista = [0.0] * num_dias
-    temp_lista = [0.0] * num_dias
+    temp_max_lista = [0.0] * num_dias
+    temp_min_lista = [0.0] * num_dias
+    temp_media_lista = [0.0] * num_dias
+    umidade_min_lista = [0.0] * num_dias
+    umidade_max_lista = [0.0] * num_dias
+    vento_lista = [0.0] * num_dias
+    uv_lista = [0.0] * num_dias
+    pressao_min_lista = [0.0] * num_dias
+    pressao_max_lista = [0.0] * num_dias
 
-    # Variáveis para os cards de resumo
     total_chuva = 0.0
     max_temp = 0.0
+    min_temp = 99.0
     max_vento = 0.0
 
-    # Conecta no banco (ajuste 'database.get_db()' para a forma que você conecta aí, caso seja diferente)
     conn = database.get_db()
+    conn.row_factory = sqlite3.Row
 
-    # Busca na tabela diária! Muito mais rápido e leve!
+    # Busca TODOS os dados da tabela historico_diario
     linhas = conn.execute(
         """
         SELECT 
             strftime('%d', data) as dia,
-            chuva_total,
-            temp_max,
-            vento_rajada_max
+            chuva_total, temp_min, temp_max, temp_media,
+            umidade_min, umidade_max, vento_rajada_max, 
+            uv_max, pressao_min, pressao_max
         FROM historico_diario
         WHERE strftime('%Y', data) = ? AND strftime('%m', data) = ?
         """,
         (ano, mes),
     ).fetchall()
-
     conn.close()
 
-    # Povoa as listas zeradas com os dados reais que encontramos no banco
     for row in linhas:
-        # Pega o dia e converte para índice (Dia 1 fica no índice 0 da lista)
         dia_idx = int(row["dia"]) - 1
 
-        # Se for NULL no banco, consideramos 0.0
         chuva_dia = row["chuva_total"] or 0.0
-        temp_dia = row["temp_max"] or 0.0
+        t_max = row["temp_max"] or 0.0
+        t_min = row["temp_min"] or 0.0
+        t_med = row["temp_media"] or 0.0
+        u_min = row["umidade_min"] or 0.0
+        u_max = row["umidade_max"] or 0.0
         vento_dia = row["vento_rajada_max"] or 0.0
+        uv_dia = row["uv_max"] or 0.0
+        p_min = row["pressao_min"] or 0.0
+        p_max = row["pressao_max"] or 0.0
 
-        # Coloca o valor exato na posição correta do gráfico
         chuva_lista[dia_idx] = chuva_dia
-        temp_lista[dia_idx] = temp_dia
+        temp_max_lista[dia_idx] = t_max
+        temp_min_lista[dia_idx] = t_min
+        temp_media_lista[dia_idx] = t_med
+        umidade_min_lista[dia_idx] = u_min
+        umidade_max_lista[dia_idx] = u_max
+        vento_lista[dia_idx] = vento_dia
+        uv_lista[dia_idx] = uv_dia
+        pressao_min_lista[dia_idx] = p_min
+        pressao_max_lista[dia_idx] = p_max
 
-        # Soma e calcula as máximas para os cards
         total_chuva += chuva_dia
-        if temp_dia > max_temp:
-            max_temp = temp_dia
+        if t_max > max_temp:
+            max_temp = t_max
+        if t_min > 0 and t_min < min_temp:
+            min_temp = t_min
         if vento_dia > max_vento:
             max_vento = vento_dia
 
-    # Retorna o pacote completo e organizado para o JavaScript montar a tela
+    if min_temp == 99.0:
+        min_temp = 0.0
+
     return jsonify(
         {
             "dias": dias_lista,
             "chuva": chuva_lista,
-            "temperatura": temp_lista,
+            "temp_max": temp_max_lista,
+            "temp_min": temp_min_lista,
+            "temp_media": temp_media_lista,
+            "umidade_min": umidade_min_lista,
+            "umidade_max": umidade_max_lista,
+            "vento": vento_lista,
+            "uv": uv_lista,
+            "pressao_min": pressao_min_lista,
+            "pressao_max": pressao_max_lista,
             "total_chuva": total_chuva,
             "max_temp": max_temp,
+            "min_temp": min_temp,
             "max_vento": max_vento,
         }
     )

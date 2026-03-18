@@ -34,10 +34,25 @@ def api_clima():
         """
     ).fetchone()
 
-    conn.close()
-
     if not row:
+        conn.close()
         return jsonify({"erro": "Sem dados"})
+
+    # --- INÍCIO DA BUSCA PELA RAJADA MÁXIMA ---
+    # 1. Pega apenas a data de hoje (YYYY-MM-DD) do último registro
+    data_hoje = row["data_hora"][:10]
+    
+    # 2. Pergunta ao banco qual foi a maior rajada registrada hoje
+    max_rajada_row = conn.execute(
+        "SELECT MAX(vento_rajada) as rajada_max FROM historico_clima WHERE data_hora LIKE ?",
+        (f"{data_hoje}%",)
+    ).fetchone()
+
+    # 3. Define a rajada do dia (se não achar, usa a rajada do momento por segurança)
+    rajada_do_dia = max_rajada_row["rajada_max"] if max_rajada_row and max_rajada_row["rajada_max"] is not None else row["vento_rajada"]
+    # --- FIM DA BUSCA PELA RAJADA MÁXIMA ---
+
+    conn.close()
 
     hora = row["data_hora"][11:19]
 
@@ -51,7 +66,7 @@ def api_clima():
             "uv": row["uv"],
             "radiacao": row["radiacao"],
             "vento_atual": row["vento_vel"],
-            "vento_rajada": row["vento_rajada"],
+            "vento_rajada": rajada_do_dia, 
             "vento_dir": row["vento_dir"],
             "chuva_rate": row["chuva_rate"],
             "chuva_evento": row["chuva_evento"],

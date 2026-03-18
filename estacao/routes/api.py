@@ -41,20 +41,34 @@ def api_clima():
     if not row:
         return jsonify({"erro": "Sem dados"})
 
-    # --- INÍCIO: LÊ A RAJADA MÁXIMA DA MEMÓRIA ---
     rajada_do_dia = row["vento_rajada"]  # Valor padrão (se o arquivo falhar)
     try:
-        # Busca o caminho do arquivo alert_state.json na raiz do projeto
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        state_file = os.path.join(base_dir, "alert_state.json")
+        # Busca inteligente: procura a pasta atual, a raiz e a pasta pai
+        caminho_api = os.path.abspath(__file__)
+        pasta_routes = os.path.dirname(caminho_api)
+        pasta_raiz = os.path.dirname(pasta_routes)
+        pasta_pai = os.path.dirname(pasta_raiz)
 
-        with open(state_file, "r") as f:
-            estado = json.load(f)
-            # Pega o recorde oficial que o updater salvou!
-            rajada_do_dia = estado.get("rajada_max_nuvem", row["vento_rajada"])
+        # O updater pode ter salvo em um destes 3 lugares, vamos checar todos:
+        locais_possiveis = [
+            os.path.join(pasta_pai, "alert_state.json"),
+            os.path.join(pasta_raiz, "alert_state.json"),
+            "alert_state.json",
+        ]
+
+        for state_file in locais_possiveis:
+            if os.path.exists(state_file):
+                with open(state_file, "r") as f:
+                    estado = json.load(f)
+                    # Se tiver o recorde lá dentro e for maior que zero, ele atualiza!
+                    if "rajada_max_nuvem" in estado and estado["rajada_max_nuvem"] > 0:
+                        # Pega o maior valor entre o banco e a nuvem, por precaução
+                        rajada_do_dia = max(
+                            row["vento_rajada"], estado["rajada_max_nuvem"]
+                        )
+                break  # Achou o arquivo, pode parar de procurar
     except Exception as e:
-        pass
-    # --- FIM: LÊ A RAJADA MÁXIMA DA MEMÓRIA ---
+        print(f"Erro ao ler rajada: {e}", flush=True)
 
     hora = row["data_hora"][11:19]
 

@@ -55,6 +55,11 @@ def obter_dados():
 
     vento = mph_to_kmh(raw.get("windspeedmph", 0))
     rajada = mph_to_kmh(raw.get("windgustmph", 0))
+
+    # --- MUDANÇA AQUI: Lê a rajada máxima do dia direto do aparelho ---
+    # (Se por acaso o aparelho não mandar o maxdailygust, ele usa a rajada atual para não dar erro)
+    rajada_max = mph_to_kmh(raw.get("maxdailygust", raw.get("windgustmph", 0)))
+
     vento_dir = raw.get("winddir", 0)
 
     chuva_rate = in_to_mm(raw.get("hourlyrainin", 0))
@@ -70,6 +75,7 @@ def obter_dados():
         "radiacao": radiacao,
         "vento": vento,
         "rajada": rajada,
+        "rajada_max": rajada_max,  # <--- MUDANÇA AQUI: Envia para o updater
         "vento_dir": vento_dir,
         "chuva_rate": chuva_rate,
         "chuva_evento": chuva_evento,

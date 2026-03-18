@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify, request
 import database
 import calendar
 import sqlite3
+import os
+import json
 
 api_routes = Blueprint("api", __name__)
 
@@ -34,25 +36,25 @@ def api_clima():
         """
     ).fetchone()
 
+    conn.close()
+
     if not row:
-        conn.close()
         return jsonify({"erro": "Sem dados"})
 
-    # --- INÍCIO DA BUSCA PELA RAJADA MÁXIMA ---
-    # 1. Pega apenas a data de hoje (YYYY-MM-DD) do último registro
-    data_hoje = row["data_hora"][:10]
-    
-    # 2. Pergunta ao banco qual foi a maior rajada registrada hoje
-    max_rajada_row = conn.execute(
-        "SELECT MAX(vento_rajada) as rajada_max FROM historico_clima WHERE data_hora LIKE ?",
-        (f"{data_hoje}%",)
-    ).fetchone()
+    # --- INÍCIO: LÊ A RAJADA MÁXIMA DA MEMÓRIA ---
+    rajada_do_dia = row["vento_rajada"]  # Valor padrão (se o arquivo falhar)
+    try:
+        # Busca o caminho do arquivo alert_state.json na raiz do projeto
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        state_file = os.path.join(base_dir, "alert_state.json")
 
-    # 3. Define a rajada do dia (se não achar, usa a rajada do momento por segurança)
-    rajada_do_dia = max_rajada_row["rajada_max"] if max_rajada_row and max_rajada_row["rajada_max"] is not None else row["vento_rajada"]
-    # --- FIM DA BUSCA PELA RAJADA MÁXIMA ---
-
-    conn.close()
+        with open(state_file, "r") as f:
+            estado = json.load(f)
+            # Pega o recorde oficial que o updater salvou!
+            rajada_do_dia = estado.get("rajada_max_nuvem", row["vento_rajada"])
+    except Exception as e:
+        pass
+    # --- FIM: LÊ A RAJADA MÁXIMA DA MEMÓRIA ---
 
     hora = row["data_hora"][11:19]
 
@@ -66,7 +68,7 @@ def api_clima():
             "uv": row["uv"],
             "radiacao": row["radiacao"],
             "vento_atual": row["vento_vel"],
-            "vento_rajada": rajada_do_dia, 
+            "vento_rajada": rajada_do_dia,  # <--- ENVIADO PARA A BÚSSOLA
             "vento_dir": row["vento_dir"],
             "chuva_rate": row["chuva_rate"],
             "chuva_evento": row["chuva_evento"],

@@ -62,6 +62,7 @@ def carregar_estado():
         "nivel_chuva": 0,
         "nivel_umidade": 0,
         "nivel_uv": 0,
+        "rajada_max_nuvem": 0.0,
     }
 
     if not os.path.exists(STATE_FILE):
@@ -213,17 +214,17 @@ def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
         salvar_estado(estado)
 
     # ================= REGRAS DE RADIAÇÃO UV =================
-    #if uv >= 11 and estado.get("nivel_uv", 0) < 2:
-     #   msg = f"🟣 *ALERTA CRÍTICO: Radiação UV Extrema!*\nO Índice UV atingiu o nível máximo de *{uv:.1f}*. Risco extremo de queimaduras severas na pele em poucos minutos. Evite totalmente o sol, busque sombra e use proteção máxima!"
-      #  enviar_alerta(msg)
-       # estado["nivel_uv"] = 2
-        #salvar_estado(estado)
+    # if uv >= 11 and estado.get("nivel_uv", 0) < 2:
+    #   msg = f"🟣 *ALERTA CRÍTICO: Radiação UV Extrema!*\nO Índice UV atingiu o nível máximo de *{uv:.1f}*. Risco extremo de queimaduras severas na pele em poucos minutos. Evite totalmente o sol, busque sombra e use proteção máxima!"
+    #  enviar_alerta(msg)
+    # estado["nivel_uv"] = 2
+    # salvar_estado(estado)
 
-    #elif uv >= 8 and estado.get("nivel_uv", 0) < 1:
-     #   msg = f"🔴 *ALERTA FORTE: Radiação UV Muito Alta!*\nO Índice UV está em *{uv:.1f}*. Risco alto de insolação e danos à pele. Se precisar sair, use chapéu, óculos escuros e bastante protetor solar."
-      #  enviar_alerta(msg)
-       # estado["nivel_uv"] = 1
-        #salvar_estado(estado)
+    # elif uv >= 8 and estado.get("nivel_uv", 0) < 1:
+    #   msg = f"🔴 *ALERTA FORTE: Radiação UV Muito Alta!*\nO Índice UV está em *{uv:.1f}*. Risco alto de insolação e danos à pele. Se precisar sair, use chapéu, óculos escuros e bastante protetor solar."
+    #  enviar_alerta(msg)
+    # estado["nivel_uv"] = 1
+    # salvar_estado(estado)
 
 
 def executar():
@@ -245,6 +246,7 @@ def executar():
 
         vento = dados["vento"]
         rajada = dados["rajada"]
+        rajada_max = dados.get("rajada_max", rajada) 
         vento_dir = dados["vento_dir"]
 
         chuva_rate = dados["chuva_rate"]
@@ -254,6 +256,11 @@ def executar():
         log(
             f"🌡 {temp}°C | 💧 {umidade}% | 💨 {rajada} km/h (Rajada) | 🌧 {chuva_hoje} mm | ☀️ UV: {uv}"
         )
+
+        estado = carregar_estado()
+        if estado.get("rajada_max_nuvem") != rajada_max:
+            estado["rajada_max_nuvem"] = rajada_max
+            salvar_estado(estado)
 
         verificar_alertas(temp, rajada, chuva_hoje, umidade, uv)
 

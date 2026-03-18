@@ -82,7 +82,8 @@ def api_clima():
             "uv": row["uv"],
             "radiacao": row["radiacao"],
             "vento_atual": row["vento_vel"],
-            "vento_rajada": rajada_do_dia,  # <--- ENVIADO PARA A BÚSSOLA
+            "vento_rajada": row["vento_rajada"],
+            "vento_rajada_max": rajada_do_dia,
             "vento_dir": row["vento_dir"],
             "chuva_rate": row["chuva_rate"],
             "chuva_evento": row["chuva_evento"],

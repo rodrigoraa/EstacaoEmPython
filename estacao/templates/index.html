@@ -148,7 +148,6 @@
               class="text-xl font-extrabold text-slate-800"
               >--</span
             >
-
             <span class="text-[9px] font-bold text-slate-400 uppercase"
               >km/h</span
             >
@@ -163,15 +162,28 @@
             --
           </p>
 
-          <div class="mt-2 pt-2 border-t border-slate-100">
-            <p class="text-xs font-bold text-slate-400 uppercase">
-              Rajada Máxima
-            </p>
+          <div
+            class="mt-2 pt-2 border-t border-slate-100 flex justify-around w-full"
+          >
+            <div class="text-center">
+              <p class="text-[10px] font-bold text-slate-400 uppercase">
+                Rajada Atual
+              </p>
+              <p class="text-base font-bold text-orange-500">
+                <span id="val-vento-rajada">--</span>
+                <span class="text-[10px]">km/h</span>
+              </p>
+            </div>
 
-            <p class="text-lg font-bold text-rose-500">
-              <span id="val-vento-rajada">--</span>
-              <span class="text-xs">km/h</span>
-            </p>
+            <div class="text-center border-l border-slate-100 pl-2">
+              <p class="text-[10px] font-bold text-slate-400 uppercase">
+                Rajada Máxima
+              </p>
+              <p class="text-base font-bold text-rose-500">
+                <span id="val-vento-rajada-max">--</span>
+                <span class="text-[10px]">km/h</span>
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -374,6 +386,8 @@
             data.vento_atual;
           document.getElementById("val-vento-rajada").innerText =
             data.vento_rajada;
+          document.getElementById("val-vento-rajada-max").innerText =
+            data.vento_rajada_max;
           document.getElementById("txt-direcao-vento").innerText =
             obterDirecaoExtenso(data.vento_dir);
           document.getElementById("icone-bussola").style.transform =
@@ -581,7 +595,7 @@
       });
   }
 
-  let chartRecordes; // Adicione isso no topo onde você declara as variáveis dos gráficos, se quiser
+  let chartRecordes;
 
   // GRÁFICO DE RECORDES (MÁXIMAS DO MÊS)
   function renderizarGraficoRecordes() {

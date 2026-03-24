@@ -20,6 +20,7 @@ def api_clima():
         SELECT
             data_hora,
             temp,
+            sensacao,
             umidade,
             pressao,
             uv,
@@ -76,7 +77,7 @@ def api_clima():
         {
             "local": "Vicentina MS - Distrito de São José (EE São José)",
             "temp": row["temp"],
-            "sensacao": row["temp"],
+            "sensacao": row["sensacao"],
             "umidade": row["umidade"],
             "pressao": row["pressao"],
             "uv": row["uv"],

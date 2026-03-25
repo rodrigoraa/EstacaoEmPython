@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, render_template
 import database
 import calendar
 import sqlite3
@@ -6,10 +6,6 @@ import os
 import json
 
 api_routes = Blueprint("api", __name__)
-
-
-# ================= CLIMA ATUAL (TEMPO REAL DO BANCO) =================
-
 
 @api_routes.route("/api/clima")
 def api_clima():
@@ -42,15 +38,13 @@ def api_clima():
     if not row:
         return jsonify({"erro": "Sem dados"})
 
-    rajada_do_dia = row["vento_rajada"]  # Valor padrão (se o arquivo falhar)
+    rajada_do_dia = row["vento_rajada"]
     try:
-        # Busca inteligente: procura a pasta atual, a raiz e a pasta pai
         caminho_api = os.path.abspath(__file__)
         pasta_routes = os.path.dirname(caminho_api)
         pasta_raiz = os.path.dirname(pasta_routes)
         pasta_pai = os.path.dirname(pasta_raiz)
 
-        # O updater pode ter salvo em um destes 3 lugares, vamos checar todos:
         locais_possiveis = [
             os.path.join(pasta_pai, "alert_state.json"),
             os.path.join(pasta_raiz, "alert_state.json"),
@@ -61,13 +55,11 @@ def api_clima():
             if os.path.exists(state_file):
                 with open(state_file, "r") as f:
                     estado = json.load(f)
-                    # Se tiver o recorde lá dentro e for maior que zero, ele atualiza!
                     if "rajada_max_nuvem" in estado and estado["rajada_max_nuvem"] > 0:
-                        # Pega o maior valor entre o banco e a nuvem, por precaução
                         rajada_do_dia = max(
                             row["vento_rajada"], estado["rajada_max_nuvem"]
                         )
-                break  # Achou o arquivo, pode parar de procurar
+                break  
     except Exception as e:
         print(f"Erro ao ler rajada: {e}", flush=True)
 
@@ -92,10 +84,6 @@ def api_clima():
             "hora_leitura": hora,
         }
     )
-
-
-# ================= HISTÓRICO DO DIA (MÉDIA POR HORA) =================
-
 
 @api_routes.route("/api/historico")
 def api_historico():
@@ -131,10 +119,6 @@ def api_historico():
 
     return jsonify(resultado)
 
-
-# ================= ÚLTIMO REGISTRO =================
-
-
 @api_routes.route("/api/ultimo")
 def api_ultimo():
     conn = database.get_db()
@@ -166,16 +150,10 @@ def api_ultimo():
         }
     )
 
-
-# ================= HISTÓRICO DA SEMANA =================
-
-
 @api_routes.route("/api/historico_semana")
 def api_historico_semana():
     conn = database.get_db()
 
-    # strftime('%W') = Agrupa pela semana atual do ano
-    # strftime('%w') = Pega o dia da semana (0=Dom, 1=Seg, 2=Ter, etc)
     dados = conn.execute(
         """
         SELECT
@@ -196,10 +174,6 @@ def api_historico_semana():
         resultado.append({"dia_semana": row["dia_semana"], "chuva": row["chuva"]})
 
     return jsonify(resultado)
-
-
-# ================= HISTÓRICO DO MÊS =================
-
 
 @api_routes.route("/api/historico_mes")
 def historico_mes():
@@ -231,10 +205,6 @@ def historico_mes():
 
     return jsonify([dict(d) for d in dados])
 
-
-# ================= RECORDES DO MÊS (MÁXIMAS) =================
-
-
 @api_routes.route("/api/recordes_mes")
 def api_recordes_mes():
     ano = request.args.get("ano")
@@ -260,7 +230,6 @@ def api_recordes_mes():
 
     conn.close()
 
-    # Se não houver dados ainda, retorna tudo zerado
     if not row or row["max_temp"] is None:
         return jsonify({"max_temp": 0, "max_vento": 0, "max_chuva": 0})
 
@@ -271,13 +240,6 @@ def api_recordes_mes():
             "max_chuva": row["max_chuva"],
         }
     )
-
-
-# ================= HISTÓRICO MENSAL PROFISSIONAL =================
-
-
-# ================= HISTÓRICO MENSAL PROFISSIONAL =================
-
 
 @api_routes.route("/api/historico_consulta")
 def api_historico_consulta():
@@ -295,7 +257,6 @@ def api_historico_consulta():
 
     _, num_dias = calendar.monthrange(ano_int, mes_int)
 
-    # Cria listas vazias para todos os dias do mês para TODOS os dados
     dias_lista = list(range(1, num_dias + 1))
     chuva_lista = [0.0] * num_dias
     temp_max_lista = [0.0] * num_dias
@@ -316,7 +277,6 @@ def api_historico_consulta():
     conn = database.get_db()
     conn.row_factory = sqlite3.Row
 
-    # Busca TODOS os dados da tabela historico_diario
     linhas = conn.execute(
         """
         SELECT 
@@ -391,7 +351,6 @@ def api_historico_consulta():
 @api_routes.route("/api/anos_disponiveis")
 def api_anos_disponiveis():
     conn = database.get_db()
-    # Pega apenas os anos de forma única (sem repetir) e em ordem decrescente
     linhas = conn.execute(
         """
         SELECT DISTINCT strftime('%Y', data) as ano 
@@ -404,7 +363,6 @@ def api_anos_disponiveis():
 
     anos = [row["ano"] for row in linhas if row["ano"]]
 
-    # Se o banco for novo e estiver vazio, mostra pelo menos o ano atual
     import datetime
 
     ano_atual = str(datetime.datetime.now().year)
@@ -412,6 +370,6 @@ def api_anos_disponiveis():
     if not anos:
         anos = [ano_atual]
     elif ano_atual not in anos:
-        anos.insert(0, ano_atual)  # Garante que o ano atual sempre esteja na lista
+        anos.insert(0, ano_atual) 
 
     return jsonify(anos)

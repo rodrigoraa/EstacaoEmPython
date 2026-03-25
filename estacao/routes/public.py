@@ -78,11 +78,25 @@ def unsubscribe():
         return render_template("unsubscribe.html", estado=estado), 400
 
     try:
+        # Limpa tudo que não for número (tira espaços, traços, etc)
+        telefone = "".join(filter(str.isdigit, telefone))
+
+        # Cria as duas versões possíveis do número (com e sem o 55)
+        if telefone.startswith("55"):
+            telefone_sem_55 = telefone[2:]
+            telefone_com_55 = telefone
+        else:
+            telefone_sem_55 = telefone
+            telefone_com_55 = "55" + telefone
+
         # CENÁRIO 2: DELETAR DO BANCO DE VERDADE
         conn = database.get_db()
 
-        # AGORA SIM! Comando DELETE para apagar a linha:
-        conn.execute("DELETE FROM usuarios WHERE telefone = ?", (telefone,))
+        # AGORA SIM! Apaga o número não importa se ele tem o 55 ou não:
+        conn.execute(
+            "DELETE FROM usuarios WHERE telefone = ? OR telefone = ?",
+            (telefone_sem_55, telefone_com_55),
+        )
 
         conn.commit()
         conn.close()

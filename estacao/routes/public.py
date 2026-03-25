@@ -103,7 +103,7 @@ def unsubscribe():
 
         estado = {
             "titulo": "Cancelado com sucesso!",
-            "texto": "O seu número foi APAGADO do nosso sistema com sucesso. Você não receberá mais os alertas no WhatsApp.",
+            "texto": "Você não receberá mais os alertas no WhatsApp.",
             "cor": "#10b981",
             "icone": "<i class='fa-solid fa-check'></i>",
         }

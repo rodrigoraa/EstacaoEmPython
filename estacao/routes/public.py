@@ -64,43 +64,47 @@ def index():
 
 @public_routes.route("/unsubscribe")
 def unsubscribe():
-    # Pega o número de telefone enviado pelo site
+
     telefone = request.args.get("tel")
 
-    # CENÁRIO 1: A pessoa chegou na página sem um número
+    # CENÁRIO 1: Sem número
     if not telefone:
         estado = {
-            "cor": "#f59e0b",  # Amarelo (Tailwind Amber 500)
-            "icone": '<i class="fa-solid fa-triangle-exclamation"></i>',
             "titulo": "Número não encontrado",
-            "texto": "Não conseguimos identificar qual número você deseja cancelar. Por favor, tente novamente pelo botão no painel principal.",
+            "texto": "Não foi possível identificar o número para cancelamento. Tente novamente pelo botão no painel.",
+            "cor": "#f59e0b",
+            "icone": "<i class='fa-solid fa-triangle-exclamation'></i>",
         }
         return render_template("unsubscribe.html", estado=estado), 400
 
     try:
-        # CENÁRIO 2: Tudo certo! Vamos apagar o número do banco
+        # CENÁRIO 2: DELETAR DO BANCO DE VERDADE
         conn = database.get_db()
+
+        # AGORA SIM! Comando DELETE para apagar a linha:
         conn.execute("DELETE FROM usuarios WHERE telefone = ?", (telefone,))
+
         conn.commit()
         conn.close()
 
         estado = {
-            "cor": "#10b981",  # Verde (Tailwind Emerald 500)
-            "icone": '<i class="fa-solid fa-check"></i>',
             "titulo": "Cancelado com sucesso!",
-            "texto": "O seu número foi apagado do nosso sistema com sucesso. Você não receberá mais os alertas da estação no WhatsApp.",
+            "texto": "O seu número foi APAGADO do nosso sistema com sucesso. Você não receberá mais os alertas no WhatsApp.",
+            "cor": "#10b981",
+            "icone": "<i class='fa-solid fa-check'></i>",
         }
+
         return render_template("unsubscribe.html", estado=estado)
 
     except Exception as e:
-        # CENÁRIO 3: Deu algum erro técnico no servidor
+        # CENÁRIO 3: Erro no servidor
         estado = {
-            "cor": "#ef4444",  # Vermelho (Tailwind Red 500)
-            "icone": '<i class="fa-solid fa-circle-xmark"></i>',
             "titulo": "Erro no sistema",
             "texto": "Ocorreu um erro técnico ao tentar cancelar a sua inscrição. Por favor, tente novamente mais tarde.",
+            "cor": "#ef4444",
+            "icone": "<i class='fa-solid fa-circle-xmark'></i>",
         }
-        print(f"Erro ao cancelar: {e}")  # Imprime o erro no console
+        print(f"Erro ao cancelar: {e}")
         return render_template("unsubscribe.html", estado=estado), 500
 
 

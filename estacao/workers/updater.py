@@ -104,10 +104,10 @@ def enviar_alerta(mensagem):
         if not telefone.startswith("55"):
             telefone = "55" + telefone
 
-        link_cancelar = f"http://meteo.eesjv.com.br/unsubscribe?tel={telefone}"
+        link_meteo = f"http://meteo.eesjv.com.br"
 
         # Estrutura base da mensagem para todos os alertas
-        mensagem_final = f"{mensagem}\n\n📍 _Vicentina MS - Distrito de São José_\n🛑 Para cancelar alertas, acesse:\n{link_cancelar}"
+        mensagem_final = f"{mensagem}\n\n📍 _Vicentina MS - Distrito de São José_\n Para mais informações, acesse:\n{link_meteo}"
 
         try:
             enviar_whatsapp(telefone, mensagem_final)
@@ -116,7 +116,8 @@ def enviar_alerta(mensagem):
             log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
 
 
-def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
+# --- MUDANÇA 1: Adicionamos o parâmetro "sensacao" aqui na função ---
+def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
     estado = carregar_estado()
     hoje = datetime.date.today().isoformat()
 
@@ -136,41 +137,43 @@ def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
         }
         salvar_estado(estado)
 
+    # --- MUDANÇA 2: Adicionamos a sensação térmica nos textos de temperatura ---
+
     # ================= REGRAS DE TEMPERATURA (CALOR) =================
     if temp >= 40 and estado["nivel_calor"] < 2:
-        msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{temp:.1f}°C*. Risco iminente de insolação. Evite exposição ao sol e hidrate-se imediatamente!"
+        msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Risco iminente de insolação. Evite exposição ao sol!"
         enviar_alerta(msg)
         estado["nivel_calor"] = 2
         salvar_estado(estado)
 
     elif temp >= 35 and estado["nivel_calor"] < 1:
-        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C*. Calor forte na região com risco de desconforto térmico. Beba bastante água."
+        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Calor forte na região com risco de desconforto térmico."
         enviar_alerta(msg)
         estado["nivel_calor"] = 1
         salvar_estado(estado)
 
     # ================= REGRAS DE TEMPERATURA (FRIO) =================
     if temp <= 0 and estado["nivel_frio"] < 3:
-        msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C*. Condição extrema com alto risco de geada severa, danos às lavouras e hipotermia. Proteja pessoas vulneráveis, animais e plantas sensíveis imediatamente!"
+        msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Condição extrema com alto risco de geada severa!"
         enviar_alerta(msg)
         estado["nivel_frio"] = 3
         salvar_estado(estado)
 
     elif temp <= 5 and estado["nivel_frio"] < 2:
-        msg = f"🧊 *ALERTA CRÍTICO: Frio Extremo!*\nA temperatura caiu para *{temp:.1f}°C*. Risco grave à saúde humana e animal. Proteja-se do frio intenso."
+        msg = f"🧊 *ALERTA CRÍTICO: Frio Extremo!*\nA temperatura caiu para *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Proteja-se do frio."
         enviar_alerta(msg)
         estado["nivel_frio"] = 2
         salvar_estado(estado)
 
     elif temp <= 12 and estado["nivel_frio"] < 1:
-        msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C*. Frio incomum para a região. Agasalhe-se bem."
+        msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Frio incomum para a região. Agasalhe-se bem."
         enviar_alerta(msg)
         estado["nivel_frio"] = 1
         salvar_estado(estado)
 
     # ================= REGRAS DE VENTO =================
     if rajada >= 100 and estado["nivel_vento"] < 3:
-        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*. Alto risco de destelhamentos e queda de árvores. Permaneça em local seguro!"
+        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*. Alto risco de destelhamentos e queda de árvores!"
         enviar_alerta(msg)
         estado["nivel_vento"] = 3
         salvar_estado(estado)
@@ -189,7 +192,7 @@ def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
 
     # ================= REGRAS DE CHUVA =================
     if chuva_hoje >= 100 and estado["nivel_chuva"] < 2:
-        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje. Risco grave de enxurradas e transbordamentos. Evite áreas de risco!"
+        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje. Risco grave de enxurradas!"
         enviar_alerta(msg)
         estado["nivel_chuva"] = 2
         salvar_estado(estado)
@@ -202,7 +205,7 @@ def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
 
     # ================= REGRAS DE UMIDADE =================
     if umidade <= 20 and estado["nivel_umidade"] < 2:
-        msg = f"🆘 *ALERTA CRÍTICO: Umidade Muito Baixa!*\nAr extremamente seco, registrando apenas *{umidade}%*. Grave risco à saúde e alto potencial de incêndios. Evite exercícios físicos e umidifique o ambiente."
+        msg = f"🆘 *ALERTA CRÍTICO: Umidade Muito Baixa!*\nAr extremamente seco, registrando apenas *{umidade}%*. Grave risco à saúde e alto potencial de incêndios. Evite exercícios físicos."
         enviar_alerta(msg)
         estado["nivel_umidade"] = 2
         salvar_estado(estado)
@@ -212,19 +215,6 @@ def verificar_alertas(temp, rajada, chuva_hoje, umidade, uv):
         enviar_alerta(msg)
         estado["nivel_umidade"] = 1
         salvar_estado(estado)
-
-    # ================= REGRAS DE RADIAÇÃO UV =================
-    # if uv >= 11 and estado.get("nivel_uv", 0) < 2:
-    #   msg = f"🟣 *ALERTA CRÍTICO: Radiação UV Extrema!*\nO Índice UV atingiu o nível máximo de *{uv:.1f}*. Risco extremo de queimaduras severas na pele em poucos minutos. Evite totalmente o sol, busque sombra e use proteção máxima!"
-    #  enviar_alerta(msg)
-    # estado["nivel_uv"] = 2
-    # salvar_estado(estado)
-
-    # elif uv >= 8 and estado.get("nivel_uv", 0) < 1:
-    #   msg = f"🔴 *ALERTA FORTE: Radiação UV Muito Alta!*\nO Índice UV está em *{uv:.1f}*. Risco alto de insolação e danos à pele. Se precisar sair, use chapéu, óculos escuros e bastante protetor solar."
-    #  enviar_alerta(msg)
-    # estado["nivel_uv"] = 1
-    # salvar_estado(estado)
 
 
 def executar():
@@ -246,7 +236,7 @@ def executar():
 
         vento = dados["vento"]
         rajada = dados["rajada"]
-        rajada_max = dados.get("rajada_max", rajada) 
+        rajada_max = dados.get("rajada_max", rajada)
         vento_dir = dados["vento_dir"]
 
         chuva_rate = dados["chuva_rate"]
@@ -262,7 +252,8 @@ def executar():
             estado["rajada_max_nuvem"] = rajada_max
             salvar_estado(estado)
 
-        verificar_alertas(temp, rajada, chuva_hoje, umidade, uv)
+        # --- MUDANÇA 3: Passamos a 'sensacao' para dentro do verificador ---
+        verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv)
 
         salvar_leitura(
             (

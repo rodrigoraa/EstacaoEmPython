@@ -64,39 +64,50 @@ def index():
 
 @public_routes.route("/unsubscribe")
 def unsubscribe():
-
+    # Pega o número de telefone enviado pelo site
     telefone = request.args.get("tel")
 
+    # CENÁRIO 1: A pessoa chegou na página sem um número
     if not telefone:
+        estado = {
+            "cor": "#f59e0b",  # Amarelo (Tailwind Amber 500)
+            "icone": '<i class="fa-solid fa-triangle-exclamation"></i>',
+            "titulo": "Número não encontrado",
+            "texto": "Não conseguimos identificar qual número você deseja cancelar. Por favor, tente novamente pelo botão no painel principal.",
+        }
+        return render_template("unsubscribe.html", estado=estado), 400
+
+    try:
+        # CENÁRIO 2: Tudo certo! Vamos apagar o número do banco
+        conn = database.get_db()
+        conn.execute("DELETE FROM usuarios WHERE telefone = ?", (telefone,))
+        conn.commit()
+        conn.close()
 
         estado = {
-            "titulo": "Link inválido",
-            "texto": "Não foi possível identificar o número para cancelamento.",
-            "cor": "#ef4444",
-            "icone": "<i class='fa-solid fa-circle-xmark'></i>",
+            "cor": "#10b981",  # Verde (Tailwind Emerald 500)
+            "icone": '<i class="fa-solid fa-check"></i>',
+            "titulo": "Cancelado com sucesso!",
+            "texto": "O seu número foi apagado do nosso sistema com sucesso. Você não receberá mais os alertas da estação no WhatsApp.",
         }
-
         return render_template("unsubscribe.html", estado=estado)
 
-    conn = database.get_db()
+    except Exception as e:
+        # CENÁRIO 3: Deu algum erro técnico no servidor
+        estado = {
+            "cor": "#ef4444",  # Vermelho (Tailwind Red 500)
+            "icone": '<i class="fa-solid fa-circle-xmark"></i>',
+            "titulo": "Erro no sistema",
+            "texto": "Ocorreu um erro técnico ao tentar cancelar a sua inscrição. Por favor, tente novamente mais tarde.",
+        }
+        print(f"Erro ao cancelar: {e}")  # Imprime o erro no console
+        return render_template("unsubscribe.html", estado=estado), 500
 
-    conn.execute("UPDATE usuarios SET ativo = 0 WHERE telefone = ?", (telefone,))
-
-    conn.commit()
-    conn.close()
-
-    estado = {
-        "titulo": "Alertas cancelados",
-        "texto": "Você não receberá mais alertas meteorológicos desta estação.",
-        "cor": "#22c55e",
-        "icone": "<i class='fa-solid fa-circle-check'></i>",
-    }
-
-    return render_template("unsubscribe.html", estado=estado)
 
 @public_routes.route("/sobre")
 def sobre():
     return render_template("sobre.html")
+
 
 @public_routes.route("/historico")
 def historico():

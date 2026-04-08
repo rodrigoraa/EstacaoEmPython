@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>{{ titulo or "Estacao Meteorologica" }}</title>
+    <title>{{ titulo or "Estação Meteorológica" }}</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -14,6 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet" />
 
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 
@@ -22,7 +23,7 @@
     <div class="md:hidden bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-30">
         <span class="font-semibold text-slate-700">
             <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
-            Estacao Meteorologica
+            Estação Meteorológica
         </span>
         <button onclick="toggleMenu()" class="text-slate-700 text-2xl px-2">
             <i class="fa-solid fa-bars"></i>
@@ -36,7 +37,7 @@
         class="fixed inset-y-0 left-0 h-screen w-64 bg-white border-r border-slate-200 p-6 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 overflow-y-auto">
         <h2 class="text-lg font-bold text-slate-800 mb-6 hidden md:block">
             <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
-            Estacao Meteorologica
+            Estação Meteorológica
         </h2>
 
         <nav class="space-y-2 text-sm">
@@ -46,15 +47,15 @@
             </a>
             <a href="/historico"
                 class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/historico') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
-                <i class="fa-solid fa-chart-line w-5"></i> Historico
+                <i class="fa-solid fa-chart-line w-5"></i> Histórico
             </a>
             <a href="/previsao"
                 class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/previsao') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
-                <i class="fa-solid fa-cloud-sun-rain w-5"></i> Previsao do tempo
+                <i class="fa-solid fa-cloud-sun-rain w-5"></i> Previsão do tempo
             </a>
             <a href="/sobre"
                 class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/sobre') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
-                <i class="fa-solid fa-circle-info w-5"></i> Sobre a estacao
+                <i class="fa-solid fa-circle-info w-5"></i> Sobre a estação
             </a>
         </nav>
     </aside>

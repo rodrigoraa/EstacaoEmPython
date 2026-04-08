@@ -1,173 +1,206 @@
 {% extends "layout.html" %}
 
 {% block conteudo %}
+<div class="max-w-6xl mx-auto px-4 mt-6 md:mt-8 pb-12 space-y-8">
+    <section class="relative overflow-hidden rounded-[28px] border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-emerald-50 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+        <div class="absolute -top-12 -right-10 h-40 w-40 rounded-full bg-sky-200/40 blur-3xl"></div>
+        <div class="absolute bottom-0 left-0 h-32 w-32 rounded-full bg-emerald-200/40 blur-3xl"></div>
 
-<div class="max-w-6xl mx-auto px-4 mt-10 space-y-6">
+        <div class="relative grid gap-8 px-6 py-8 md:grid-cols-[1.35fr_0.95fr] md:px-10 md:py-10">
+            <div class="space-y-6">
+                <div class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                    <i class="fa-solid fa-circle-info"></i>
+                    Estação meteorológica local
+                </div>
 
-    <h1 class="text-3xl font-bold text-slate-800">
-        <i class="fa-solid fa-circle-info text-indigo-500 mr-2"></i>
-        Sobre a Estação Meteorológica
-    </h1>
+                <div class="space-y-3">
+                    <h1 class="text-3xl font-black tracking-tight text-slate-800 md:text-5xl">
+                        Dados do clima com mais contexto, clareza e presença.
+                    </h1>
+                    <p class="max-w-2xl text-sm leading-7 text-slate-600 md:text-base">
+                        A estação da Escola Estadual São José monitora em tempo real as condições atmosféricas
+                        do Distrito de São José, em Vicentina/MS, transformando medições locais em informação
+                        útil para a comunidade e para atividades educacionais.
+                    </p>
+                </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        <div class="card">
-
-            <h3 class="text-lg font-bold text-slate-800 mb-3">
-                <i class="fa-solid fa-tower-broadcast text-indigo-500 mr-2"></i>
-                Sobre a Estação
-            </h3>
-
-            <p class="text-sm text-slate-600 leading-relaxed">
-                Esta estação meteorológica realiza o monitoramento contínuo das condições
-                atmosféricas no Distrito de São José, município de Vicentina – MS.
-            </p>
-
-            <p class="text-sm text-slate-600 leading-relaxed mt-2">
-                Os dados apresentados neste site são coletados automaticamente por sensores
-                meteorológicos instalados no local e transmitidos para o sistema de
-                monitoramento da Escola Estadual São José.
-            </p>
-
-        </div>
-
-        <div class="card">
-
-            <h3 class="text-lg font-bold text-slate-800 mb-3">
-                <i class="fa-solid fa-cloud-sun text-orange-500 mr-2"></i>
-                Parâmetros Monitorados
-            </h3>
-
-            <ul class="text-sm text-slate-600 space-y-1">
-
-                <li>Temperatura do ar</li>
-                <li>Umidade relativa</li>
-                <li>Velocidade do vento</li>
-                <li>Direção do vento</li>
-                <li>Pressão atmosférica</li>
-                <li>Radiação solar</li>
-                <li>Índice UV</li>
-                <li>Precipitação (chuva)</li>
-
-            </ul>
-
-        </div>
-
-        <div class="card">
-
-            <h3 class="text-lg font-bold text-slate-800 mb-3">
-                <i class="fa-solid fa-database text-blue-500 mr-2"></i>
-                Coleta e Armazenamento de Dados
-            </h3>
-
-            <p class="text-sm text-slate-600 leading-relaxed">
-                As informações meteorológicas são coletadas automaticamente pela estação
-                e enviadas para o servidor do sistema, onde são processadas e
-                armazenadas em banco de dados.
-            </p>
-
-            <p class="text-sm text-slate-600 leading-relaxed mt-2">
-                Isso permite acompanhar as condições atuais do tempo e também analisar
-                o histórico meteorológico da região através dos gráficos disponíveis
-                no site.
-            </p>
-
-        </div>
-
-        <div class="card">
-
-            <h3 class="text-lg font-bold text-slate-800 mb-3">
-                <i class="fa-solid fa-graduation-cap text-green-600 mr-2"></i>
-                Objetivo do Projeto
-            </h3>
-
-            <p class="text-sm text-slate-600 leading-relaxed">
-                O projeto tem como objetivo fornecer informações meteorológicas locais
-                para a comunidade, contribuindo para o acompanhamento das condições
-                climáticas da região.
-            </p>
-
-            <p class="text-sm text-slate-600 leading-relaxed mt-2">
-                A estação também serve como ferramenta educacional para estudantes
-                e professores da Escola Estadual São José, incentivando o estudo
-                de ciência, tecnologia e meteorologia.
-            </p>
-
-        </div>
-
-        <div class="card">
-
-            <h3 class="text-lg font-bold text-slate-800 mb-3">
-                <i class="fa-solid fa-microchip text-indigo-500 mr-2"></i>
-                Como os dados são obtidos
-            </h3>
-
-            <div class="text-sm text-slate-600 space-y-2">
-
-                <p>
-                    <strong>Temperatura e Umidade:</strong>
-                    medidas por sensores digitais instalados na estação que registram
-                    a temperatura do ar e a umidade relativa do ambiente em intervalos
-                    regulares.
-                </p>
-
-                <p>
-                    <strong>Velocidade do vento:</strong>
-                    determinada por um anemômetro que mede a rotação provocada pela
-                    força do vento e converte essa informação em velocidade.
-                </p>
-
-                <p>
-                    <strong>Direção do vento:</strong>
-                    obtida por uma veleta meteorológica que indica a direção
-                    de onde o vento está soprando.
-                </p>
-
-                <p>
-                    <strong>Pressão atmosférica:</strong>
-                    medida por um sensor barométrico instalado na estação.
-                </p>
-
-                <p>
-                    <strong>Radiação solar e índice UV:</strong>
-                    obtidos por sensores ópticos que detectam a intensidade da radiação solar.
-                </p>
-
-                <p>
-                    <strong>Chuva (precipitação):</strong>
-                    registrada por um pluviômetro que contabiliza a quantidade de chuva
-                    ao longo do tempo.
-                </p>
-
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur">
+                        <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Cobertura</p>
+                        <p class="mt-2 text-lg font-extrabold text-slate-800">Distrito de São José</p>
+                        <p class="mt-1 text-sm text-slate-500">Monitoramento climático local</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur">
+                        <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Operação</p>
+                        <p class="mt-2 text-lg font-extrabold text-slate-800">Coleta contínua</p>
+                        <p class="mt-1 text-sm text-slate-500">Leituras automáticas e atualizadas</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur">
+                        <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Finalidade</p>
+                        <p class="mt-2 text-lg font-extrabold text-slate-800">Comunidade e escola</p>
+                        <p class="mt-1 text-sm text-slate-500">Apoio à rotina local e à aprendizagem</p>
+                    </div>
+                </div>
             </div>
 
+            <div class="grid gap-4 self-start">
+                <div class="rounded-[24px] border border-slate-200 bg-slate-900 p-5 text-white shadow-xl">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Parâmetros monitorados</p>
+                            <h2 class="mt-2 text-2xl font-black">8 frentes de leitura</h2>
+                        </div>
+                        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-sky-200">
+                            <i class="fa-solid fa-tower-broadcast text-xl"></i>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 grid grid-cols-2 gap-3 text-sm">
+                        <div class="rounded-2xl bg-white/5 p-3">Temperatura</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Umidade</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Vento</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Direção do vento</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Pressão</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Radiação solar</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Índice UV</div>
+                        <div class="rounded-2xl bg-white/5 p-3">Precipitação</div>
+                    </div>
+                </div>
+
+                <div class="rounded-[24px] border border-emerald-100 bg-gradient-to-r from-emerald-500 to-sky-500 p-5 text-white shadow-lg">
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-white/80">Impacto do projeto</p>
+                    <p class="mt-3 text-lg font-bold leading-7">
+                        A estação aproxima a meteorologia do cotidiano, fortalece a cultura de observação e valoriza dados locais.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div class="card space-y-5">
+            <div class="flex items-center gap-3">
+                <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-600">
+                    <i class="fa-solid fa-satellite-dish text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Como funciona</p>
+                    <h3 class="text-2xl font-extrabold text-slate-800">Do sensor até o painel</h3>
+                </div>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-3">
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-500 text-sm font-bold text-white">1</span>
+                    <h4 class="mt-4 text-base font-bold text-slate-800">Medição em campo</h4>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        Sensores instalados na estação capturam temperatura, umidade, vento, pressão, radiação, UV e chuva.
+                    </p>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-sm font-bold text-white">2</span>
+                    <h4 class="mt-4 text-base font-bold text-slate-800">Processamento</h4>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        Os dados são enviados ao sistema, organizados no servidor e preparados para exibição e consulta histórica.
+                    </p>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-sm font-bold text-white">3</span>
+                    <h4 class="mt-4 text-base font-bold text-slate-800">Acesso público</h4>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        A comunidade acompanha o tempo atual, a previsão e os gráficos em uma interface simples e visual.
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div class="card">
+            <div class="flex items-center gap-3">
+                <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-100 text-orange-500">
+                    <i class="fa-solid fa-compass text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Leituras principais</p>
+                    <h3 class="text-2xl font-extrabold text-slate-800">O que a estação observa</h3>
+                </div>
+            </div>
 
-            <h3 class="text-lg font-bold text-slate-800 mb-4">
-                <i class="fa-solid fa-location-dot text-red-500 mr-2"></i>
-                Localização da Estação
-            </h3>
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+                <div class="rounded-2xl border border-orange-100 bg-orange-50/70 p-4 text-sm font-semibold text-slate-700"><i class="fa-solid fa-temperature-three-quarters mr-2 text-orange-500"></i>Temperatura do ar</div>
+                <div class="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4 text-sm font-semibold text-slate-700"><i class="fa-solid fa-droplet mr-2 text-cyan-500"></i>Umidade relativa</div>
+                <div class="rounded-2xl border border-teal-100 bg-teal-50/70 p-4 text-sm font-semibold text-slate-700"><i class="fa-solid fa-wind mr-2 text-teal-500"></i>Velocidade do vento</div>
+                <div class="rounded-2xl border border-lime-100 bg-lime-50/70 p-4 text-sm font-semibold text-slate-700"><i class="fa-solid fa-location-arrow mr-2 text-lime-600"></i>Direção do vento</div>
+                <div class="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm font-semibold text-slate-700"><i class="fa-solid fa-gauge-high mr-2 text-indigo-500"></i>Pressão atmosférica</div>
+                <div class="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-sm font-semibold text-slate-700"><i class="fa-solid fa-sun mr-2 text-amber-500"></i>Radiação solar e UV</div>
+                <div class="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm font-semibold text-slate-700 sm:col-span-2"><i class="fa-solid fa-cloud-rain mr-2 text-blue-500"></i>Precipitação e comportamento da chuva</div>
+            </div>
+        </div>
+    </section>
 
-            <p class="text-sm text-slate-600 mb-4">
-                A estação meteorológica está localizada no Distrito de São José,
-                município de Vicentina – MS, nas dependências da Escola Estadual São José.
+    <section class="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div class="card space-y-5">
+            <div class="flex items-center gap-3">
+                <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+                    <i class="fa-solid fa-graduation-cap text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Por que isso importa</p>
+                    <h3 class="text-2xl font-extrabold text-slate-800">Valor para a comunidade</h3>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div class="rounded-2xl border border-slate-200 p-4">
+                    <h4 class="text-base font-bold text-slate-800">Informação climática local</h4>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        Os dados ajudam moradores, estudantes e equipes escolares a acompanhar as condições do tempo com referência real da região.
+                    </p>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 p-4">
+                    <h4 class="text-base font-bold text-slate-800">Aprendizagem na prática</h4>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        A estação funciona como ferramenta educacional para projetos de ciência, tecnologia, geografia e interpretação de dados.
+                    </p>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 p-4">
+                    <h4 class="text-base font-bold text-slate-800">Histórico para análise</h4>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">
+                        O armazenamento contínuo permite observar tendências, comparar períodos e entender melhor o comportamento climático local.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card overflow-hidden">
+            <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Localização</p>
+                    <h3 class="text-2xl font-extrabold text-slate-800">Onde a estação está instalada</h3>
+                </div>
+                <div class="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600">
+                    Escola Estadual São José • Vicentina/MS
+                </div>
+            </div>
+
+            <p class="mt-4 text-sm leading-7 text-slate-600">
+                A estação meteorológica está localizada no Distrito de São José, nas dependências da Escola Estadual São José,
+                atendendo a comunidade escolar e oferecendo uma referência climática próxima da realidade local.
             </p>
 
-            <div class="rounded-lg overflow-hidden border">
-
+            <div class="mt-6 overflow-hidden rounded-[22px] border border-slate-200 shadow-sm">
                 <iframe
                     src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3686.3147619780793!2d-54.46331288830242!3d-22.492370629463533!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9489697c892539d3%3A0x23a89196b8475996!2sEscola%20Estadual%20S%C3%A3o%20Jos%C3%A9!5e0!3m2!1spt-BR!2sbr!4v1775674192034!5m2!1spt-BR!2sbr"
-                    width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy"
+                    class="h-[320px] w-full md:h-[380px]"
+                    style="border:0;"
+                    allowfullscreen=""
+                    loading="lazy"
                     referrerpolicy="no-referrer-when-downgrade"></iframe>
-
             </div>
-
         </div>
-
-    </div>
-
+    </section>
 </div>
-
 {% endblock %}

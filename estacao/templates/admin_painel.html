@@ -24,10 +24,13 @@
             </div>
         </div>
         <div>
-            <a href="/admin?sair=true"
-                class="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
-                <i class="fa-solid fa-right-from-bracket"></i> Sair
-            </a>
+            <form action="/admin/logout" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit"
+                    class="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                    <i class="fa-solid fa-right-from-bracket"></i> Sair
+                </button>
+            </form>
         </div>
     </nav>
 
@@ -78,6 +81,7 @@
 
                                 <form class="inline" action="/admin/deletar/{{ row['id'] }}" method="POST"
                                     onsubmit="return confirm('Apagar este utilizador?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                                     <button type="submit"
                                         class="bg-rose-500 hover:bg-rose-600 text-white text-xs px-3 py-1 rounded shadow-sm">

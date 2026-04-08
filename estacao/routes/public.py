@@ -1,22 +1,35 @@
-from flask import Blueprint, render_template, request
 from datetime import datetime, timedelta
-import database
+import os
 import sqlite3
+
+from flask import Blueprint, render_template, request
+
+import database
 from extensions import limiter
 from services.weather_service import obter_dados, obter_previsao
-import os
 
 public_routes = Blueprint("public", __name__)
+
+
+def corrigir_texto_env(texto):
+    if not texto:
+        return texto
+
+    if any(marcador in texto for marcador in ("\u00c3", "\u00c2")):
+        try:
+            texto = texto.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+
+    return texto.replace("Sãõ", "São")
 
 
 @public_routes.route("/", methods=["GET", "POST"])
 @limiter.limit("5 per hour")
 def index():
-
     mensagem = ""
 
     if request.method == "POST":
-
         nome = request.form.get("nome", "").strip()
         telefone = request.form.get("telefone", "")
         endereco = request.form.get("endereco", "").strip()
@@ -28,23 +41,18 @@ def index():
         if not nome or not telefone or not endereco:
             mensagem = "❌ Preencha todos os campos!"
         else:
-
             conn = database.get_db()
             cursor = conn.cursor()
 
             try:
-
                 cursor.execute(
                     "INSERT INTO usuarios (nome, telefone, endereco, receber_whatsapp) VALUES (?, ?, ?, ?)",
                     (nome, telefone, endereco, receber_whatsapp),
                 )
-
                 conn.commit()
                 mensagem = "✅ Cadastro realizado com sucesso!"
-
             except sqlite3.IntegrityError:
                 mensagem = "⚠️ Número já cadastrado!"
-
             finally:
                 conn.close()
 
@@ -53,10 +61,8 @@ def index():
     hoje = datetime.now()
 
     for i in range(6, -1, -1):
-
         data_alvo = hoje - timedelta(days=i)
         dia_str = dias_semana[int(data_alvo.strftime("%w"))]
-
         dias_chuva.append(
             {"label": dia_str, "valor": 0, "altura": 0, "is_hoje": (i == 0)}
         )
@@ -66,10 +72,8 @@ def index():
 
 @public_routes.route("/unsubscribe")
 def unsubscribe():
-
     telefone = request.args.get("tel")
 
-    # CENÁRIO 1: Sem número
     if not telefone:
         estado = {
             "titulo": "Número não encontrado",
@@ -80,10 +84,8 @@ def unsubscribe():
         return render_template("unsubscribe.html", estado=estado), 400
 
     try:
-        # Limpa tudo que não for número (tira espaços, traços, etc)
         telefone = "".join(filter(str.isdigit, telefone))
 
-        # Cria as duas versões possíveis do número (com e sem o 55)
         if telefone.startswith("55"):
             telefone_sem_55 = telefone[2:]
             telefone_com_55 = telefone
@@ -91,15 +93,11 @@ def unsubscribe():
             telefone_sem_55 = telefone
             telefone_com_55 = "55" + telefone
 
-        # CENÁRIO 2: DELETAR DO BANCO DE VERDADE
         conn = database.get_db()
-
-        # AGORA SIM! Apaga o número não importa se ele tem o 55 ou não:
         conn.execute(
             "DELETE FROM usuarios WHERE telefone = ? OR telefone = ?",
             (telefone_sem_55, telefone_com_55),
         )
-
         conn.commit()
         conn.close()
 
@@ -109,11 +107,9 @@ def unsubscribe():
             "cor": "#10b981",
             "icone": "<i class='fa-solid fa-check'></i>",
         }
-
         return render_template("unsubscribe.html", estado=estado)
 
     except Exception as e:
-        # CENÁRIO 3: Erro no servidor
         estado = {
             "titulo": "Erro no sistema",
             "texto": "Ocorreu um erro técnico ao tentar cancelar a sua inscrição. Por favor, tente novamente mais tarde.",
@@ -139,8 +135,8 @@ def previsao():
     cidade = os.environ.get("FORECAST_CITY", "Vicentina")
     estado = os.environ.get("FORECAST_STATE", "Mato Grosso do Sul")
     pais = os.environ.get("FORECAST_COUNTRY", "Brasil")
-    nome_exibicao = os.environ.get(
-        "FORECAST_LABEL", "Distrito de Sao Jose, Vicentina/MS"
+    nome_exibicao = corrigir_texto_env(
+        os.environ.get("FORECAST_LABEL", "Distrito de São José, Vicentina/MS")
     )
     latitude = os.environ.get("FORECAST_LAT")
     longitude = os.environ.get("FORECAST_LON")

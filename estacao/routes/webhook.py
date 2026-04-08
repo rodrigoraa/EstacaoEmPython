@@ -8,6 +8,8 @@ import logging
 webhook_routes = Blueprint("webhook", __name__)
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
+ALLOWED_DEPLOY_REPO = os.environ.get("ALLOWED_DEPLOY_REPO", "rodrigoraa/EstacaoEmPython")
+ALLOWED_DEPLOY_BRANCH = os.environ.get("ALLOWED_DEPLOY_BRANCH", "refs/heads/main")
 
 if not WEBHOOK_SECRET:
     raise RuntimeError("WEBHOOK_SECRET não configurado")
@@ -28,34 +30,37 @@ def verificar_github(req):
         return False
 
     mac = hmac.new(WEBHOOK_SECRET.encode(), msg=req.data, digestmod=hashlib.sha256)
-
     return hmac.compare_digest(mac.hexdigest(), assinatura)
 
 
-@webhook_routes.route("/deploy/python", methods=["POST"])
-def deploy_python():
-
-    logging.warning("Webhook recebido: deploy python")
-
+def validar_payload_deploy():
     if request.headers.get("X-GitHub-Event") != "push":
-        return "evento ignorado"
+        return None, "evento ignorado"
 
     if not verificar_github(request):
         abort(403)
 
     payload = request.get_json(silent=True)
-
-
     if not payload:
-        return "payload inválido"
+        return None, "payload inválido"
 
     repo = payload.get("repository", {}).get("full_name")
+    if repo != ALLOWED_DEPLOY_REPO:
+        return None, "repo ignorado"
 
-    if repo != "rodrigoraa/EstacaoEmPython":
-        return "repo ignorado"
+    if payload.get("ref") != ALLOWED_DEPLOY_BRANCH:
+        return None, "branch ignorada"
 
-    if payload.get("ref") != "refs/heads/main":
-        return "branch ignorada"
+    return payload, None
+
+
+@webhook_routes.route("/deploy/python", methods=["POST"])
+def deploy_python():
+    logging.warning("Webhook recebido: deploy python")
+
+    _, erro = validar_payload_deploy()
+    if erro:
+        return erro
 
     subprocess.Popen(
         ["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-python.sh"],
@@ -67,11 +72,11 @@ def deploy_python():
 
 @webhook_routes.route("/deploy/php", methods=["POST"])
 def deploy_php():
-
     logging.warning("Webhook recebido: deploy php")
 
-    if not verificar_github(request):
-        abort(403)
+    _, erro = validar_payload_deploy()
+    if erro:
+        return erro
 
     subprocess.Popen(
         ["sudo", "-u", "servidor", "/bin/bash", "/var/www/deploy/deploy-php.sh"],

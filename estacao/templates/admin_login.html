@@ -39,6 +39,7 @@
         {% endwith %}
 
         <form method="post" class="space-y-5">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div>
                 <label for="senha" class="block text-sm font-semibold text-slate-700 mb-1">Senha de Acesso</label>
                 <div class="relative">

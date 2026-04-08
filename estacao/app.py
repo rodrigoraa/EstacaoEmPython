@@ -1,18 +1,13 @@
 from flask import Flask
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 load_dotenv()
 import os
+from extensions import limiter
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
 
-app.config["RATELIMIT_ENABLED"] = False 
-
-limiter = Limiter(
-    key_func=get_remote_address
-)
+app.config["RATELIMIT_ENABLED"] = False
 
 limiter.init_app(app)
 

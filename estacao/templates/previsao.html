@@ -1,0 +1,112 @@
+﻿{% extends "layout.html" %} {% block conteudo %}
+<div class="max-w-6xl mx-auto px-4 mt-10 space-y-8 pb-12">
+  <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div>
+      <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-3">
+        <i class="fa-solid fa-cloud-sun-rain text-sky-500"></i>
+        Previs&atilde;o do Tempo
+      </h1>
+      <p class="text-slate-500 mt-2">
+        Panorama para {{ previsao.cidade if previsao else cidade_exibicao }}
+      </p>
+    </div>
+    {% if previsao %}
+    <div class="previsao-local-badge">
+      {{ previsao.cidade }}, {{ previsao.estado }} - {{ previsao.pais }}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if previsao %}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="card previsao-resumo-card previsao-resumo-card--temp">
+      <div class="previsao-resumo-topo">
+        <p class="previsao-resumo-label">Agora</p>
+        <i class="fa-solid fa-temperature-three-quarters previsao-resumo-icone"></i>
+      </div>
+      <p class="previsao-resumo-valor text-orange-700">
+        {{ dados_estacao.temp if dados_estacao else previsao.atual.temperatura }} &deg;C
+      </p>
+      <p class="previsao-resumo-apoio">{{ previsao.atual.descricao }}</p>
+    </div>
+
+    <div class="card previsao-resumo-card previsao-resumo-card--sensacao">
+      <div class="previsao-resumo-topo">
+        <p class="previsao-resumo-label">Sensa&ccedil;&atilde;o</p>
+        <i class="fa-solid fa-sun previsao-resumo-icone"></i>
+      </div>
+      <p class="previsao-resumo-valor text-emerald-700">
+        {{ dados_estacao.sensacao if dados_estacao else previsao.atual.sensacao }} &deg;C
+      </p>
+    </div>
+
+    <div class="card previsao-resumo-card previsao-resumo-card--umidade">
+      <div class="previsao-resumo-topo">
+        <p class="previsao-resumo-label">Umidade</p>
+        <i class="fa-solid fa-droplet previsao-resumo-icone"></i>
+      </div>
+      <p class="previsao-resumo-valor text-cyan-700">
+        {{ dados_estacao.umidade if dados_estacao else previsao.atual.umidade }}%
+      </p>
+    </div>
+
+    <div class="card previsao-resumo-card previsao-resumo-card--vento">
+      <div class="previsao-resumo-topo">
+        <p class="previsao-resumo-label">Vento</p>
+        <i class="fa-solid fa-wind previsao-resumo-icone"></i>
+      </div>
+      <p class="previsao-resumo-valor text-teal-700">
+        {{ dados_estacao.vento if dados_estacao else previsao.atual.vento }} km/h
+      </p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+    {% for dia in previsao.dias %}
+    <div class="card previsao-dia-card">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="previsao-dia-semana">{{ dia.dia_semana }}</p>
+          <p class="previsao-dia-data">{{ dia.data_formatada }}</p>
+        </div>
+        <div class="previsao-dia-icone-wrap">
+          <i class="fa-solid fa-cloud-sun text-sky-500 text-xl"></i>
+        </div>
+      </div>
+
+      <div class="previsao-dia-condicao">{{ dia.descricao }}</div>
+
+      <div class="previsao-dia-metricas">
+        <div class="previsao-dia-linha">
+          <span class="previsao-dia-label">Temperatura</span>
+          <span class="previsao-dia-valor">{{ dia.temp_min }}&deg; / {{ dia.temp_max }}&deg;</span>
+        </div>
+        <div class="previsao-dia-linha">
+          <span class="previsao-dia-label">Chuva</span>
+          <span class="previsao-dia-valor">{{ dia.chuva_prob }}% · {{ dia.chuva_total }} mm</span>
+        </div>
+        <div class="previsao-dia-linha">
+          <span class="previsao-dia-label">Vento</span>
+          <span class="previsao-dia-valor">{{ dia.vento_max }} km/h</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card bg-white rounded-2xl p-8 text-center">
+    <div
+      class="w-16 h-16 mx-auto rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-2xl"
+    >
+      <i class="fa-solid fa-cloud-exclamation"></i>
+    </div>
+    <h2 class="text-xl font-bold text-slate-800 mt-4">
+      N&atilde;o foi poss&iacute;vel carregar a previs&atilde;o
+    </h2>
+    <p class="text-slate-500 mt-2 max-w-xl mx-auto">
+      A consulta externa da previs&atilde;o falhou no momento. Tente novamente em alguns instantes.
+    </p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

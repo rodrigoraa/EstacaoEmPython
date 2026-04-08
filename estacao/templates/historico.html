@@ -1,24 +1,24 @@
-{% extends "layout.html" %} {% block conteudo %}
+﻿{% extends "layout.html" %} {% block conteudo %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <div class="max-w-7xl mx-auto px-4 mt-10 space-y-8 pb-12">
   <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-3">
     <i class="fa-solid fa-chart-line text-indigo-500"></i>
-    Histórico Meteorológico
+    Hist&oacute;rico Meteorol&oacute;gico
   </h1>
 
   <div
     class="card flex flex-col sm:flex-row items-start sm:items-end gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100"
   >
     <div class="flex-1 w-full sm:max-w-[200px]">
-      <label class="block text-sm font-semibold text-slate-700 mb-1">Mês</label>
+      <label class="block text-sm font-semibold text-slate-700 mb-1">M&ecirc;s</label>
       <select
         id="filtroMes"
         class="w-full border border-slate-300 rounded-lg px-4 py-2.5 outline-none shadow-sm bg-slate-50"
       >
         <option value="01">Janeiro</option>
         <option value="02">Fevereiro</option>
-        <option value="03">Março</option>
+        <option value="03">Mar&ccedil;o</option>
         <option value="04">Abril</option>
         <option value="05">Maio</option>
         <option value="06">Junho</option>
@@ -50,16 +50,16 @@
 
   <div id="cardsResumo" class="grid grid-cols-2 md:grid-cols-4 gap-4 hidden">
     <div class="card bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg">
-      <p class="text-sm text-slate-500 font-semibold mb-1">Chuva no Mês</p>
+      <p class="text-sm text-slate-500 font-semibold mb-1">Chuva no M&ecirc;s</p>
       <p class="text-2xl font-bold text-blue-700" id="resumoChuva">-- mm</p>
     </div>
     <div class="card bg-orange-50 border-l-4 border-orange-500 p-4 rounded-lg">
-      <p class="text-sm text-slate-500 font-semibold mb-1">Máx. Temperatura</p>
-      <p class="text-2xl font-bold text-orange-700" id="resumoTempMax">-- °C</p>
+      <p class="text-sm text-slate-500 font-semibold mb-1">M&aacute;x. Temperatura</p>
+      <p class="text-2xl font-bold text-orange-700" id="resumoTempMax">-- &deg;C</p>
     </div>
     <div class="card bg-cyan-50 border-l-4 border-cyan-500 p-4 rounded-lg">
-      <p class="text-sm text-slate-500 font-semibold mb-1">Mín. Temperatura</p>
-      <p class="text-2xl font-bold text-cyan-700" id="resumoTempMin">-- °C</p>
+      <p class="text-sm text-slate-500 font-semibold mb-1">M&iacute;n. Temperatura</p>
+      <p class="text-2xl font-bold text-cyan-700" id="resumoTempMin">-- &deg;C</p>
     </div>
     <div class="card bg-teal-50 border-l-4 border-teal-500 p-4 rounded-lg">
       <p class="text-sm text-slate-500 font-semibold mb-1">Maior Rajada</p>
@@ -88,85 +88,95 @@
         ><span id="detChuva" class="font-bold text-lg text-blue-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Temp. Máx</span
-        ><span id="detTempMax" class="font-bold text-lg text-orange-400"
-          >--</span
-        >
+        <span class="block text-slate-400">Temp. M&aacute;x</span
+        ><span id="detTempMax" class="font-bold text-lg text-orange-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Temp. Mín</span
+        <span class="block text-slate-400">Temp. M&iacute;n</span
         ><span id="detTempMin" class="font-bold text-lg text-cyan-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Temp. Média</span
-        ><span id="detTempMed" class="font-bold text-lg text-green-400"
-          >--</span
-        >
+        <span class="block text-slate-400">Temp. M&eacute;dia</span
+        ><span id="detTempMed" class="font-bold text-lg text-green-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Rajada Máx</span
+        <span class="block text-slate-400">Rajada M&aacute;x</span
         ><span id="detVento" class="font-bold text-lg text-teal-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Índice UV Máx</span
+        <span class="block text-slate-400">&Iacute;ndice UV M&aacute;x</span
         ><span id="detUv" class="font-bold text-lg text-purple-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Umidade Máx</span
+        <span class="block text-slate-400">Umidade M&aacute;x</span
         ><span id="detUmiMax" class="font-bold text-lg text-blue-300">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Umidade Mín</span
-        ><span id="detUmiMin" class="font-bold text-lg text-yellow-400"
-          >--</span
-        >
+        <span class="block text-slate-400">Umidade M&iacute;n</span
+        ><span id="detUmiMin" class="font-bold text-lg text-yellow-400">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Pressão Máx</span
-        ><span id="detPressMax" class="font-bold text-lg text-gray-300"
-          >--</span
-        >
+        <span class="block text-slate-400">Press&atilde;o M&aacute;x</span
+        ><span id="detPressMax" class="font-bold text-lg text-gray-300">--</span>
       </div>
       <div class="bg-slate-700 p-3 rounded-lg">
-        <span class="block text-slate-400">Pressão Mín</span
-        ><span id="detPressMin" class="font-bold text-lg text-gray-400"
-          >--</span
-        >
+        <span class="block text-slate-400">Press&atilde;o M&iacute;n</span
+        ><span id="detPressMin" class="font-bold text-lg text-gray-400">--</span>
       </div>
     </div>
     <p class="text-xs text-slate-400 mt-4 text-center">
-      Extremos diários registrados pela estação.
+      Extremos di&aacute;rios registrados pela esta&ccedil;&atilde;o.
     </p>
   </div>
 
   <div id="mensagemVazia" class="text-center text-slate-500 py-10 font-medium">
-    Selecione o período e clique em Buscar.
+    Selecione o per&iacute;odo e clique em Buscar.
   </div>
 
   <div id="areaGraficos" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden">
-    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-      <h3 class="text-center font-bold text-slate-700 mb-2">
-        Acumulado de Chuva (mm)
-      </h3>
-      <div style="height: 300px"><canvas id="graficoChuva"></canvas></div>
+    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100 historico-chart-card">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h3 class="text-center font-bold text-slate-700">
+          Acumulado de Chuva (mm)
+        </h3>
+        <span class="historico-chart-hint">Toque para ver o dia</span>
+      </div>
+      <div class="historico-chart-scroll">
+        <div class="historico-chart-wrap"><canvas id="graficoChuva"></canvas></div>
+      </div>
     </div>
-    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-      <h3 class="text-center font-bold text-slate-700 mb-2">
-        Variação de Temperatura (°C)
-      </h3>
-      <div style="height: 300px"><canvas id="graficoTemp"></canvas></div>
+    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100 historico-chart-card">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h3 class="text-center font-bold text-slate-700">
+          Varia&ccedil;&atilde;o de Temperatura (&deg;C)
+        </h3>
+        <span class="historico-chart-hint">Compara&ccedil;&atilde;o por torres</span>
+      </div>
+      <div class="historico-chart-scroll">
+        <div class="historico-chart-wrap"><canvas id="graficoTemp"></canvas></div>
+      </div>
     </div>
-    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-      <h3 class="text-center font-bold text-slate-700 mb-2">
-        Rajadas de Vento (km/h) e UV Máx
-      </h3>
-      <div style="height: 300px"><canvas id="graficoVentoUv"></canvas></div>
+    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100 historico-chart-card">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h3 class="text-center font-bold text-slate-700">
+          Rajadas de Vento (km/h) e UV M&aacute;x
+        </h3>
+        <span class="historico-chart-hint">Torres com escalas separadas</span>
+      </div>
+      <div class="historico-chart-scroll">
+        <div class="historico-chart-wrap"><canvas id="graficoVentoUv"></canvas></div>
+      </div>
     </div>
-    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-      <h3 class="text-center font-bold text-slate-700 mb-2">
-        Umidade Relativa (%)
-      </h3>
-      <div style="height: 300px"><canvas id="graficoUmidade"></canvas></div>
+    <div class="card bg-white p-4 rounded-xl shadow-sm border border-slate-100 historico-chart-card">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <h3 class="text-center font-bold text-slate-700">
+          Umidade Relativa (%)
+        </h3>
+        <span class="historico-chart-hint">Torres com melhor contraste</span>
+      </div>
+      <div class="historico-chart-scroll">
+        <div class="historico-chart-wrap"><canvas id="graficoUmidade"></canvas></div>
+      </div>
     </div>
   </div>
 </div>
@@ -174,6 +184,11 @@
 <script>
   let charts = {};
   let dadosGlobais = {};
+  const mediaQueryMobile = window.matchMedia("(max-width: 767px)");
+
+  Chart.defaults.font.family = "'Inter',sans-serif";
+  Chart.defaults.color = "#475569";
+  Chart.defaults.borderColor = "rgba(148, 163, 184, 0.18)";
 
   document.addEventListener("DOMContentLoaded", () => {
     const agora = new Date();
@@ -206,6 +221,97 @@
       });
   });
 
+  function emTelaMobile() {
+    return mediaQueryMobile.matches;
+  }
+
+  function obterTicksDoEixoX() {
+    const mobile = emTelaMobile();
+
+    return {
+      autoSkip: false,
+      color: "#64748b",
+      maxRotation: 0,
+      minRotation: 0,
+      font: {
+        size: mobile ? 10 : 11,
+        weight: mobile ? "600" : "500",
+      },
+      callback: function (_, index) {
+        const dia = Number(this.getLabelForValue(index));
+        if (!mobile) return dia;
+        return dia % 2 === 1 ? dia : "";
+      },
+    };
+  }
+
+  function obterOpcoesBase() {
+    const mobile = emTelaMobile();
+
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      resizeDelay: 150,
+      interaction: { mode: "index", intersect: false },
+      layout: {
+        padding: {
+          top: 8,
+          right: mobile ? 6 : 10,
+          bottom: 0,
+          left: mobile ? 2 : 8,
+        },
+      },
+      plugins: {
+        legend: {
+          position: mobile ? "bottom" : "top",
+          align: mobile ? "start" : "center",
+          labels: {
+            usePointStyle: true,
+            boxWidth: 10,
+            boxHeight: 10,
+            padding: mobile ? 12 : 16,
+            font: {
+              size: mobile ? 11 : 12,
+              weight: "600",
+            },
+          },
+        },
+        tooltip: {
+          backgroundColor: "rgba(15, 23, 42, 0.94)",
+          titleColor: "#f8fafc",
+          bodyColor: "#e2e8f0",
+          padding: 12,
+          displayColors: true,
+          usePointStyle: true,
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: obterTicksDoEixoX(),
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: "rgba(148, 163, 184, 0.16)",
+            drawBorder: false,
+          },
+          ticks: {
+            color: "#64748b",
+            font: {
+              size: mobile ? 10 : 11,
+            },
+          },
+        },
+      },
+      onClick: (event, elements) => {
+        if (elements.length > 0) {
+          mostrarDetalhesDoDia(elements[0].index);
+        }
+      },
+    };
+  }
+
   function fecharDetalhes() {
     document.getElementById("painelDiaDetalhe").classList.add("hidden");
   }
@@ -224,11 +330,11 @@
     document.getElementById("detChuva").innerText =
       dadosGlobais.chuva[index] + " mm";
     document.getElementById("detTempMax").innerText =
-      dadosGlobais.temp_max[index] + " °C";
+      dadosGlobais.temp_max[index] + " \u00b0C";
     document.getElementById("detTempMin").innerText =
-      dadosGlobais.temp_min[index] + " °C";
+      dadosGlobais.temp_min[index] + " \u00b0C";
     document.getElementById("detTempMed").innerText =
-      dadosGlobais.temp_media[index] + " °C";
+      dadosGlobais.temp_media[index] + " \u00b0C";
     document.getElementById("detVento").innerText =
       dadosGlobais.vento[index] + " km/h";
     document.getElementById("detUv").innerText = dadosGlobais.uv[index];
@@ -260,14 +366,7 @@
       type: tipo,
       data: { labels: labels, datasets: datasets },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        onClick: (event, elements) => {
-          if (elements.length > 0) {
-            mostrarDetalhesDoDia(elements[0].index);
-          }
-        },
+        ...obterOpcoesBase(),
         ...configExtra,
       },
     });
@@ -277,6 +376,7 @@
     const mes = document.getElementById("filtroMes").value;
     const ano = document.getElementById("filtroAno").value;
     const msgVazia = document.getElementById("mensagemVazia");
+    const mobile = emTelaMobile();
 
     msgVazia.innerText = "Buscando dados...";
     msgVazia.style.display = "block";
@@ -288,7 +388,7 @@
       .then((r) => r.json())
       .then((dados) => {
         if (!dados || dados.dias.length === 0) {
-          msgVazia.innerText = "Nenhum registro encontrado para este mês.";
+          msgVazia.innerText = "Nenhum registro encontrado para este m\u00eas.";
           return;
         }
 
@@ -300,75 +400,96 @@
         document.getElementById("resumoChuva").innerText =
           `${dados.total_chuva.toFixed(1)} mm`;
         document.getElementById("resumoTempMax").innerText =
-          `${dados.max_temp.toFixed(1)} °C`;
+          `${dados.max_temp.toFixed(1)} \u00b0C`;
         document.getElementById("resumoTempMin").innerText =
-          `${dados.min_temp.toFixed(1)} °C`;
+          `${dados.min_temp.toFixed(1)} \u00b0C`;
         document.getElementById("resumoVento").innerText =
           `${dados.max_vento.toFixed(1)} km/h`;
 
-        // 1. Gráfico de Chuva (Azul)
         renderizarGrafico("graficoChuva", "bar", dados.dias, [
           {
             label: "Chuva (mm)",
             data: dados.chuva,
-            backgroundColor: "#3b82f6", // AZUL
+            backgroundColor: "#2563eb",
+            hoverBackgroundColor: "#1d4ed8",
             borderRadius: 4,
+            maxBarThickness: mobile ? 18 : 28,
           },
         ]);
 
-        // 2. Gráfico de Temperaturas (Vermelho, Branco/Laranja, Azul - Excelente Contraste)
         renderizarGrafico("graficoTemp", "bar", dados.dias, [
           {
-            label: "Máxima",
+            label: "M\u00e1xima",
             data: dados.temp_max,
-            backgroundColor: "#ef4444", // VERMELHO
+            backgroundColor: "#dc2626",
+            hoverBackgroundColor: "#b91c1c",
             borderRadius: 4,
+            maxBarThickness: mobile ? 14 : 20,
           },
           {
-            label: "Mínima",
+            label: "M\u00ednima",
             data: dados.temp_min,
-            backgroundColor: "#3b82f6", // AZUL (Colocado no meio propositalmente para separar as cores quentes)
+            backgroundColor: "#2563eb",
+            hoverBackgroundColor: "#1d4ed8",
             borderRadius: 4,
+            maxBarThickness: mobile ? 14 : 20,
           },
           {
-            label: "Média",
+            label: "M\u00e9dia",
             data: dados.temp_media,
-            backgroundColor: "#f97316", // LARANJA
+            backgroundColor: "#16a34a",
+            hoverBackgroundColor: "#15803d",
             borderRadius: 4,
+            maxBarThickness: mobile ? 14 : 20,
           },
         ]);
 
-        // 3. Gráfico de Vento e UV (Laranja e Azul - Excelente Contraste)
         renderizarGrafico(
           "graficoVentoUv",
           "bar",
           dados.dias,
           [
             {
-              label: "Índice UV",
+              label: "\u00cdndice UV",
               data: dados.uv,
-              backgroundColor: "#f97316", // LARANJA
+              backgroundColor: "#eab308",
+              hoverBackgroundColor: "#ca8a04",
               borderRadius: 4,
+              maxBarThickness: mobile ? 12 : 18,
               yAxisID: "y1",
             },
             {
               label: "Rajada (km/h)",
               data: dados.vento,
-              backgroundColor: "#3b82f6", // AZUL
+              backgroundColor: "#0f766e",
+              hoverBackgroundColor: "#115e59",
               borderRadius: 4,
+              maxBarThickness: mobile ? 16 : 24,
               yAxisID: "y",
             },
           ],
           {
             scales: {
+              x: {
+                grid: { display: false },
+                ticks: obterTicksDoEixoX(),
+              },
               y: {
                 type: "linear",
                 position: "left",
+                beginAtZero: true,
+                grid: {
+                  color: "rgba(148, 163, 184, 0.16)",
+                  drawBorder: false,
+                },
+                ticks: { color: "#64748b" },
                 title: { display: true, text: "Vento (km/h)" },
               },
               y1: {
                 type: "linear",
                 position: "right",
+                beginAtZero: true,
+                ticks: { color: "#a16207" },
                 title: { display: true, text: "UV" },
                 grid: { drawOnChartArea: false },
               },
@@ -376,21 +497,22 @@
           },
         );
 
-        // 4. Gráfico de Umidade (Azul e Branco/Vermelho)
         renderizarGrafico("graficoUmidade", "bar", dados.dias, [
           {
-            label: "Umidade Máxima (%)",
+            label: "Umidade M\u00e1xima (%)",
             data: dados.umidade_max,
-            backgroundColor: "#3b82f6", // AZUL
+            backgroundColor: "#0891b2",
+            hoverBackgroundColor: "#0e7490",
             borderRadius: 4,
+            maxBarThickness: mobile ? 14 : 20,
           },
           {
-            label: "Umidade Mínima (%)",
+            label: "Umidade M\u00ednima (%)",
             data: dados.umidade_min,
-            backgroundColor: "#ffffff", // BRANCO
-            borderColor: "#ef4444", // Borda VERMELHA
-            borderWidth: 2,
+            backgroundColor: "#67e8f9",
+            hoverBackgroundColor: "#22d3ee",
             borderRadius: 4,
+            maxBarThickness: mobile ? 14 : 20,
           },
         ]);
       })
@@ -399,5 +521,11 @@
         msgVazia.innerText = "Erro ao carregar os dados.";
       });
   }
+
+  mediaQueryMobile.addEventListener("change", () => {
+    if (dadosGlobais.dias) {
+      carregarDados();
+    }
+  });
 </script>
 {% endblock %}

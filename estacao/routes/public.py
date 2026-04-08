@@ -1,8 +1,10 @@
 from flask import Blueprint, render_template, request
 from datetime import datetime, timedelta
-from app import limiter
 import database
 import sqlite3
+from extensions import limiter
+from services.weather_service import obter_dados, obter_previsao
+import os
 
 public_routes = Blueprint("public", __name__)
 
@@ -130,3 +132,41 @@ def sobre():
 @public_routes.route("/historico")
 def historico():
     return render_template("historico.html")
+
+
+@public_routes.route("/previsao")
+def previsao():
+    cidade = os.environ.get("FORECAST_CITY", "Vicentina")
+    estado = os.environ.get("FORECAST_STATE", "Mato Grosso do Sul")
+    pais = os.environ.get("FORECAST_COUNTRY", "Brasil")
+    nome_exibicao = os.environ.get(
+        "FORECAST_LABEL", "Distrito de Sao Jose, Vicentina/MS"
+    )
+    latitude = os.environ.get("FORECAST_LAT")
+    longitude = os.environ.get("FORECAST_LON")
+    dados_estacao = obter_dados()
+
+    if latitude and longitude:
+        try:
+            latitude = float(latitude)
+            longitude = float(longitude)
+        except ValueError:
+            latitude = None
+            longitude = None
+    else:
+        latitude = None
+        longitude = None
+
+    return render_template(
+        "previsao.html",
+        previsao=obter_previsao(
+            cidade=cidade,
+            estado=estado,
+            pais=pais,
+            latitude=latitude,
+            longitude=longitude,
+            nome_exibicao=nome_exibicao,
+        ),
+        dados_estacao=dados_estacao,
+        cidade_exibicao=nome_exibicao,
+    )

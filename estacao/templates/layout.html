@@ -16,29 +16,61 @@
 
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("theme");
+            const theme = savedTheme || "light";
+            document.documentElement.classList.toggle("theme-dark", theme === "dark");
+            document.documentElement.dataset.theme = theme;
+        })();
+    </script>
 </head>
 
 <body class="bg-slate-50 font-[Inter]">
 
-    <div class="md:hidden bg-white border-b px-4 py-3 flex items-center justify-between sticky top-0 z-30">
-        <span class="font-semibold text-slate-700">
-            <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
-            Estação Meteorológica
+    <div class="md:hidden bg-white border-b px-4 py-3 flex items-center justify-between gap-3 sticky top-0 z-30">
+        <span class="min-w-0 font-semibold text-slate-700 flex items-center gap-2">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo da estação" class="h-9 w-9 rounded-xl shadow-sm" />
+            <span class="truncate text-sm">Estação Meteorológica</span>
         </span>
-        <button onclick="toggleMenu()" class="text-slate-700 text-2xl px-2">
-            <i class="fa-solid fa-bars"></i>
-        </button>
+        <div class="flex items-center gap-2">
+            <button id="themeToggleMobile" type="button"
+                class="theme-toggle text-slate-700"
+                aria-label="Alternar modo escuro">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+            <button id="menuToggleMobile" onclick="toggleMenu()" class="text-slate-700 text-2xl px-2"
+                aria-label="Abrir menu" aria-controls="menuLateral" aria-expanded="false">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
     </div>
 
     <div id="menuOverlay" onclick="toggleMenu()"
         class="fixed inset-0 bg-black/50 hidden z-40 md:hidden backdrop-blur-sm transition-opacity"></div>
 
     <aside id="menuLateral"
-        class="fixed inset-y-0 left-0 h-screen w-64 bg-white border-r border-slate-200 p-6 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 overflow-y-auto">
-        <h2 class="text-lg font-bold text-slate-800 mb-6 hidden md:block">
-            <i class="fa-solid fa-cloud-sun text-indigo-500 mr-2"></i>
-            Estação Meteorológica
-        </h2>
+        class="fixed inset-y-0 left-0 h-screen w-[88vw] max-w-64 bg-white border-r border-slate-200 p-6 z-50 transform -translate-x-full md:w-64 md:translate-x-0 transition-transform duration-300 overflow-y-auto">
+        <div class="mb-4 flex items-center justify-between md:hidden">
+            <div class="flex items-center gap-3 min-w-0">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo da estação" class="h-10 w-10 rounded-2xl shadow-sm" />
+                <span class="truncate font-bold text-slate-800">Estação Meteorológica</span>
+            </div>
+            <button onclick="toggleMenu()" class="theme-toggle text-slate-700 shrink-0" aria-label="Fechar menu">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="mb-6 hidden md:flex items-center justify-between gap-3">
+            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-3">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo da estação" class="h-11 w-11 rounded-2xl shadow-sm" />
+                <span>Estação Meteorológica</span>
+            </h2>
+            <button id="themeToggleDesktop" type="button"
+                class="theme-toggle text-slate-700"
+                aria-label="Alternar modo escuro">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+        </div>
 
         <nav class="space-y-2 text-sm">
             <a href="/"
@@ -67,12 +99,37 @@
     </main>
 
     <script>
+        function aplicarTema(theme) {
+            const isDark = theme === "dark";
+            document.documentElement.classList.toggle("theme-dark", isDark);
+            document.documentElement.dataset.theme = theme;
+            localStorage.setItem("theme", theme);
+
+            document.querySelectorAll(".theme-toggle i").forEach((icon) => {
+                icon.className = isDark ? "fa-solid fa-sun" : "fa-solid fa-moon";
+            });
+        }
+
+        function alternarTema() {
+            const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+            aplicarTema(currentTheme === "dark" ? "light" : "dark");
+        }
+
         function toggleMenu() {
             const menu = document.getElementById("menuLateral");
             const overlay = document.getElementById("menuOverlay");
+            const button = document.getElementById("menuToggleMobile");
+            const isOpen = menu.classList.contains("-translate-x-full");
+
             menu.classList.toggle("-translate-x-full");
             overlay.classList.toggle("hidden");
+            document.body.classList.toggle("menu-open", isOpen);
+            button?.setAttribute("aria-expanded", String(isOpen));
         }
+
+        aplicarTema(document.documentElement.dataset.theme || "light");
+        document.getElementById("themeToggleDesktop")?.addEventListener("click", alternarTema);
+        document.getElementById("themeToggleMobile")?.addEventListener("click", alternarTema);
     </script>
 </body>
 

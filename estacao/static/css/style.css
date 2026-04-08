@@ -1,20 +1,49 @@
-﻿/* =========================================================
+/* =========================================================
    ESTILOS DA ESTACAO METEOROLOGICA - EE SAO JOSE
    ========================================================= */
 
+:root {
+    --page-bg: #f8fafc;
+    --page-overlay: rgba(248, 250, 252, 0.88);
+    --text-main: #334155;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+    --card-shadow-hover: 0 10px 22px rgba(0, 0, 0, 0.06);
+    --panel-bg: rgba(255, 255, 255, 0.92);
+    --panel-border: rgba(226, 232, 240, 0.95);
+}
+
+.theme-dark {
+    --page-bg: #020617;
+    --page-overlay: rgba(2, 6, 23, 0.88);
+    --text-main: #dbe4f0;
+    --card-bg: rgba(15, 23, 42, 0.88);
+    --card-border: rgba(71, 85, 105, 0.45);
+    --card-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
+    --card-shadow-hover: 0 18px 40px rgba(2, 6, 23, 0.55);
+    --panel-bg: rgba(15, 23, 42, 0.9);
+    --panel-border: rgba(71, 85, 105, 0.55);
+}
+
 body {
     font-family: 'Inter', sans-serif;
-    color: #334155;
-    background-color: #f8fafc;
+    color: var(--text-main);
+    background-color: var(--page-bg);
 
     background-image:
-        linear-gradient(rgba(248, 250, 252, 0.88), rgba(248, 250, 252, 0.88)),
+        linear-gradient(var(--page-overlay), var(--page-overlay)),
         url('../background.jpg');
 
     background-size: cover;
     background-position: center;
     background-attachment: scroll;
     background-repeat: no-repeat;
+    transition: background-color .25s ease, color .25s ease;
+}
+
+body.menu-open {
+    overflow: hidden;
 }
 
 /* =========================================================
@@ -22,17 +51,18 @@ body {
    ========================================================= */
 
 .card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
     border-radius: 14px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+    box-shadow: var(--card-shadow);
     padding: 1.75rem;
     transition: all .2s ease;
+    backdrop-filter: blur(14px);
 }
 
 .card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--card-shadow-hover);
 }
 
 /* =========================================================
@@ -79,6 +109,23 @@ body {
 
 #icone-bussola {
     transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-toggle {
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    transition: transform .2s ease, background-color .2s ease, border-color .2s ease;
+}
+
+.theme-toggle:hover {
+    transform: translateY(-1px);
 }
 
 /* =========================================================
@@ -198,6 +245,11 @@ body {
     .historico-chart-wrap {
         height: 300px;
         min-width: 560px;
+    }
+
+    .theme-toggle {
+        width: 2.5rem;
+        height: 2.5rem;
     }
 }
 
@@ -386,4 +438,113 @@ body {
     .previsao-dia-linha {
         padding: 0.6rem 0.7rem;
     }
+}
+
+.theme-dark body,
+.theme-dark .bg-slate-50,
+.theme-dark .bg-white,
+.theme-dark .bg-slate-900,
+.theme-dark .bg-slate-100,
+.theme-dark .bg-slate-50\/50,
+.theme-dark .bg-slate-50\/80,
+.theme-dark .bg-indigo-50,
+.theme-dark .bg-blue-50,
+.theme-dark .bg-orange-50,
+.theme-dark .bg-orange-50\/70,
+.theme-dark .bg-cyan-50\/70,
+.theme-dark .bg-teal-50\/70,
+.theme-dark .bg-lime-50\/70,
+.theme-dark .bg-indigo-50\/70,
+.theme-dark .bg-amber-50\/70,
+.theme-dark .bg-blue-50\/70 {
+    background-color: transparent !important;
+}
+
+.theme-dark .bg-white,
+.theme-dark .bg-slate-50,
+.theme-dark .bg-slate-50\/50,
+.theme-dark .bg-slate-50\/80,
+.theme-dark .bg-slate-100,
+.theme-dark aside,
+.theme-dark .md\:hidden,
+.theme-dark .previsao-local-badge {
+    background: var(--panel-bg) !important;
+    border-color: var(--panel-border) !important;
+    backdrop-filter: blur(14px);
+}
+
+.theme-dark .text-slate-800,
+.theme-dark .text-slate-700,
+.theme-dark .text-slate-600,
+.theme-dark .text-slate-500,
+.theme-dark .text-slate-400 {
+    color: #dbe4f0 !important;
+}
+
+.theme-dark .border-slate-200,
+.theme-dark .border-slate-100,
+.theme-dark .border-gray-200,
+.theme-dark .border-blue-100,
+.theme-dark .border-orange-100,
+.theme-dark .border-cyan-100,
+.theme-dark .border-teal-100,
+.theme-dark .border-lime-100,
+.theme-dark .border-indigo-100,
+.theme-dark .border-amber-100,
+.theme-dark .border-emerald-100,
+.theme-dark .border-sky-100,
+.theme-dark .border-r {
+    border-color: rgba(71, 85, 105, 0.45) !important;
+}
+
+.theme-dark .hover\:bg-slate-100:hover,
+.theme-dark .hover\:bg-slate-50\/80:hover {
+    background: rgba(30, 41, 59, 0.7) !important;
+}
+
+.theme-dark .gauge-container,
+.theme-dark .previsao-dia-linha {
+    background: rgba(30, 41, 59, 0.82);
+    border-color: rgba(71, 85, 105, 0.45);
+}
+
+.theme-dark .previsao-resumo-card--temp {
+    background: linear-gradient(135deg, rgba(124, 45, 18, 0.55), rgba(249, 115, 22, 0.22));
+}
+
+.theme-dark .previsao-resumo-card--sensacao {
+    background: linear-gradient(135deg, rgba(6, 78, 59, 0.55), rgba(16, 185, 129, 0.22));
+}
+
+.theme-dark .previsao-resumo-card--umidade {
+    background: linear-gradient(135deg, rgba(22, 78, 99, 0.55), rgba(6, 182, 212, 0.22));
+}
+
+.theme-dark .previsao-resumo-card--vento {
+    background: linear-gradient(135deg, rgba(19, 78, 74, 0.55), rgba(20, 184, 166, 0.22));
+}
+
+.theme-dark .previsao-dia-condicao {
+    background: rgba(30, 41, 59, 0.78);
+    color: #dbe4f0;
+}
+
+.theme-dark .previsao-dia-label {
+    color: #94a3b8;
+}
+
+.theme-dark .previsao-dia-valor {
+    color: #f8fafc;
+}
+
+.theme-dark .sobre-hero {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(12, 74, 110, 0.8), rgba(6, 78, 59, 0.72)) !important;
+    border-color: rgba(71, 85, 105, 0.45) !important;
+}
+
+.theme-dark .sobre-hero-pill,
+.theme-dark .sobre-soft-card {
+    background: rgba(15, 23, 42, 0.62) !important;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    color: #e2e8f0 !important;
 }

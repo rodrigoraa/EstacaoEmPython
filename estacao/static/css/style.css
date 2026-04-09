@@ -128,6 +128,23 @@ body.menu-open {
     transform: translateY(-1px);
 }
 
+.menu-close-button {
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    transition: transform .2s ease, background-color .2s ease, border-color .2s ease;
+}
+
+.menu-close-button:hover {
+    transform: translateY(-1px);
+}
+
 /* =========================================================
    TEXTO DOS VALORES
    ========================================================= */
@@ -248,6 +265,11 @@ body.menu-open {
     }
 
     .theme-toggle {
+        width: 2.5rem;
+        height: 2.5rem;
+    }
+
+    .menu-close-button {
         width: 2.5rem;
         height: 2.5rem;
     }
@@ -466,11 +488,17 @@ body.menu-open {
 .theme-dark .bg-slate-50\/80,
 .theme-dark .bg-slate-100,
 .theme-dark aside,
-.theme-dark .md\:hidden,
+.theme-dark .mobile-topbar,
+.theme-dark .mobile-menu-header,
+.theme-dark .menu-close-button,
 .theme-dark .previsao-local-badge {
     background: var(--panel-bg) !important;
     border-color: var(--panel-border) !important;
     backdrop-filter: blur(14px);
+}
+
+.theme-dark #menuOverlay {
+    background: rgba(2, 6, 23, 0.72) !important;
 }
 
 .theme-dark .text-slate-800,

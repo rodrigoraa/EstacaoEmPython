@@ -36,7 +36,7 @@ def enviar_whatsapp(numero, mensagem):
     except requests.exceptions.RequestException as e:
         raise Exception(f"Erro conexão Evolution API: {e}")
 
-    if response.status_code != 200:
+    if not 200 <= response.status_code < 300:
 
         raise Exception(f"Erro Evolution API {response.status_code}: {response.text}")
 

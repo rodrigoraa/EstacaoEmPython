@@ -44,6 +44,60 @@ body {
 
 body.menu-open {
     overflow: hidden;
+    touch-action: none;
+}
+
+/* =========================================================
+   MENU MOBILE E MODAIS
+   ========================================================= */
+
+.mobile-menu-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+.mobile-menu-panel {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    height: 100dvh;
+    max-height: 100dvh;
+    will-change: transform;
+}
+
+.app-modal {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 80 !important;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, 0.52);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.app-modal.is-open {
+    display: flex !important;
+}
+
+.app-modal-card {
+    width: min(100%, 28rem);
+    max-height: min(90dvh, 42rem);
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 0.9rem;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+
+.modal-open {
+    overflow: hidden;
+    touch-action: none;
 }
 
 /* =========================================================
@@ -499,6 +553,26 @@ body.menu-open {
 
 .theme-dark #menuOverlay {
     background: rgba(2, 6, 23, 0.72) !important;
+}
+
+.theme-dark .app-modal {
+    background: rgba(2, 6, 23, 0.74) !important;
+}
+
+.theme-dark .app-modal-card {
+    background: rgba(15, 23, 42, 0.98);
+    border-color: rgba(71, 85, 105, 0.58);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.theme-dark .app-modal-card input {
+    background: rgba(15, 23, 42, 0.94);
+    border-color: rgba(100, 116, 139, 0.72);
+    color: #f8fafc;
+}
+
+.theme-dark .app-modal-card input::placeholder {
+    color: #94a3b8;
 }
 
 .theme-dark .text-slate-800,

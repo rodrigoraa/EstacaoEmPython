@@ -46,17 +46,17 @@
         </div>
     </div>
 
-    <div id="menuOverlay" onclick="toggleMenu()"
-        class="fixed inset-0 bg-black/50 hidden z-40 md:hidden backdrop-blur-sm transition-opacity"></div>
+    <div id="menuOverlay" onclick="fecharMenu()"
+        class="mobile-menu-overlay bg-black/50 hidden md:hidden backdrop-blur-sm transition-opacity"></div>
 
     <aside id="menuLateral"
-        class="fixed inset-y-0 left-0 h-screen w-[88vw] max-w-64 bg-white border-r border-slate-200 p-6 z-50 transform -translate-x-full md:w-64 md:translate-x-0 transition-transform duration-300 overflow-y-auto">
+        class="mobile-menu-panel w-[88vw] max-w-64 bg-white border-r border-slate-200 p-6 transform -translate-x-full md:w-64 md:translate-x-0 transition-transform duration-300 overflow-y-auto">
         <div class="mobile-menu-header mb-4 flex items-center justify-between md:hidden">
             <div class="flex items-center gap-3 min-w-0">
                 <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo da estação" class="h-10 w-10 rounded-2xl shadow-sm" />
                 <span class="truncate font-bold text-slate-800">Estação Meteorológica</span>
             </div>
-            <button onclick="toggleMenu()" class="menu-close-button text-slate-700 shrink-0" aria-label="Fechar menu">
+            <button onclick="fecharMenu()" class="menu-close-button text-slate-700 shrink-0" aria-label="Fechar menu">
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
@@ -115,21 +115,46 @@
             aplicarTema(currentTheme === "dark" ? "light" : "dark");
         }
 
-        function toggleMenu() {
+        function abrirMenu() {
             const menu = document.getElementById("menuLateral");
             const overlay = document.getElementById("menuOverlay");
             const button = document.getElementById("menuToggleMobile");
-            const isOpen = menu.classList.contains("-translate-x-full");
 
-            menu.classList.toggle("-translate-x-full");
-            overlay.classList.toggle("hidden");
-            document.body.classList.toggle("menu-open", isOpen);
-            button?.setAttribute("aria-expanded", String(isOpen));
+            menu?.classList.remove("-translate-x-full");
+            overlay?.classList.remove("hidden");
+            document.body.classList.add("menu-open");
+            button?.setAttribute("aria-expanded", "true");
+        }
+
+        function fecharMenu() {
+            const menu = document.getElementById("menuLateral");
+            const overlay = document.getElementById("menuOverlay");
+            const button = document.getElementById("menuToggleMobile");
+
+            menu?.classList.add("-translate-x-full");
+            overlay?.classList.add("hidden");
+            document.body.classList.remove("menu-open");
+            button?.setAttribute("aria-expanded", "false");
+        }
+
+        function toggleMenu() {
+            const menu = document.getElementById("menuLateral");
+            if (menu?.classList.contains("-translate-x-full")) {
+                abrirMenu();
+            } else {
+                fecharMenu();
+            }
         }
 
         aplicarTema(document.documentElement.dataset.theme || "light");
         document.getElementById("themeToggleDesktop")?.addEventListener("click", alternarTema);
         document.getElementById("themeToggleMobile")?.addEventListener("click", alternarTema);
+        window.addEventListener("resize", () => {
+            if (window.matchMedia("(min-width: 768px)").matches) fecharMenu();
+        });
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") fecharMenu();
+        });
     </script>
 </body>
 

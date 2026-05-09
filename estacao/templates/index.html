@@ -630,29 +630,33 @@
     }
 
     // FUNÇÕES DO CADASTRO
+    function alternarModal(id, abrir) {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+
+      modal.classList.toggle("hidden", !abrir);
+      modal.classList.toggle("is-open", abrir);
+      modal.setAttribute("aria-hidden", String(!abrir));
+      document.body.classList.toggle("modal-open", abrir);
+    }
+
     function abrirCadastro() {
-      const modal = document.getElementById("modalCadastro");
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
+      if (typeof fecharMenu === "function") fecharMenu();
+      alternarModal("modalCadastro", true);
     }
 
     function fecharCadastro() {
-      const modal = document.getElementById("modalCadastro");
-      modal.classList.add("hidden");
-      modal.classList.remove("flex");
+      alternarModal("modalCadastro", false);
     }
 
     // FUNÇÕES DE CANCELAR ALERTAS
     function abrirCancelarAlertas() {
-      const modal = document.getElementById("modalCancelar");
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
+      if (typeof fecharMenu === "function") fecharMenu();
+      alternarModal("modalCancelar", true);
     }
 
     function fecharCancelarAlertas() {
-      const modal = document.getElementById("modalCancelar");
-      modal.classList.add("hidden");
-      modal.classList.remove("flex");
+      alternarModal("modalCancelar", false);
     }
 
     function confirmarCancelamento() {
@@ -702,6 +706,19 @@
         renderizarGraficoRecordes();
       }, 60000);
 
+      document.querySelectorAll(".app-modal").forEach((modal) => {
+        modal.addEventListener("click", (event) => {
+          if (event.target !== modal) return;
+          alternarModal(modal.id, false);
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        fecharCadastro();
+        fecharCancelarAlertas();
+      });
+
       // Formatação do telefone no formulário de Cadastro
       const telInput = document.getElementById("telefone");
       if (telInput) {
@@ -737,9 +754,12 @@
 
   <div
     id="modalCadastro"
-    class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4"
+    class="app-modal hidden"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
   >
-    <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+    <div class="app-modal-card p-6">
       <h2 class="text-xl font-bold text-slate-800 mb-4">
         <i class="fa-solid fa-user-plus text-green-600 mr-2"></i>
         Receber Alertas Meteorológicos
@@ -809,9 +829,12 @@
 
   <div
     id="modalCancelar"
-    class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm p-4"
+    class="app-modal hidden backdrop-blur-sm"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
   >
-    <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 border border-slate-100 max-h-[90vh] overflow-y-auto">
+    <div class="app-modal-card p-6">
       <div class="flex items-center gap-3 mb-2">
         <i class="fa-solid fa-bell-slash text-rose-500 text-2xl"></i>
         <h2 class="text-xl font-bold text-slate-800">Cancelar Alertas</h2>

@@ -88,7 +88,7 @@ def obter_dados():
 
 def descricao_weather_code(code):
     descricoes = {
-        0: "Ceu limpo",
+        0: "Céu limpo",
         1: "Principalmente limpo",
         2: "Parcialmente nublado",
         3: "Nublado",
@@ -116,11 +116,11 @@ def descricao_weather_code(code):
 def formatar_data_semana(data_iso):
     dias = [
         "Segunda-feira",
-        "Terca-feira",
+        "Terça-feira",
         "Quarta-feira",
         "Quinta-feira",
         "Sexta-feira",
-        "Sabado",
+        "Sábado",
         "Domingo",
     ]
     data_obj = datetime.strptime(data_iso, "%Y-%m-%d")

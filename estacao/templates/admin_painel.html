@@ -76,6 +76,90 @@
         <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                 <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-user-clock text-indigo-500 text-xl"></i>
+                    Histórico de Cadastros
+                </h3>
+                <span
+                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    Últimos 30 eventos
+                </span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Data e Hora</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Evento</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Nome</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Telefone</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Endereço</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Alertas</th>
+                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Detalhe</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for evento in eventos_cadastro %}
+                        <tr class="hover:bg-slate-50/80 transition-colors align-top">
+                            <td class="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
+                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ evento['data_hora'] }}
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if evento['acao'] == 'cadastro' %}
+                                <span
+                                    class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-1 rounded border border-emerald-100">
+                                    <i class="fa-solid fa-user-plus"></i> Cadastro
+                                </span>
+                                {% elif evento['acao'] == 'cancelamento' %}
+                                <span
+                                    class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs font-bold px-2 py-1 rounded border border-rose-100">
+                                    <i class="fa-solid fa-user-minus"></i> Cancelamento
+                                </span>
+                                {% else %}
+                                <span
+                                    class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs font-bold px-2 py-1 rounded border border-amber-100">
+                                    <i class="fa-solid fa-circle-info"></i> {{ evento['acao'] }}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 font-medium text-slate-800">
+                                {{ evento['nome'] or '-' }}
+                            </td>
+                            <td class="px-6 py-4 text-slate-600 font-mono">
+                                {{ evento['telefone'] or '-' }}
+                            </td>
+                            <td class="px-6 py-4 text-slate-600">
+                                {{ evento['endereco'] or '-' }}
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if evento['receber_whatsapp'] == 1 %}
+                                <span class="text-emerald-700 font-semibold">Sim</span>
+                                {% elif evento['receber_whatsapp'] == 0 %}
+                                <span class="text-slate-500">Não</span>
+                                {% else %}
+                                <span class="text-slate-400">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-slate-600">
+                                {{ evento['detalhe'] or '-' }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="px-6 py-12 text-center text-slate-500">
+                                <i class="fa-regular fa-address-book text-3xl text-slate-300 mb-3 block"></i>
+                                Nenhum cadastro ou cancelamento registado ainda.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
                     <i class="fa-brands fa-whatsapp text-emerald-500 text-xl"></i>
                     Inscritos para Alertas
                 </h3>

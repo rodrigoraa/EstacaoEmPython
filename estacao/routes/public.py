@@ -11,6 +11,59 @@ from services.weather_service import obter_dados, obter_previsao
 public_routes = Blueprint("public", __name__)
 
 
+def garantir_tabela_cadastro_eventos(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cadastro_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+            acao TEXT NOT NULL,
+            usuario_id INTEGER,
+            nome TEXT,
+            telefone TEXT,
+            endereco TEXT,
+            receber_whatsapp INTEGER,
+            detalhe TEXT
+        )
+        """
+    )
+
+
+def registrar_evento_cadastro(
+    conn,
+    acao,
+    usuario_id=None,
+    nome=None,
+    telefone=None,
+    endereco=None,
+    receber_whatsapp=None,
+    detalhe=None,
+):
+    garantir_tabela_cadastro_eventos(conn)
+    conn.execute(
+        """
+        INSERT INTO cadastro_eventos (
+            acao,
+            usuario_id,
+            nome,
+            telefone,
+            endereco,
+            receber_whatsapp,
+            detalhe
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            acao,
+            usuario_id,
+            nome,
+            telefone,
+            endereco,
+            receber_whatsapp,
+            detalhe,
+        ),
+    )
+
+
 def corrigir_texto_env(texto):
     if not texto:
         return texto
@@ -49,9 +102,29 @@ def index():
                     "INSERT INTO usuarios (nome, telefone, endereco, receber_whatsapp) VALUES (?, ?, ?, ?)",
                     (nome, telefone, endereco, receber_whatsapp),
                 )
+                registrar_evento_cadastro(
+                    conn,
+                    "cadastro",
+                    usuario_id=cursor.lastrowid,
+                    nome=nome,
+                    telefone=telefone,
+                    endereco=endereco,
+                    receber_whatsapp=receber_whatsapp,
+                    detalhe="Cadastro realizado pelo site",
+                )
                 conn.commit()
                 mensagem = "✅ Cadastro realizado com sucesso!"
             except sqlite3.IntegrityError:
+                registrar_evento_cadastro(
+                    conn,
+                    "cadastro_duplicado",
+                    nome=nome,
+                    telefone=telefone,
+                    endereco=endereco,
+                    receber_whatsapp=receber_whatsapp,
+                    detalhe="Numero ja cadastrado",
+                )
+                conn.commit()
                 mensagem = "⚠️ Número já cadastrado!"
             finally:
                 conn.close()
@@ -94,6 +167,35 @@ def unsubscribe():
             telefone_com_55 = "55" + telefone
 
         conn = database.get_db()
+        usuario = conn.execute(
+            """
+            SELECT id, nome, telefone, endereco, receber_whatsapp
+            FROM usuarios
+            WHERE telefone = ? OR telefone = ?
+            LIMIT 1
+            """,
+            (telefone_sem_55, telefone_com_55),
+        ).fetchone()
+
+        if usuario:
+            registrar_evento_cadastro(
+                conn,
+                "cancelamento",
+                usuario_id=usuario["id"],
+                nome=usuario["nome"],
+                telefone=usuario["telefone"],
+                endereco=usuario["endereco"],
+                receber_whatsapp=usuario["receber_whatsapp"],
+                detalhe="Cancelamento realizado pelo link",
+            )
+        else:
+            registrar_evento_cadastro(
+                conn,
+                "cancelamento_nao_encontrado",
+                telefone=telefone,
+                detalhe="Telefone nao encontrado no momento do cancelamento",
+            )
+
         conn.execute(
             "DELETE FROM usuarios WHERE telefone = ? OR telefone = ?",
             (telefone_sem_55, telefone_com_55),

@@ -72,6 +72,22 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS cadastro_eventos (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+        acao TEXT NOT NULL,
+        usuario_id INTEGER,
+        nome TEXT,
+        telefone TEXT,
+        endereco TEXT,
+        receber_whatsapp INTEGER,
+        detalhe TEXT
+    )
+    """)
+
     conn.commit()
 
     conn.close()

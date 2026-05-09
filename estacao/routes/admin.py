@@ -203,6 +203,21 @@ def admin():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cadastro_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+            acao TEXT NOT NULL,
+            usuario_id INTEGER,
+            nome TEXT,
+            telefone TEXT,
+            endereco TEXT,
+            receber_whatsapp INTEGER,
+            detalhe TEXT
+        )
+        """
+    )
     conn.commit()
     usuarios = conn.execute("SELECT * FROM usuarios ORDER BY id DESC").fetchall()
     historico = conn.execute(
@@ -210,6 +225,9 @@ def admin():
     ).fetchall()
     alertas = conn.execute(
         "SELECT * FROM alertas_envios ORDER BY id DESC LIMIT 30"
+    ).fetchall()
+    eventos_cadastro = conn.execute(
+        "SELECT * FROM cadastro_eventos ORDER BY id DESC LIMIT 30"
     ).fetchall()
     conn.close()
 
@@ -220,5 +238,6 @@ def admin():
         usuarios=usuarios,
         historico=historico,
         alertas=alertas,
+        eventos_cadastro=eventos_cadastro,
         evolution_status=evolution_status,
     )

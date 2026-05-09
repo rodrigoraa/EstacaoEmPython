@@ -71,6 +71,24 @@ body.modal-open {
     display: none !important;
 }
 
+.theme-dark #menuLateral {
+    position: fixed !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 50 !important;
+    width: 88vw;
+    max-width: 16rem;
+    height: 100vh;
+    max-height: 100vh;
+    transform: translateX(0) !important;
+    background: var(--panel-bg) !important;
+    border-color: var(--panel-border) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 /* Fallback para producao: mantém os modais fixos mesmo se alguma classe do Tailwind falhar. */
 #modalCadastro,
 #modalCancelar {
@@ -117,11 +135,13 @@ body.modal-open {
 }
 
 @media (max-width: 767px) {
-    #menuLateral {
+    #menuLateral,
+    .theme-dark #menuLateral {
         transform: translateX(-100%) !important;
     }
 
-    body.menu-open #menuLateral {
+    body.menu-open #menuLateral,
+    .theme-dark body.menu-open #menuLateral {
         transform: translateX(0) !important;
     }
 
@@ -579,6 +599,15 @@ body.modal-open {
     background: var(--panel-bg) !important;
     border-color: var(--panel-border) !important;
     backdrop-filter: blur(14px);
+}
+
+.theme-dark body {
+    background-color: var(--page-bg) !important;
+    background-image:
+        linear-gradient(var(--page-overlay), var(--page-overlay)),
+        url('../background.jpg') !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 .theme-dark #menuOverlay {

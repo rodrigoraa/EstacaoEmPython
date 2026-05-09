@@ -42,62 +42,73 @@ body {
     transition: background-color .25s ease, color .25s ease;
 }
 
-body.menu-open {
+body.menu-open,
+body.modal-open {
     overflow: hidden;
-    touch-action: none;
 }
 
-/* =========================================================
-   MENU MOBILE E MODAIS
-   ========================================================= */
-
-.mobile-menu-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
+#menuLateral {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 50 !important;
+    width: 88vw;
+    max-width: 16rem;
+    height: 100vh;
+    max-height: 100vh;
 }
 
-.mobile-menu-panel {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 50;
-    height: 100dvh;
-    max-height: 100dvh;
-    will-change: transform;
+#menuLateral.\-translate-x-full {
+    transform: translateX(-100%) !important;
 }
 
-.app-modal {
+#menuOverlay {
     position: fixed !important;
     inset: 0 !important;
-    z-index: 80 !important;
-    display: none;
+    z-index: 40 !important;
+}
+
+#menuOverlay.hidden {
+    display: none !important;
+}
+
+/* Fallback para producao: mantém os modais fixos mesmo se alguma classe do Tailwind falhar. */
+#modalCadastro,
+#modalCancelar {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 9999 !important;
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background: rgba(15, 23, 42, 0.52);
+    background: rgba(0, 0, 0, 0.4);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
 
-.app-modal.is-open {
+#modalCadastro.hidden,
+#modalCancelar.hidden {
+    display: none !important;
+}
+
+#modalCadastro.flex,
+#modalCancelar.flex {
     display: flex !important;
 }
 
-.app-modal-card {
+#modalCadastro > div,
+#modalCancelar > div {
     width: min(100%, 28rem);
-    max-height: min(90dvh, 42rem);
+    max-height: 90vh;
     overflow-y: auto;
-    background: #ffffff;
-    border: 1px solid rgba(226, 232, 240, 0.95);
-    border-radius: 0.9rem;
-    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
 }
 
-.modal-open {
-    overflow: hidden;
-    touch-action: none;
+@media (min-width: 768px) {
+    #menuLateral {
+        transform: translateX(0) !important;
+        width: 16rem;
+    }
 }
 
 /* =========================================================
@@ -555,23 +566,37 @@ body.menu-open {
     background: rgba(2, 6, 23, 0.72) !important;
 }
 
-.theme-dark .app-modal {
+.theme-dark #modalCadastro,
+.theme-dark #modalCancelar {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 9999 !important;
     background: rgba(2, 6, 23, 0.74) !important;
 }
 
-.theme-dark .app-modal-card {
-    background: rgba(15, 23, 42, 0.98);
-    border-color: rgba(71, 85, 105, 0.58);
+.theme-dark #modalCadastro.flex,
+.theme-dark #modalCancelar.flex {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.theme-dark #modalCadastro > div,
+.theme-dark #modalCancelar > div {
+    background: rgba(15, 23, 42, 0.98) !important;
+    border-color: rgba(71, 85, 105, 0.58) !important;
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
 }
 
-.theme-dark .app-modal-card input {
+.theme-dark #modalCadastro input,
+.theme-dark #modalCancelar input {
     background: rgba(15, 23, 42, 0.94);
     border-color: rgba(100, 116, 139, 0.72);
     color: #f8fafc;
 }
 
-.theme-dark .app-modal-card input::placeholder {
+.theme-dark #modalCadastro input::placeholder,
+.theme-dark #modalCancelar input::placeholder {
     color: #94a3b8;
 }
 

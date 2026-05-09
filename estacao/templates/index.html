@@ -632,6 +632,8 @@
     // FUNÇÕES DO CADASTRO
     function prepararModal(modal) {
       if (!modal) return;
+      modal.dataset.scrollY = String(window.scrollY || window.pageYOffset || 0);
+      window.scrollTo(0, 0);
       if (modal.parentElement !== document.body) {
         document.body.appendChild(modal);
       }
@@ -640,6 +642,9 @@
       modal.style.setProperty("right", "0", "important");
       modal.style.setProperty("bottom", "0", "important");
       modal.style.setProperty("left", "0", "important");
+      modal.style.setProperty("width", "100vw", "important");
+      modal.style.setProperty("height", "100vh", "important");
+      modal.style.setProperty("min-height", "100vh", "important");
       modal.style.setProperty("z-index", "9999", "important");
       modal.style.setProperty("display", "flex", "important");
       modal.style.setProperty("align-items", "center", "important");
@@ -660,11 +665,13 @@
 
     function fecharCadastro() {
       const modal = document.getElementById("modalCadastro");
+      const scrollY = Number(modal.dataset.scrollY || 0);
       modal.classList.add("hidden");
       modal.classList.remove("flex");
       modal.style.setProperty("display", "none", "important");
       modal.setAttribute("aria-hidden", "true");
       document.body.classList.remove("modal-open");
+      window.scrollTo(0, scrollY);
     }
 
     // FUNÇÕES DE CANCELAR ALERTAS
@@ -679,11 +686,13 @@
 
     function fecharCancelarAlertas() {
       const modal = document.getElementById("modalCancelar");
+      const scrollY = Number(modal.dataset.scrollY || 0);
       modal.classList.add("hidden");
       modal.classList.remove("flex");
       modal.style.setProperty("display", "none", "important");
       modal.setAttribute("aria-hidden", "true");
       document.body.classList.remove("modal-open");
+      window.scrollTo(0, scrollY);
     }
 
     function confirmarCancelamento() {

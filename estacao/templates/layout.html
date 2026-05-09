@@ -119,7 +119,7 @@
             const menu = document.getElementById("menuLateral");
             const overlay = document.getElementById("menuOverlay");
             const button = document.getElementById("menuToggleMobile");
-            const isOpen = menu.classList.contains("-translate-x-full");
+            const isOpen = !document.body.classList.contains("menu-open");
 
             menu.classList.toggle("-translate-x-full");
             overlay.classList.toggle("hidden");

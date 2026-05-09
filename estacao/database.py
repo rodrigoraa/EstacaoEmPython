@@ -57,6 +57,21 @@ def init_db():
     )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS alertas_envios (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+        usuario_id INTEGER,
+        nome TEXT,
+        telefone TEXT,
+        status TEXT NOT NULL,
+        mensagem TEXT,
+        erro TEXT
+    )
+    """)
+
     conn.commit()
 
     conn.close()

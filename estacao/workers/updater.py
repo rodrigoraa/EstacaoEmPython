@@ -84,21 +84,62 @@ def salvar_estado(estado):
         json.dump(estado, f)
 
 
+def garantir_tabela_alertas(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alertas_envios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+            usuario_id INTEGER,
+            nome TEXT,
+            telefone TEXT,
+            status TEXT NOT NULL,
+            mensagem TEXT,
+            erro TEXT
+        )
+        """
+    )
+    conn.commit()
+
+
+def registrar_envio_alerta(conn, usuario, telefone, status, mensagem, erro=None):
+    conn.execute(
+        """
+        INSERT INTO alertas_envios (
+            usuario_id,
+            nome,
+            telefone,
+            status,
+            mensagem,
+            erro
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            usuario["id"],
+            usuario["nome"],
+            telefone,
+            status,
+            mensagem,
+            erro,
+        ),
+    )
+    conn.commit()
+
+
 def enviar_alerta(mensagem):
     log(f"🚨 Disparando Alerta Crítico para usuários...")
     conn = sqlite3.connect(DB, timeout=10)
     conn.row_factory = sqlite3.Row
+    garantir_tabela_alertas(conn)
 
     usuarios = conn.execute(
         """
-        SELECT nome, telefone
+        SELECT id, nome, telefone
         FROM usuarios
         WHERE (ativo = 1 OR ativo IS NULL)
         AND receber_whatsapp = 1
         """
     ).fetchall()
-    conn.close()
-
     for u in usuarios:
         telefone = "".join(filter(str.isdigit, u["telefone"]))
         if not telefone.startswith("55"):
@@ -111,9 +152,13 @@ def enviar_alerta(mensagem):
 
         try:
             enviar_whatsapp(telefone, mensagem_final)
+            registrar_envio_alerta(conn, u, telefone, "enviado", mensagem_final)
             log(f"✅ Enviado para {u['nome']}")
         except Exception as e:
+            registrar_envio_alerta(conn, u, telefone, "falhou", mensagem_final, str(e))
             log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
+
+    conn.close()
 
 
 # --- MUDANÇA 1: Adicionamos o parâmetro "sensacao" aqui na função ---
@@ -247,13 +292,18 @@ def executar():
             f"🌡 {temp}°C | 💧 {umidade}% | 💨 {rajada} km/h (Rajada) | 🌧 {chuva_hoje} mm | ☀️ UV: {uv}"
         )
 
+        log(f"Rajada atual: {rajada} km/h | Rajada maxima do dia: {rajada_max} km/h")
+
         estado = carregar_estado()
         if estado.get("rajada_max_nuvem") != rajada_max:
             estado["rajada_max_nuvem"] = rajada_max
             salvar_estado(estado)
 
         # --- MUDANÇA 3: Passamos a 'sensacao' para dentro do verificador ---
-        verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv)
+        rajada_alerta = max(rajada, rajada_max)
+        if rajada_alerta != rajada:
+            log(f"Usando rajada maxima do dia para alertas: {rajada_alerta} km/h")
+        verificar_alertas(temp, sensacao, rajada_alerta, chuva_hoje, umidade, uv)
 
         salvar_leitura(
             (

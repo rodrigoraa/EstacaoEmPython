@@ -4,6 +4,7 @@ import secrets
 import time
 
 import bcrypt
+import requests
 from flask import (
     Blueprint,
     abort,
@@ -86,6 +87,60 @@ def admin_autenticado():
     return True
 
 
+def obter_status_evolution():
+    evolution_url = os.environ.get("EVOLUTION_URL", "").rstrip("/")
+    api_key = os.environ.get("EVOLUTION_API_KEY")
+    instance = os.environ.get("EVOLUTION_INSTANCE")
+
+    if not evolution_url or not api_key or not instance:
+        faltando = []
+        if not evolution_url:
+            faltando.append("EVOLUTION_URL")
+        if not api_key:
+            faltando.append("EVOLUTION_API_KEY")
+        if not instance:
+            faltando.append("EVOLUTION_INSTANCE")
+
+        return {
+            "ok": False,
+            "status": "nao_configurada",
+            "estado": "Configuração incompleta",
+            "detalhe": "Faltando: " + ", ".join(faltando),
+        }
+
+    url = f"{evolution_url}/instance/connectionState/{instance}"
+    headers = {"apikey": api_key}
+
+    try:
+        resposta = requests.get(url, headers=headers, timeout=5)
+    except requests.exceptions.RequestException as e:
+        return {
+            "ok": False,
+            "status": "erro_conexao",
+            "estado": "Sem resposta",
+            "detalhe": str(e),
+        }
+
+    try:
+        payload = resposta.json()
+    except ValueError:
+        payload = {}
+
+    estado = (
+        payload.get("instance", {}).get("state")
+        or payload.get("state")
+        or payload.get("status")
+        or "desconhecido"
+    )
+
+    return {
+        "ok": resposta.ok and str(estado).lower() in ("open", "connected"),
+        "status": "respondendo" if resposta.ok else "erro_http",
+        "estado": estado,
+        "detalhe": f"HTTP {resposta.status_code}",
+    }
+
+
 @admin_routes.route("/admin/deletar/<int:id>", methods=["POST"])
 @limiter.limit("20 per hour")
 def deletar_usuario(id):
@@ -134,10 +189,36 @@ def admin():
         return render_template("admin_login.html")
 
     conn = database.get_db()
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alertas_envios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+            usuario_id INTEGER,
+            nome TEXT,
+            telefone TEXT,
+            status TEXT NOT NULL,
+            mensagem TEXT,
+            erro TEXT
+        )
+        """
+    )
+    conn.commit()
     usuarios = conn.execute("SELECT * FROM usuarios ORDER BY id DESC").fetchall()
     historico = conn.execute(
         "SELECT * FROM historico_clima ORDER BY id DESC LIMIT 5"
     ).fetchall()
+    alertas = conn.execute(
+        "SELECT * FROM alertas_envios ORDER BY id DESC LIMIT 30"
+    ).fetchall()
     conn.close()
 
-    return render_template("admin_painel.html", usuarios=usuarios, historico=historico)
+    evolution_status = obter_status_evolution()
+
+    return render_template(
+        "admin_painel.html",
+        usuarios=usuarios,
+        historico=historico,
+        alertas=alertas,
+        evolution_status=evolution_status,
+    )

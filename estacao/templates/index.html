@@ -630,29 +630,69 @@
     }
 
     // FUNÇÕES DO CADASTRO
+    function prepararModal(modal) {
+      if (!modal) return;
+      modal.dataset.scrollY = String(window.scrollY || window.pageYOffset || 0);
+      window.scrollTo(0, 0);
+      if (modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+      }
+      modal.style.setProperty("position", "fixed", "important");
+      modal.style.setProperty("top", "0", "important");
+      modal.style.setProperty("right", "0", "important");
+      modal.style.setProperty("bottom", "0", "important");
+      modal.style.setProperty("left", "0", "important");
+      modal.style.setProperty("width", "100vw", "important");
+      modal.style.setProperty("height", "100vh", "important");
+      modal.style.setProperty("min-height", "100vh", "important");
+      modal.style.setProperty("z-index", "9999", "important");
+      modal.style.setProperty("display", "flex", "important");
+      modal.style.setProperty("align-items", "center", "important");
+      modal.style.setProperty("justify-content", "center", "important");
+      modal.style.setProperty("padding", "1rem", "important");
+      modal.style.setProperty("overflow-y", "auto", "important");
+      modal.style.setProperty("background", "rgba(2, 6, 23, 0.74)", "important");
+    }
+
     function abrirCadastro() {
       const modal = document.getElementById("modalCadastro");
+      prepararModal(modal);
       modal.classList.remove("hidden");
       modal.classList.add("flex");
+      modal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("modal-open");
     }
 
     function fecharCadastro() {
       const modal = document.getElementById("modalCadastro");
+      const scrollY = Number(modal.dataset.scrollY || 0);
       modal.classList.add("hidden");
       modal.classList.remove("flex");
+      modal.style.setProperty("display", "none", "important");
+      modal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      window.scrollTo(0, scrollY);
     }
 
     // FUNÇÕES DE CANCELAR ALERTAS
     function abrirCancelarAlertas() {
       const modal = document.getElementById("modalCancelar");
+      prepararModal(modal);
       modal.classList.remove("hidden");
       modal.classList.add("flex");
+      modal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("modal-open");
     }
 
     function fecharCancelarAlertas() {
       const modal = document.getElementById("modalCancelar");
+      const scrollY = Number(modal.dataset.scrollY || 0);
       modal.classList.add("hidden");
       modal.classList.remove("flex");
+      modal.style.setProperty("display", "none", "important");
+      modal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      window.scrollTo(0, scrollY);
     }
 
     function confirmarCancelamento() {
@@ -702,6 +742,19 @@
         renderizarGraficoRecordes();
       }, 60000);
 
+      document.querySelectorAll("#modalCadastro, #modalCancelar").forEach((modal) => {
+        modal.addEventListener("click", (event) => {
+          if (event.target !== modal) return;
+          modal.id === "modalCadastro" ? fecharCadastro() : fecharCancelarAlertas();
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        fecharCadastro();
+        fecharCancelarAlertas();
+      });
+
       // Formatação do telefone no formulário de Cadastro
       const telInput = document.getElementById("telefone");
       if (telInput) {
@@ -738,6 +791,9 @@
   <div
     id="modalCadastro"
     class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 p-4"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
   >
     <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
       <h2 class="text-xl font-bold text-slate-800 mb-4">
@@ -810,6 +866,9 @@
   <div
     id="modalCancelar"
     class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm p-4"
+    aria-hidden="true"
+    role="dialog"
+    aria-modal="true"
   >
     <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6 border border-slate-100 max-h-[90vh] overflow-y-auto">
       <div class="flex items-center gap-3 mb-2">

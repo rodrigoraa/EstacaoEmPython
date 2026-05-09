@@ -42,8 +42,112 @@ body {
     transition: background-color .25s ease, color .25s ease;
 }
 
-body.menu-open {
+body.menu-open,
+body.modal-open {
     overflow: hidden;
+}
+
+#menuLateral {
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 50 !important;
+    width: 88vw;
+    max-width: 16rem;
+    height: 100vh;
+    max-height: 100vh;
+    transform: translateX(0) !important;
+    transition: transform .3s ease;
+}
+
+#menuOverlay {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 40 !important;
+}
+
+#menuOverlay.hidden {
+    display: none !important;
+}
+
+.theme-dark #menuLateral {
+    position: fixed !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    z-index: 50 !important;
+    width: 88vw;
+    max-width: 16rem;
+    height: 100vh;
+    max-height: 100vh;
+    transform: translateX(0) !important;
+    background: var(--panel-bg) !important;
+    border-color: var(--panel-border) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Fallback para producao: mantém os modais fixos mesmo se alguma classe do Tailwind falhar. */
+#modalCadastro,
+#modalCancelar {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    z-index: 9999 !important;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.4);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+#modalCadastro.hidden,
+#modalCancelar.hidden {
+    display: none !important;
+}
+
+#modalCadastro.flex,
+#modalCancelar.flex {
+    display: flex !important;
+}
+
+#modalCadastro > div,
+#modalCancelar > div {
+    width: min(100%, 28rem);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+    #menuLateral {
+        transform: translateX(0) !important;
+        width: 16rem;
+    }
+
+    main {
+        padding-left: 16rem;
+    }
+}
+
+@media (max-width: 767px) {
+    #menuLateral,
+    .theme-dark #menuLateral {
+        transform: translateX(-100%) !important;
+    }
+
+    body.menu-open #menuLateral,
+    .theme-dark body.menu-open #menuLateral {
+        transform: translateX(0) !important;
+    }
+
+    body.menu-open #menuOverlay {
+        display: block !important;
+    }
 }
 
 /* =========================================================
@@ -497,8 +601,51 @@ body.menu-open {
     backdrop-filter: blur(14px);
 }
 
+.theme-dark body {
+    background-color: var(--page-bg) !important;
+    background-image:
+        linear-gradient(var(--page-overlay), var(--page-overlay)),
+        url('../background.jpg') !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 .theme-dark #menuOverlay {
     background: rgba(2, 6, 23, 0.72) !important;
+}
+
+.theme-dark #modalCadastro,
+.theme-dark #modalCancelar {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 9999 !important;
+    background: rgba(2, 6, 23, 0.74) !important;
+}
+
+.theme-dark #modalCadastro.flex,
+.theme-dark #modalCancelar.flex {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.theme-dark #modalCadastro > div,
+.theme-dark #modalCancelar > div {
+    background: rgba(15, 23, 42, 0.98) !important;
+    border-color: rgba(71, 85, 105, 0.58) !important;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.theme-dark #modalCadastro input,
+.theme-dark #modalCancelar input {
+    background: rgba(15, 23, 42, 0.94);
+    border-color: rgba(100, 116, 139, 0.72);
+    color: #f8fafc;
+}
+
+.theme-dark #modalCadastro input::placeholder,
+.theme-dark #modalCancelar input::placeholder {
+    color: #94a3b8;
 }
 
 .theme-dark .text-slate-800,

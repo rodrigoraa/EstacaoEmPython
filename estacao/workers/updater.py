@@ -131,6 +131,8 @@ def enviar_alerta(mensagem):
     conn = sqlite3.connect(DB, timeout=10)
     conn.row_factory = sqlite3.Row
     garantir_tabela_alertas(conn)
+    enviados = 0
+    falhas = 0
 
     usuarios = conn.execute(
         """
@@ -153,12 +155,30 @@ def enviar_alerta(mensagem):
         try:
             enviar_whatsapp(telefone, mensagem_final)
             registrar_envio_alerta(conn, u, telefone, "enviado", mensagem_final)
+            enviados += 1
             log(f"✅ Enviado para {u['nome']}")
         except Exception as e:
             registrar_envio_alerta(conn, u, telefone, "falhou", mensagem_final, str(e))
+            falhas += 1
             log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
 
     conn.close()
+    return {"total": len(usuarios), "enviados": enviados, "falhas": falhas}
+
+
+def marcar_alerta_enviado(estado, chave_nivel, nivel, mensagem):
+    resultado = enviar_alerta(mensagem)
+
+    if resultado["enviados"] > 0:
+        estado[chave_nivel] = nivel
+        salvar_estado(estado)
+        return True
+
+    log(
+        f"Alerta nao marcado como enviado: {resultado['falhas']} falhas "
+        f"de {resultado['total']} destinatarios."
+    )
+    return False
 
 
 # --- MUDANÇA 1: Adicionamos o parâmetro "sensacao" aqui na função ---
@@ -187,79 +207,55 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
     # ================= REGRAS DE TEMPERATURA (CALOR) =================
     if temp >= 40 and estado["nivel_calor"] < 2:
         msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Risco iminente de insolação. Evite exposição ao sol!"
-        enviar_alerta(msg)
-        estado["nivel_calor"] = 2
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_calor", 2, msg)
 
     elif temp >= 35 and estado["nivel_calor"] < 1:
         msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Calor forte na região com risco de desconforto térmico."
-        enviar_alerta(msg)
-        estado["nivel_calor"] = 1
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_calor", 1, msg)
 
     # ================= REGRAS DE TEMPERATURA (FRIO) =================
     if temp <= 0 and estado["nivel_frio"] < 3:
         msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Condição extrema com alto risco de geada severa!"
-        enviar_alerta(msg)
-        estado["nivel_frio"] = 3
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_frio", 3, msg)
 
     elif temp <= 5 and estado["nivel_frio"] < 2:
         msg = f"🧊 *ALERTA CRÍTICO: Frio Extremo!*\nA temperatura caiu para *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Proteja-se do frio."
-        enviar_alerta(msg)
-        estado["nivel_frio"] = 2
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_frio", 2, msg)
 
     elif temp <= 12 and estado["nivel_frio"] < 1:
         msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Frio incomum para a região. Agasalhe-se bem."
-        enviar_alerta(msg)
-        estado["nivel_frio"] = 1
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_frio", 1, msg)
 
     # ================= REGRAS DE VENTO =================
     if rajada >= 100 and estado["nivel_vento"] < 3:
         msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*. Alto risco de destelhamentos e queda de árvores!"
-        enviar_alerta(msg)
-        estado["nivel_vento"] = 3
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_vento", 3, msg)
 
     elif rajada >= 70 and estado["nivel_vento"] < 2:
         msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*. Possibilidade de danos na infraestrutura e rede elétrica. Atenção redobrada."
-        enviar_alerta(msg)
-        estado["nivel_vento"] = 2
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_vento", 2, msg)
 
     elif rajada >= 40 and estado["nivel_vento"] < 1:
         msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*. Risco de queda de galhos e objetos soltos."
-        enviar_alerta(msg)
-        estado["nivel_vento"] = 1
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_vento", 1, msg)
 
     # ================= REGRAS DE CHUVA =================
     if chuva_hoje >= 100 and estado["nivel_chuva"] < 2:
         msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje. Risco grave de enxurradas!"
-        enviar_alerta(msg)
-        estado["nivel_chuva"] = 2
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_chuva", 2, msg)
 
     elif chuva_hoje >= 50 and estado["nivel_chuva"] < 1:
         msg = f"🌧️ *ALERTA: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm*. Risco de alagamentos em pontos isolados. Dirija com cuidado."
-        enviar_alerta(msg)
-        estado["nivel_chuva"] = 1
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_chuva", 1, msg)
 
     # ================= REGRAS DE UMIDADE =================
     if umidade <= 20 and estado["nivel_umidade"] < 2:
         msg = f"🆘 *ALERTA CRÍTICO: Umidade Muito Baixa!*\nAr extremamente seco, registrando apenas *{umidade}%*. Grave risco à saúde e alto potencial de incêndios. Evite exercícios físicos."
-        enviar_alerta(msg)
-        estado["nivel_umidade"] = 2
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_umidade", 2, msg)
 
     elif umidade <= 30 and estado["nivel_umidade"] < 1:
         msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*. Causa desconforto respiratório. Beba bastante água."
-        enviar_alerta(msg)
-        estado["nivel_umidade"] = 1
-        salvar_estado(estado)
+        marcar_alerta_enviado(estado, "nivel_umidade", 1, msg)
 
 
 def executar():

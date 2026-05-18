@@ -177,11 +177,11 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_calor", 2, msg)
 
     elif temp >= 35 and estado["nivel_calor"] < 1:
-        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Calor forte na região com risco de desconforto térmico."
+        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Calor forte na região."
         marcar_alerta_enviado(estado, "nivel_calor", 1, msg)
 
     if temp <= 0 and estado["nivel_frio"] < 3:
-        msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Condição extrema com alto risco de geada severa!"
+        msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Condição extrema com alto risco de geada!"
         marcar_alerta_enviado(estado, "nivel_frio", 3, msg)
 
     elif temp <= 5 and estado["nivel_frio"] < 2:
@@ -189,7 +189,7 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_frio", 2, msg)
 
     elif temp <= 12 and estado["nivel_frio"] < 1:
-        msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Frio incomum para a região. Agasalhe-se bem."
+        msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C* (Sensação térmica de *{sensacao:.1f}°C*). Frio incomum para a região."
         marcar_alerta_enviado(estado, "nivel_frio", 1, msg)
 
     if rajada >= 100 and estado["nivel_vento"] < 3:
@@ -197,15 +197,15 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_vento", 3, msg)
 
     elif rajada >= 70 and estado["nivel_vento"] < 2:
-        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*. Possibilidade de danos na infraestrutura e rede elétrica. Atenção redobrada."
+        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*. Possibilidade de danos. Atenção redobrada."
         marcar_alerta_enviado(estado, "nivel_vento", 2, msg)
 
     elif rajada >= 40 and estado["nivel_vento"] < 1:
-        msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*. Risco de queda de galhos e objetos soltos."
+        msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*. Risco de queda de galhos."
         marcar_alerta_enviado(estado, "nivel_vento", 1, msg)
 
-    if chuva_hoje >= 100 and estado["nivel_chuva"] < 2:
-        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje. Risco grave de enxurradas!"
+    if chuva_hoje >= 70 and estado["nivel_chuva"] < 2:
+        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje. Risco de enxurradas!"
         marcar_alerta_enviado(estado, "nivel_chuva", 2, msg)
 
     elif chuva_hoje >= 50 and estado["nivel_chuva"] < 1:
@@ -213,11 +213,11 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_chuva", 1, msg)
 
     if umidade <= 20 and estado["nivel_umidade"] < 2:
-        msg = f"🆘 *ALERTA CRÍTICO: Umidade Muito Baixa!*\nAr extremamente seco, registrando apenas *{umidade}%*. Grave risco à saúde e alto potencial de incêndios. Evite exercícios físicos."
+        msg = f"🆘 *ALERTA CRÍTICO: Umidade Muito Baixa!*\nAr extremamente seco, registrando apenas *{umidade}%*. Grave risco à saúde e alto potencial de incêndios."
         marcar_alerta_enviado(estado, "nivel_umidade", 2, msg)
 
     elif umidade <= 30 and estado["nivel_umidade"] < 1:
-        msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*. Causa desconforto respiratório. Beba bastante água."
+        msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*. Causa desconforto respiratório."
         marcar_alerta_enviado(estado, "nivel_umidade", 1, msg)
 
 
@@ -253,7 +253,7 @@ def executar():
             f"🌡 {temp}°C | 💧 {umidade}% | 💨 {rajada} km/h (Rajada) | 🌧 {chuva_hoje} mm | ☀️ UV: {uv}"
         )
 
-        log(f"Rajada atual: {rajada} km/h | Rajada maxima do dia: {rajada_max} km/h")
+        log(f"Rajada atual: {rajada} km/h | Rajada máxima do dia: {rajada_max} km/h")
 
         salvar_historico_clima(dados, leitura_bruta_id=leitura_bruta_id)
         log("💾 Histórico salvo antes de alertas e processamentos")
@@ -265,7 +265,7 @@ def executar():
 
         rajada_alerta = max(rajada, rajada_max)
         if rajada_alerta != rajada:
-            log(f"Usando rajada maxima do dia para alertas: {rajada_alerta} km/h")
+            log(f"Usando rajada máxima do dia para alertas: {rajada_alerta} km/h")
         verificar_alertas(temp, sensacao, rajada_alerta, chuva_hoje, umidade, uv)
 
     except Exception as e:

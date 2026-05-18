@@ -1,15 +1,35 @@
+import os
 import sqlite3
 
-DATABASE = "estacao.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
+
+
+def configurar_conexao(conn):
+    conn.execute("PRAGMA busy_timeout = 30000;")
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = FULL;")
+    return conn
 
 
 def get_db():
 
-    conn = sqlite3.connect(DATABASE)
+    conn = sqlite3.connect(DATABASE, timeout=30)
 
     conn.row_factory = sqlite3.Row
+    configurar_conexao(conn)
 
     return conn
+
+
+def coluna_existe(conn, tabela, coluna):
+    return any(row["name"] == coluna for row in conn.execute(f"PRAGMA table_info({tabela})"))
+
+
+def garantir_coluna(conn, tabela, coluna, definicao):
+    if not coluna_existe(conn, tabela, coluna):
+        conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}")
 
 
 def init_db():
@@ -39,9 +59,104 @@ def init_db():
         chuva_evento REAL,
         chuva_hoje REAL,
 
+        station_timestamp_ms INTEGER,
+        station_data_hora_utc TEXT,
+        station_data_hora_local TEXT,
+        data_hora_utc TEXT,
+        data_hora_local TEXT,
+        bateria TEXT,
+        sinal TEXT,
+        leitura_bruta_id INTEGER,
         data_hora TEXT
     )
     """)
+
+    garantir_coluna(conn, "historico_clima", "leitura_bruta_id", "INTEGER")
+    garantir_coluna(conn, "historico_clima", "station_timestamp_ms", "INTEGER")
+    garantir_coluna(conn, "historico_clima", "station_data_hora_utc", "TEXT")
+    garantir_coluna(conn, "historico_clima", "station_data_hora_local", "TEXT")
+    garantir_coluna(conn, "historico_clima", "data_hora_utc", "TEXT")
+    garantir_coluna(conn, "historico_clima", "data_hora_local", "TEXT")
+    garantir_coluna(conn, "historico_clima", "bateria", "TEXT")
+    garantir_coluna(conn, "historico_clima", "sinal", "TEXT")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS leituras_brutas (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        origem TEXT NOT NULL DEFAULT 'ambientweather',
+        station_timestamp_ms INTEGER,
+        station_data_hora_utc TEXT,
+        station_data_hora_local TEXT,
+        recebido_em TEXT NOT NULL,
+        recebido_em_utc TEXT,
+        recebido_em_local TEXT,
+        persistido_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        payload_json TEXT NOT NULL,
+        dados_convertidos_json TEXT,
+
+        chuva_rate REAL,
+        chuva_evento REAL,
+        chuva_hoje REAL,
+        bateria TEXT,
+        sinal TEXT
+    )
+    """)
+
+    garantir_coluna(conn, "leituras_brutas", "station_data_hora_utc", "TEXT")
+    garantir_coluna(conn, "leituras_brutas", "station_data_hora_local", "TEXT")
+    garantir_coluna(conn, "leituras_brutas", "recebido_em_utc", "TEXT")
+    garantir_coluna(conn, "leituras_brutas", "recebido_em_local", "TEXT")
+    garantir_coluna(conn, "leituras_brutas", "bateria", "TEXT")
+    garantir_coluna(conn, "leituras_brutas", "sinal", "TEXT")
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS logs_persistencia (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        data_hora TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        nivel TEXT NOT NULL,
+        origem TEXT,
+        mensagem TEXT NOT NULL,
+        detalhe TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS historico_diario (
+
+        data TEXT PRIMARY KEY,
+        temp_min REAL,
+        temp_max REAL,
+        temp_media REAL,
+        umidade_min REAL,
+        umidade_max REAL,
+        vento_rajada_max REAL,
+        chuva_total REAL,
+        pressao_min REAL,
+        pressao_max REAL,
+        uv_max REAL
+    )
+    """)
+
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_leituras_brutas_recebido_em ON leituras_brutas(recebido_em)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_leituras_brutas_station_ts ON leituras_brutas(station_timestamp_ms)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora ON historico_clima(data_hora)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora_utc ON historico_clima(data_hora_utc)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora_local ON historico_clima(data_hora_local)"
+    )
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (

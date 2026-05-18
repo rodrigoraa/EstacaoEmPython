@@ -1,9 +1,9 @@
-from flask import Blueprint, jsonify, request, render_template
+from flask import Blueprint, jsonify, request
 import database
 import calendar
-import sqlite3
 import os
 import json
+from time_utils import data_local
 
 api_routes = Blueprint("api", __name__)
 
@@ -15,6 +15,7 @@ def api_clima():
         """
         SELECT
             data_hora,
+            data_hora_local,
             temp,
             sensacao,
             umidade,
@@ -31,6 +32,16 @@ def api_clima():
         ORDER BY id DESC
         LIMIT 1
         """
+    ).fetchone()
+
+    chuva_hoje_max = conn.execute(
+        """
+        SELECT MAX(chuva_hoje) as chuva_hoje
+        FROM historico_clima
+        WHERE COALESCE(substr(data_hora_local, 1, 10), date(data_hora)) = ?
+        """
+        ,
+        (data_local(),),
     ).fetchone()
 
     conn.close()
@@ -63,7 +74,8 @@ def api_clima():
     except Exception as e:
         print(f"Erro ao ler rajada: {e}", flush=True)
 
-    hora = row["data_hora"][11:19]
+    data_hora_exibicao = row["data_hora_local"] or row["data_hora"]
+    hora = data_hora_exibicao[11:19]
 
     return jsonify(
         {
@@ -80,7 +92,10 @@ def api_clima():
             "vento_dir": row["vento_dir"],
             "chuva_rate": row["chuva_rate"],
             "chuva_evento": row["chuva_evento"],
-            "chuva_hoje": row["chuva_hoje"],
+            # Em queda de energia alguns aparelhos podem reiniciar o contador
+            # diario. Para a tela ao vivo, nunca exibimos menos chuva do que o
+            # maior acumulado ja persistido no dia.
+            "chuva_hoje": max(row["chuva_hoje"] or 0, chuva_hoje_max["chuva_hoje"] or 0),
             "hora_leitura": hora,
         }
     )
@@ -92,15 +107,17 @@ def api_historico():
     dados = conn.execute(
         """
         SELECT
-            strftime('%H:00', data_hora) as hora,
+            COALESCE(substr(data_hora_local, 12, 2), strftime('%H', data_hora)) || ':00' as hora,
             AVG(temp) as temp,
             MAX(chuva_hoje) as chuva_hoje,
             AVG(vento_vel) as vento_vel
         FROM historico_clima
-        WHERE date(data_hora) = date('now','localtime')
+        WHERE COALESCE(substr(data_hora_local, 1, 10), date(data_hora)) = ?
         GROUP BY hora
         ORDER BY hora ASC
         """
+        ,
+        (data_local(),),
     ).fetchall()
 
     conn.close()
@@ -127,6 +144,7 @@ def api_ultimo():
         """
         SELECT
             data_hora,
+            data_hora_local,
             temp,
             chuva_hoje as chuva,
             vento_vel
@@ -143,7 +161,7 @@ def api_ultimo():
 
     return jsonify(
         {
-            "timestamp": row["data_hora"],
+            "timestamp": row["data_hora_local"] or row["data_hora"],
             "temperatura": row["temp"],
             "vento": row["vento_vel"],
             "chuva": row["chuva"],
@@ -157,14 +175,16 @@ def api_historico_semana():
     dados = conn.execute(
         """
         SELECT
-            strftime('%w', data_hora) as dia_semana,
+            strftime('%w', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) as dia_semana,
             MAX(chuva_hoje) as chuva
         FROM historico_clima
-        WHERE strftime('%W', data_hora) = strftime('%W', 'now', 'localtime')
-          AND strftime('%Y', data_hora) = strftime('%Y', 'now', 'localtime')
+        WHERE strftime('%W', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = strftime('%W', ?)
+          AND strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = strftime('%Y', ?)
         GROUP BY dia_semana
         ORDER BY dia_semana ASC
         """
+        ,
+        (data_local(), data_local()),
     ).fetchall()
 
     conn.close()
@@ -188,13 +208,13 @@ def historico_mes():
     dados = conn.execute(
         """
         SELECT 
-            strftime('%d', data_hora) as dia,
+            strftime('%d', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) as dia,
             ROUND(AVG(temp), 1) as temperatura,
             MAX(chuva_hoje) as chuva,
             MAX(vento_vel) as vento
         FROM historico_clima
-        WHERE strftime('%Y', data_hora) = ? 
-          AND strftime('%m', data_hora) = ?
+        WHERE strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ? 
+          AND strftime('%m', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
         GROUP BY dia
         ORDER BY dia
         """,
@@ -222,8 +242,8 @@ def api_recordes_mes():
             MAX(vento_vel) as max_vento,
             MAX(chuva_hoje) as max_chuva
         FROM historico_clima
-        WHERE strftime('%Y', data_hora) = ?
-          AND strftime('%m', data_hora) = ?
+        WHERE strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
+          AND strftime('%m', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
         """,
         (ano, mes),
     ).fetchone()
@@ -275,8 +295,6 @@ def api_historico_consulta():
     max_vento = 0.0
 
     conn = database.get_db()
-    conn.row_factory = sqlite3.Row
-
     linhas = conn.execute(
         """
         SELECT 
@@ -363,9 +381,7 @@ def api_anos_disponiveis():
 
     anos = [row["ano"] for row in linhas if row["ano"]]
 
-    import datetime
-
-    ano_atual = str(datetime.datetime.now().year)
+    ano_atual = data_local()[:4]
 
     if not anos:
         anos = [ano_atual]

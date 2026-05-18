@@ -102,7 +102,7 @@
                         {% for evento in eventos_cadastro %}
                         <tr class="hover:bg-slate-50/80 transition-colors align-top">
                             <td class="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
-                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ evento['data_hora'] }}
+                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ evento['data_hora_exibicao'] }}
                             </td>
                             <td class="px-6 py-4">
                                 {% if evento['acao'] == 'cadastro' %}
@@ -256,7 +256,7 @@
                         {% for alerta in alertas %}
                         <tr class="hover:bg-slate-50/80 transition-colors align-top">
                             <td class="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
-                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ alerta['data_hora'] }}
+                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ alerta['data_hora_exibicao'] }}
                             </td>
                             <td class="px-6 py-4">
                                 {% if alerta['status'] == 'enviado' %}
@@ -323,7 +323,7 @@
                         {% for row in historico %}
                         <tr class="hover:bg-slate-50/80 transition-colors">
                             <td class="px-6 py-4 text-slate-600 font-mono text-xs">
-                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ row['data_hora'] }}
+                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ row['data_hora_exibicao'] }}
                             </td>
                             <td class="px-6 py-4">
                                 <span

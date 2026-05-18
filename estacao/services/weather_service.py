@@ -1,6 +1,13 @@
 import requests
 from datetime import datetime
 
+from persistence import (
+    dados_tempo_estacao,
+    extrair_bateria,
+    extrair_sinal,
+    salvar_leitura_bruta,
+)
+
 PUBLIC_SLUG = "a535a0b6ff603c1d2376abc99e689f2f"
 
 URL = f"https://lightning.ambientweather.net/devices?public.slug={PUBLIC_SLUG}"
@@ -22,7 +29,17 @@ def in_to_mm(i):
     return round(i * 25.4, 1)
 
 
-def obter_dados():
+def valor_numerico(raw, chave, padrao=0):
+    valor = raw.get(chave, padrao)
+    if valor is None:
+        return padrao
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return padrao
+
+
+def obter_dados(persistir_bruto=True):
 
     try:
         resposta = requests.get(URL, headers=HEADERS, timeout=20)
@@ -47,29 +64,32 @@ def obter_dados():
         if agora - timestamp > 600000:
             return None
 
-    temp = f_to_c(raw.get("tempf", 32))
-    sensacao = f_to_c(raw.get("feelsLike", raw.get("tempf", 32)))
-    umidade = raw.get("humidity", 0)
+    temp_f = valor_numerico(raw, "tempf", 32)
+    temp = f_to_c(temp_f)
+    sensacao = f_to_c(valor_numerico(raw, "feelsLike", temp_f))
+    umidade = valor_numerico(raw, "humidity", 0)
 
-    pressao = round(raw.get("baromrelin", 0) * 33.8639, 1)
+    pressao = round(valor_numerico(raw, "baromrelin", 0) * 33.8639, 1)
 
-    uv = raw.get("uv", 0)
-    radiacao = raw.get("solarradiation", 0)
+    uv = valor_numerico(raw, "uv", 0)
+    radiacao = valor_numerico(raw, "solarradiation", 0)
 
-    vento = mph_to_kmh(raw.get("windspeedmph", 0))
-    rajada = mph_to_kmh(raw.get("windgustmph", 0))
+    vento = mph_to_kmh(valor_numerico(raw, "windspeedmph", 0))
+    rajada = mph_to_kmh(valor_numerico(raw, "windgustmph", 0))
 
-    # --- MUDANÇA AQUI: Lê a rajada máxima do dia direto do aparelho ---
-    # (Se por acaso o aparelho não mandar o maxdailygust, ele usa a rajada atual para não dar erro)
-    rajada_max = mph_to_kmh(raw.get("maxdailygust", raw.get("windgustmph", 0)))
+    rajada_max = mph_to_kmh(valor_numerico(raw, "maxdailygust", valor_numerico(raw, "windgustmph", 0)))
 
-    vento_dir = raw.get("winddir", 0)
+    vento_dir = valor_numerico(raw, "winddir", 0)
 
-    chuva_rate = in_to_mm(raw.get("hourlyrainin", 0))
-    chuva_evento = in_to_mm(raw.get("eventrainin", 0))
-    chuva_hoje = in_to_mm(raw.get("dailyrainin", 0))
+    chuva_rate = in_to_mm(valor_numerico(raw, "rainratein", valor_numerico(raw, "hourlyrainin", 0)))
+    chuva_evento = in_to_mm(valor_numerico(raw, "eventrainin", 0))
+    chuva_hoje = in_to_mm(valor_numerico(raw, "dailyrainin", 0))
+    station_data_hora_utc, station_data_hora_local = dados_tempo_estacao(timestamp)
 
-    return {
+    dados_convertidos = {
+        "station_timestamp_ms": timestamp,
+        "station_data_hora_utc": station_data_hora_utc,
+        "station_data_hora_local": station_data_hora_local,
         "temp": temp,
         "sensacao": sensacao,
         "umidade": umidade,
@@ -78,12 +98,21 @@ def obter_dados():
         "radiacao": radiacao,
         "vento": vento,
         "rajada": rajada,
-        "rajada_max": rajada_max,  # <--- MUDANÇA AQUI: Envia para o updater
+        "rajada_max": rajada_max,
         "vento_dir": vento_dir,
         "chuva_rate": chuva_rate,
         "chuva_evento": chuva_evento,
         "chuva_hoje": chuva_hoje,
+        "bateria": extrair_bateria(raw),
+        "sinal": extrair_sinal(raw),
     }
+
+    if persistir_bruto:
+        dados_convertidos["leitura_bruta_id"] = salvar_leitura_bruta(
+            raw, dados_convertidos
+        )
+
+    return dados_convertidos
 
 
 def descricao_weather_code(code):

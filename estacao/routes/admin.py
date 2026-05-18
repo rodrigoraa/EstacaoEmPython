@@ -19,6 +19,7 @@ from flask import (
 
 import database
 from extensions import limiter
+from time_utils import formatar_local
 
 admin_routes = Blueprint("admin", __name__)
 
@@ -141,6 +142,31 @@ def obter_status_evolution():
     }
 
 
+def formatar_data_admin(valor, assume_utc=True):
+    return formatar_local(valor, assume_utc=assume_utc)
+
+
+def preparar_eventos_admin(linhas, assume_utc=True):
+    resultado = []
+    for linha in linhas:
+        item = dict(linha)
+        item["data_hora_exibicao"] = formatar_data_admin(
+            item.get("data_hora"), assume_utc=assume_utc
+        )
+        resultado.append(item)
+    return resultado
+
+
+def preparar_historico_admin(linhas):
+    resultado = []
+    for linha in linhas:
+        item = dict(linha)
+        valor = item.get("data_hora_local") or item.get("data_hora")
+        item["data_hora_exibicao"] = formatar_data_admin(valor, assume_utc=False)
+        resultado.append(item)
+    return resultado
+
+
 @admin_routes.route("/admin/deletar/<int:id>", methods=["POST"])
 @limiter.limit("20 per hour")
 def deletar_usuario(id):
@@ -236,8 +262,8 @@ def admin():
     return render_template(
         "admin_painel.html",
         usuarios=usuarios,
-        historico=historico,
-        alertas=alertas,
-        eventos_cadastro=eventos_cadastro,
+        historico=preparar_historico_admin(historico),
+        alertas=preparar_eventos_admin(alertas, assume_utc=True),
+        eventos_cadastro=preparar_eventos_admin(eventos_cadastro, assume_utc=True),
         evolution_status=evolution_status,
     )

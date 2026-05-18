@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import os
 import sqlite3
 
@@ -7,6 +7,7 @@ from flask import Blueprint, render_template, request
 import database
 from extensions import limiter
 from services.weather_service import obter_dados, obter_previsao
+from time_utils import agora_local
 
 public_routes = Blueprint("public", __name__)
 
@@ -131,7 +132,7 @@ def index():
 
     dias_chuva = []
     dias_semana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
-    hoje = datetime.now()
+    hoje = agora_local().replace(tzinfo=None)
 
     for i in range(6, -1, -1):
         data_alvo = hoje - timedelta(days=i)

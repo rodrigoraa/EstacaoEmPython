@@ -79,7 +79,7 @@ def corrigir_texto_env(texto):
 
 
 @public_routes.route("/", methods=["GET", "POST"])
-@limiter.limit("5 per hour")
+@limiter.limit("5 per hour", methods=["POST"])
 def index():
     mensagem = ""
 

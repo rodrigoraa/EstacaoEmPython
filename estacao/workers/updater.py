@@ -124,11 +124,13 @@ def enviar_alerta(mensagem):
         saudacao = f"ATENÇÃO, {nome_usuario}," if nome_usuario else ""
 
         # Estrutura base da mensagem para todos os alertas
-        mensagem_final = f"{saudacao}" 
-        f"{mensagem}\n\n"
-        f"📍 _Vicentina MS - Distrito de São José_\n"
-        f" Para mais informações, acesse:\n"
-        f"{link_meteo}"
+        mensagem_final = (
+            f"{saudacao}" 
+            f"{mensagem}\n\n"
+            f"📍 _Vicentina MS - Distrito de São José_\n"
+            f" Para mais informações, acesse:\n"
+            f"{link_meteo}"
+        )
 
         try:
             enviar_whatsapp(telefone, mensagem_final)

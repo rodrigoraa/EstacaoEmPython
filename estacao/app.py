@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, send_from_directory
 from dotenv import load_dotenv
 
 load_dotenv(encoding="utf-8")
@@ -31,6 +31,15 @@ app.register_blueprint(webhook_routes)
 app.register_blueprint(public_routes)
 app.register_blueprint(api_routes)
 app.register_blueprint(admin_routes)
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, "static"),
+        "logo.png",
+        mimetype="image/png",
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)

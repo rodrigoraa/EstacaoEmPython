@@ -125,7 +125,7 @@ def enviar_alerta(mensagem):
 
         # Estrutura base da mensagem para todos os alertas
         mensagem_final = (
-            f"{saudacao}" 
+            f"{saudacao}\n" 
             f"{mensagem}\n\n"
             f"📍 _Vicentina MS - Distrito de São José_\n"
             f" Para mais informações, acesse:\n"

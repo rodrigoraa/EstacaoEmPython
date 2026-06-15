@@ -1,6 +1,7 @@
 import hmac
 import os
 import secrets
+import sqlite3
 import time
 
 import bcrypt
@@ -167,6 +168,126 @@ def preparar_historico_admin(linhas):
     return resultado
 
 
+def normalizar_telefone(valor):
+    return "".join(filter(str.isdigit, valor or ""))
+
+
+def garantir_estruturas_admin(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            telefone TEXT NOT NULL UNIQUE,
+            endereco TEXT,
+            ativo INTEGER DEFAULT 1,
+            receber_whatsapp INTEGER DEFAULT 0,
+            criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    database.garantir_coluna(conn, "usuarios", "ativo", "INTEGER DEFAULT 1")
+    database.garantir_coluna(conn, "usuarios", "receber_whatsapp", "INTEGER DEFAULT 0")
+    database.garantir_coluna(conn, "usuarios", "criado_em", "TEXT")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alertas_envios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+            usuario_id INTEGER,
+            nome TEXT,
+            telefone TEXT,
+            status TEXT NOT NULL,
+            mensagem TEXT,
+            erro TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cadastro_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+            acao TEXT NOT NULL,
+            usuario_id INTEGER,
+            nome TEXT,
+            telefone TEXT,
+            endereco TEXT,
+            receber_whatsapp INTEGER,
+            detalhe TEXT
+        )
+        """
+    )
+
+
+def registrar_evento_admin(
+    conn,
+    acao,
+    usuario_id=None,
+    nome=None,
+    telefone=None,
+    endereco=None,
+    receber_whatsapp=None,
+    detalhe=None,
+):
+    conn.execute(
+        """
+        INSERT INTO cadastro_eventos (
+            acao,
+            usuario_id,
+            nome,
+            telefone,
+            endereco,
+            receber_whatsapp,
+            detalhe
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            acao,
+            usuario_id,
+            nome,
+            telefone,
+            endereco,
+            receber_whatsapp,
+            detalhe,
+        ),
+    )
+
+
+def preparar_usuarios_admin(linhas):
+    resultado = []
+    for linha in linhas:
+        item = dict(linha)
+        item["ativo"] = 1 if item.get("ativo") is None else item.get("ativo")
+        item["receber_whatsapp"] = item.get("receber_whatsapp") or 0
+        item["criado_em_exibicao"] = formatar_data_admin(
+            item.get("criado_em"), assume_utc=True
+        )
+        resultado.append(item)
+    return resultado
+
+
+def resumo_usuarios_admin(conn):
+    return {
+        "total_usuarios": conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0],
+        "usuarios_ativos": conn.execute(
+            "SELECT COUNT(*) FROM usuarios WHERE ativo = 1 OR ativo IS NULL"
+        ).fetchone()[0],
+        "usuarios_whatsapp": conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM usuarios
+            WHERE (ativo = 1 OR ativo IS NULL)
+            AND receber_whatsapp = 1
+            """
+        ).fetchone()[0],
+        "usuarios_pausados": conn.execute(
+            "SELECT COUNT(*) FROM usuarios WHERE ativo = 0"
+        ).fetchone()[0],
+    }
+
+
 @admin_routes.route("/admin/deletar/<int:id>", methods=["POST"])
 @limiter.limit("20 per hour")
 def deletar_usuario(id):
@@ -176,13 +297,96 @@ def deletar_usuario(id):
     validar_csrf()
 
     conn = database.get_db()
+    garantir_estruturas_admin(conn)
     cursor = conn.cursor()
+    usuario = cursor.execute(
+        """
+        SELECT id, nome, telefone, endereco, receber_whatsapp
+        FROM usuarios
+        WHERE id = ?
+        """,
+        (id,),
+    ).fetchone()
+
+    if usuario:
+        registrar_evento_admin(
+            conn,
+            "exclusao_admin",
+            usuario_id=usuario["id"],
+            nome=usuario["nome"],
+            telefone=usuario["telefone"],
+            endereco=usuario["endereco"],
+            receber_whatsapp=usuario["receber_whatsapp"],
+            detalhe="Usuario removido pelo painel administrativo",
+        )
+
     cursor.execute("DELETE FROM usuarios WHERE id = ?", (id,))
     conn.commit()
     conn.close()
 
-    flash("Utilizador removido com sucesso.")
-    return redirect(url_for("admin.admin"))
+    flash("Usuário removido com sucesso.")
+    return redirect(url_for("admin.admin", _anchor="usuarios"))
+
+
+@admin_routes.route("/admin/usuarios/<int:id>/editar", methods=["POST"])
+@limiter.limit("30 per hour")
+def editar_usuario(id):
+    if not admin_autenticado():
+        return redirect(url_for("admin.admin"))
+
+    validar_csrf()
+
+    nome = request.form.get("nome", "").strip()
+    telefone = normalizar_telefone(request.form.get("telefone"))
+    endereco = request.form.get("endereco", "").strip()
+    receber_whatsapp = 1 if request.form.get("receber_whatsapp") == "1" else 0
+    ativo = 1 if request.form.get("ativo") == "1" else 0
+
+    if not nome or not telefone or not endereco:
+        flash("Preencha nome, telefone e endereço antes de salvar.")
+        return redirect(url_for("admin.admin", _anchor="usuarios"))
+
+    conn = database.get_db()
+    garantir_estruturas_admin(conn)
+
+    usuario = conn.execute("SELECT id FROM usuarios WHERE id = ?", (id,)).fetchone()
+    if not usuario:
+        conn.close()
+        flash("Usuário não encontrado.")
+        return redirect(url_for("admin.admin", _anchor="usuarios"))
+
+    try:
+        conn.execute(
+            """
+            UPDATE usuarios
+            SET nome = ?,
+                telefone = ?,
+                endereco = ?,
+                receber_whatsapp = ?,
+                ativo = ?
+            WHERE id = ?
+            """,
+            (nome, telefone, endereco, receber_whatsapp, ativo, id),
+        )
+        registrar_evento_admin(
+            conn,
+            "edicao_admin",
+            usuario_id=id,
+            nome=nome,
+            telefone=telefone,
+            endereco=endereco,
+            receber_whatsapp=receber_whatsapp,
+            detalhe="Dados atualizados pelo painel administrativo",
+        )
+        conn.commit()
+        flash("Usuário atualizado com sucesso.")
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        flash("Este telefone já está cadastrado para outro usuário.")
+    finally:
+        conn.close()
+
+    return redirect(url_for("admin.admin", _anchor="usuarios"))
 
 
 @admin_routes.route("/admin/logout", methods=["POST"])
@@ -215,37 +419,10 @@ def admin():
         return render_template("admin_login.html")
 
     conn = database.get_db()
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS alertas_envios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-            usuario_id INTEGER,
-            nome TEXT,
-            telefone TEXT,
-            status TEXT NOT NULL,
-            mensagem TEXT,
-            erro TEXT
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS cadastro_eventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-            acao TEXT NOT NULL,
-            usuario_id INTEGER,
-            nome TEXT,
-            telefone TEXT,
-            endereco TEXT,
-            receber_whatsapp INTEGER,
-            detalhe TEXT
-        )
-        """
-    )
+    garantir_estruturas_admin(conn)
     conn.commit()
     usuarios = conn.execute("SELECT * FROM usuarios ORDER BY id DESC").fetchall()
+    resumo_usuarios = resumo_usuarios_admin(conn)
     historico = conn.execute(
         "SELECT * FROM historico_clima ORDER BY id DESC LIMIT 5"
     ).fetchall()
@@ -261,7 +438,8 @@ def admin():
 
     return render_template(
         "admin_painel.html",
-        usuarios=usuarios,
+        usuarios=preparar_usuarios_admin(usuarios),
+        resumo_usuarios=resumo_usuarios,
         historico=preparar_historico_admin(historico),
         alertas=preparar_eventos_admin(alertas, assume_utc=True),
         eventos_cadastro=preparar_eventos_admin(eventos_cadastro, assume_utc=True),

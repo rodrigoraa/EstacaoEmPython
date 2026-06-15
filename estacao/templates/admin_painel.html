@@ -8,7 +8,7 @@
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -16,95 +16,263 @@
 <body class="bg-slate-50 font-['Inter'] text-slate-800 pb-12">
 
     <nav
-        class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
-        <div class="flex items-center gap-3">
+        class="bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+        <div class="flex items-center gap-3 min-w-0">
             <i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i>
-            <div>
-                <h1 class="text-lg font-bold text-white leading-tight">Painel de Controle</h1>
-                <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Acesso Restrito</p>
+            <div class="min-w-0">
+                <h1 class="text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1>
+                <p class="text-xs font-medium text-slate-400 uppercase">Estação Meteorológica</p>
             </div>
         </div>
-        <div>
-            <form action="/admin/logout" method="POST">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit"
-                    class="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
-                    <i class="fa-solid fa-right-from-bracket"></i> Sair
-                </button>
-            </form>
-        </div>
+        <form action="{{ url_for('admin.admin_logout') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit"
+                class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+                title="Sair">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span class="hidden sm:inline">Sair</span>
+            </button>
+        </form>
     </nav>
 
-    <main class="max-w-6xl mx-auto px-4 mt-8 space-y-8">
+    <main class="max-w-7xl mx-auto px-4 mt-6 md:mt-8 space-y-6">
 
-        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div class="px-6 py-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="bg-blue-50 border border-blue-100 text-blue-800 px-4 py-3 rounded-lg text-sm flex items-center gap-3 shadow-sm"
+            role="alert">
+            <i class="fa-solid fa-circle-info text-blue-500"></i>
+            <span class="font-medium">{{ messages[0] }}</span>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-semibold text-slate-500">Usuários cadastrados</span>
+                    <i class="fa-solid fa-users text-slate-400"></i>
+                </div>
+                <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.total_usuarios }}</p>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-semibold text-slate-500">Ativos</span>
+                    <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                </div>
+                <p class="mt-3 text-3xl font-extrabold text-emerald-700">{{ resumo_usuarios.usuarios_ativos }}</p>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-semibold text-slate-500">Recebem WhatsApp</span>
+                    <i class="fa-brands fa-whatsapp text-emerald-500"></i>
+                </div>
+                <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.usuarios_whatsapp }}</p>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-semibold text-slate-500">Pausados</span>
+                    <i class="fa-solid fa-pause text-amber-500"></i>
+                </div>
+                <p class="mt-3 text-3xl font-extrabold text-amber-700">{{ resumo_usuarios.usuarios_pausados }}</p>
+            </div>
+        </section>
+
+        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+            <div class="px-5 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex items-start gap-3">
-                    <div class="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
                         <i class="fa-brands fa-whatsapp text-xl"></i>
                     </div>
                     <div>
-                        <h3 class="text-base font-bold text-slate-800">Status da Evolution API</h3>
-                        <p class="text-sm text-slate-500">
-                            Estado da instância usada para enviar alertas pelo WhatsApp.
-                        </p>
+                        <h2 class="text-base font-bold text-slate-800">Evolution API</h2>
+                        <p class="text-sm text-slate-500">Status: {{ evolution_status.estado }}</p>
                     </div>
                 </div>
 
                 <div class="flex flex-wrap items-center gap-3">
                     {% if evolution_status.ok %}
                     <span
-                        class="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 text-sm font-bold px-3 py-2 rounded border border-emerald-100">
+                        class="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 text-sm font-bold px-3 py-2 rounded-lg border border-emerald-100">
                         <i class="fa-solid fa-circle-check"></i> Conectada
                     </span>
                     {% else %}
                     <span
-                        class="inline-flex items-center gap-2 bg-rose-50 text-rose-700 text-sm font-bold px-3 py-2 rounded border border-rose-100">
+                        class="inline-flex items-center gap-2 bg-rose-50 text-rose-700 text-sm font-bold px-3 py-2 rounded-lg border border-rose-100">
                         <i class="fa-solid fa-triangle-exclamation"></i> Atenção
                     </span>
                     {% endif %}
-                    <span class="text-sm text-slate-600">
-                        Estado: <strong class="text-slate-800">{{ evolution_status.estado }}</strong>
-                    </span>
                     <span class="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-1 rounded">
                         {{ evolution_status.detalhe }}
                     </span>
                 </div>
             </div>
+        </section>
+
+        <div class="flex flex-wrap gap-2 text-sm">
+            <a href="#usuarios"
+                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
+                <i class="fa-solid fa-users"></i> Usuários
+            </a>
+            <a href="#cadastros"
+                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
+                <i class="fa-solid fa-address-book"></i> Cadastros
+            </a>
+            <a href="#alertas"
+                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
+                <i class="fa-solid fa-bell"></i> Alertas
+            </a>
+            <a href="#historico"
+                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
+                <i class="fa-solid fa-server"></i> Histórico
+            </a>
         </div>
 
-        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-user-clock text-indigo-500 text-xl"></i>
-                    Histórico de Cadastros
-                </h3>
+        <section id="usuarios" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-users text-indigo-500 text-xl"></i>
+                        Usuários cadastrados
+                    </h2>
+                    <p class="text-sm text-slate-500 mt-1">Todos os registros ativos, pausados e com WhatsApp desmarcado.</p>
+                </div>
                 <span
-                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    {{ resumo_usuarios.total_usuarios }} no total
+                </span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[1080px] text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-40">Cadastro</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-56">Nome</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-44">Telefone</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Endereço</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-52">Status</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-28 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for row in usuarios %}
+                        <tr class="hover:bg-slate-50/80 transition-colors align-top">
+                            <td class="px-4 py-4 text-slate-600">
+                                <form id="editar-usuario-{{ row['id'] }}"
+                                    action="{{ url_for('admin.editar_usuario', id=row['id']) }}" method="POST">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                </form>
+                                <div class="flex flex-col gap-1">
+                                    <span
+                                        class="w-fit bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
+                                        #{{ row['id'] }}
+                                    </span>
+                                    <span class="font-mono text-xs text-slate-500">{{ row['criado_em_exibicao'] }}</span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-4">
+                                <label class="sr-only" for="nome-{{ row['id'] }}">Nome</label>
+                                <input id="nome-{{ row['id'] }}" name="nome" value="{{ row['nome'] or '' }}"
+                                    form="editar-usuario-{{ row['id'] }}" required
+                                    class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                            </td>
+                            <td class="px-4 py-4">
+                                <label class="sr-only" for="telefone-{{ row['id'] }}">Telefone</label>
+                                <input id="telefone-{{ row['id'] }}" name="telefone" value="{{ row['telefone'] or '' }}"
+                                    form="editar-usuario-{{ row['id'] }}" required inputmode="numeric"
+                                    class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-mono text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                            </td>
+                            <td class="px-4 py-4">
+                                <label class="sr-only" for="endereco-{{ row['id'] }}">Endereço</label>
+                                <input id="endereco-{{ row['id'] }}" name="endereco" value="{{ row['endereco'] or '' }}"
+                                    form="editar-usuario-{{ row['id'] }}" required
+                                    class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                            </td>
+                            <td class="px-4 py-4">
+                                <div class="flex flex-col gap-2">
+                                    <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                        <input type="checkbox" name="ativo" value="1"
+                                            form="editar-usuario-{{ row['id'] }}" {% if row['ativo'] == 1 %}checked{% endif %}
+                                            class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                        Ativo
+                                    </label>
+                                    <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                        <input type="checkbox" name="receber_whatsapp" value="1"
+                                            form="editar-usuario-{{ row['id'] }}" {% if row['receber_whatsapp'] == 1 %}checked{% endif %}
+                                            class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                                        WhatsApp
+                                    </label>
+                                </div>
+                            </td>
+                            <td class="px-4 py-4">
+                                <div class="flex justify-end gap-2">
+                                    <button type="submit" form="editar-usuario-{{ row['id'] }}"
+                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition hover:bg-indigo-500"
+                                        title="Salvar alterações">
+                                        <i class="fa-solid fa-floppy-disk"></i>
+                                    </button>
+
+                                    <form action="{{ url_for('admin.deletar_usuario', id=row['id']) }}" method="POST"
+                                        onsubmit="return confirm('Apagar este usuário?')">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                            class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-600 text-white shadow-sm transition hover:bg-rose-500"
+                                            title="Apagar usuário">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="px-6 py-12 text-center text-slate-500">
+                                <i class="fa-regular fa-folder-open text-3xl text-slate-300 mb-3 block"></i>
+                                Nenhum usuário cadastrado ainda.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="cadastros" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-user-clock text-indigo-500 text-xl"></i>
+                    Histórico de cadastros
+                </h2>
+                <span
+                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
                     Últimos 30 eventos
                 </span>
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full min-w-[900px] text-left border-collapse">
                     <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Data e Hora</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Evento</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Nome</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Telefone</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Endereço</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Alertas</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Detalhe</th>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Data e hora</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Evento</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Nome</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Telefone</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Endereço</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Alertas</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Detalhe</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 text-sm">
                         {% for evento in eventos_cadastro %}
                         <tr class="hover:bg-slate-50/80 transition-colors align-top">
-                            <td class="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
+                            <td class="px-4 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
                                 <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ evento['data_hora_exibicao'] }}
                             </td>
-                            <td class="px-6 py-4">
+                            <td class="px-4 py-4">
                                 {% if evento['acao'] == 'cadastro' %}
                                 <span
                                     class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-1 rounded border border-emerald-100">
@@ -115,6 +283,16 @@
                                     class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs font-bold px-2 py-1 rounded border border-rose-100">
                                     <i class="fa-solid fa-user-minus"></i> Cancelamento
                                 </span>
+                                {% elif evento['acao'] == 'edicao_admin' %}
+                                <span
+                                    class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-1 rounded border border-indigo-100">
+                                    <i class="fa-solid fa-pen"></i> Edição admin
+                                </span>
+                                {% elif evento['acao'] == 'exclusao_admin' %}
+                                <span
+                                    class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs font-bold px-2 py-1 rounded border border-rose-100">
+                                    <i class="fa-solid fa-trash"></i> Exclusão admin
+                                </span>
                                 {% else %}
                                 <span
                                     class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs font-bold px-2 py-1 rounded border border-amber-100">
@@ -122,16 +300,10 @@
                                 </span>
                                 {% endif %}
                             </td>
-                            <td class="px-6 py-4 font-medium text-slate-800">
-                                {{ evento['nome'] or '-' }}
-                            </td>
-                            <td class="px-6 py-4 text-slate-600 font-mono">
-                                {{ evento['telefone'] or '-' }}
-                            </td>
-                            <td class="px-6 py-4 text-slate-600">
-                                {{ evento['endereco'] or '-' }}
-                            </td>
-                            <td class="px-6 py-4">
+                            <td class="px-4 py-4 font-medium text-slate-800">{{ evento['nome'] or '-' }}</td>
+                            <td class="px-4 py-4 text-slate-600 font-mono">{{ evento['telefone'] or '-' }}</td>
+                            <td class="px-4 py-4 text-slate-600">{{ evento['endereco'] or '-' }}</td>
+                            <td class="px-4 py-4">
                                 {% if evento['receber_whatsapp'] == 1 %}
                                 <span class="text-emerald-700 font-semibold">Sim</span>
                                 {% elif evento['receber_whatsapp'] == 0 %}
@@ -140,125 +312,52 @@
                                 <span class="text-slate-400">-</span>
                                 {% endif %}
                             </td>
-                            <td class="px-6 py-4 text-slate-600">
-                                {{ evento['detalhe'] or '-' }}
-                            </td>
+                            <td class="px-4 py-4 text-slate-600">{{ evento['detalhe'] or '-' }}</td>
                         </tr>
                         {% else %}
                         <tr>
                             <td colspan="7" class="px-6 py-12 text-center text-slate-500">
                                 <i class="fa-regular fa-address-book text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum cadastro ou cancelamento registado ainda.
+                                Nenhum evento de cadastro registrado ainda.
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-brands fa-whatsapp text-emerald-500 text-xl"></i>
-                    Inscritos para Alertas
-                </h3>
-                <span
-                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    Base de Contatos
-                </span>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Nome do Contato</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Endereço</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Número (WhatsApp)</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200 w-32 text-center">ID</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200 w-32 text-center">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 text-sm">
-                        {% for row in usuarios %}
-                        <tr class="hover:bg-slate-50/80 transition-colors">
-                            <td class="px-6 py-4 font-medium text-slate-800">
-                                <i class="fa-regular fa-user text-slate-400 mr-2"></i> {{ row['nome'] }}
-                            </td>
-                            <td class="px-6 py-4 text-slate-600">
-                                <i class="fa-solid fa-location-dot text-slate-400 mr-1"></i> {{ row['endereco'] }}
-                            </td>
-                            <td class="px-6 py-4 text-slate-600 font-mono">
-                                {{ row['telefone'] }}
-                            </td>
-                            <td class="px-6 py-4 text-center">
-                                <span
-                                    class="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
-                                    #{{ row['id'] }}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 text-center">
-
-                                <form class="inline" action="/admin/deletar/{{ row['id'] }}" method="POST"
-                                    onsubmit="return confirm('Apagar este utilizador?')">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-                                    <button type="submit"
-                                        class="bg-rose-500 hover:bg-rose-600 text-white text-xs px-3 py-1 rounded shadow-sm">
-
-                                        <i class="fa-solid fa-trash"></i>
-
-                                    </button>
-
-                                </form>
-
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="5" class="px-6 py-12 text-center text-slate-500">
-                                <i class="fa-regular fa-folder-open text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum utilizador registado para receber alertas ainda.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+        <section id="alertas" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
                     <i class="fa-solid fa-bell text-amber-500 text-xl"></i>
-                    Envios de Alertas
-                </h3>
+                    Envios de alertas
+                </h2>
                 <span
-                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
                     Últimos 30 envios
                 </span>
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full min-w-[900px] text-left border-collapse">
                     <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Data e Hora</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Status</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Contato</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Telefone</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Mensagem</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Erro</th>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Data e hora</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Status</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Contato</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Telefone</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Mensagem</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Erro</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 text-sm">
                         {% for alerta in alertas %}
                         <tr class="hover:bg-slate-50/80 transition-colors align-top">
-                            <td class="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
+                            <td class="px-4 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
                                 <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ alerta['data_hora_exibicao'] }}
                             </td>
-                            <td class="px-6 py-4">
+                            <td class="px-4 py-4">
                                 {% if alerta['status'] == 'enviado' %}
                                 <span
                                     class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-1 rounded border border-emerald-100">
@@ -271,70 +370,64 @@
                                 </span>
                                 {% endif %}
                             </td>
-                            <td class="px-6 py-4 font-medium text-slate-800">
-                                {{ alerta['nome'] or '-' }}
-                            </td>
-                            <td class="px-6 py-4 text-slate-600 font-mono">
-                                {{ alerta['telefone'] or '-' }}
-                            </td>
-                            <td class="px-6 py-4 text-slate-600 max-w-md">
+                            <td class="px-4 py-4 font-medium text-slate-800">{{ alerta['nome'] or '-' }}</td>
+                            <td class="px-4 py-4 text-slate-600 font-mono">{{ alerta['telefone'] or '-' }}</td>
+                            <td class="px-4 py-4 text-slate-600 max-w-md">
                                 <div class="line-clamp-3 whitespace-pre-line">{{ alerta['mensagem'] }}</div>
                             </td>
-                            <td class="px-6 py-4 text-rose-700 max-w-xs">
-                                {{ alerta['erro'] or '-' }}
-                            </td>
+                            <td class="px-4 py-4 text-rose-700 max-w-xs">{{ alerta['erro'] or '-' }}</td>
                         </tr>
                         {% else %}
                         <tr>
                             <td colspan="6" class="px-6 py-12 text-center text-slate-500">
                                 <i class="fa-regular fa-bell text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum envio de alerta registado ainda.
+                                Nenhum envio de alerta registrado ainda.
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-            <div class="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+        <section id="historico" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
                     <i class="fa-solid fa-server text-blue-500 text-xl"></i>
-                    Debug Histórico
-                </h3>
+                    Histórico da estação
+                </h2>
                 <span
-                    class="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    Últimos 5 registos
+                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
+                    Últimos 5 registros
                 </span>
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full min-w-[700px] text-left border-collapse">
                     <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Data e Hora</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Temperatura</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Humidade</th>
-                            <th class="px-6 py-4 font-semibold border-b border-slate-200">Precipitação</th>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Data e hora</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Temperatura</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Umidade</th>
+                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Precipitação</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 text-sm">
                         {% for row in historico %}
                         <tr class="hover:bg-slate-50/80 transition-colors">
-                            <td class="px-6 py-4 text-slate-600 font-mono text-xs">
+                            <td class="px-4 py-4 text-slate-600 font-mono text-xs">
                                 <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ row['data_hora_exibicao'] }}
                             </td>
-                            <td class="px-6 py-4">
+                            <td class="px-4 py-4">
                                 <span
                                     class="font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
                                     {{ row['temp'] }}°C
                                 </span>
                             </td>
-                            <td class="px-6 py-4 text-blue-600 font-medium">
+                            <td class="px-4 py-4 text-blue-600 font-medium">
                                 <i class="fa-solid fa-droplet text-blue-300 mr-1"></i> {{ row['umidade'] }}%
                             </td>
-                            <td class="px-6 py-4 text-slate-700 font-medium">
+                            <td class="px-4 py-4 text-slate-700 font-medium">
                                 {% if row['chuva_hoje'] > 0 %}
                                 <span class="text-blue-600">{{ row['chuva_hoje'] }} mm</span>
                                 {% else %}
@@ -345,15 +438,15 @@
                         {% else %}
                         <tr>
                             <td colspan="4" class="px-6 py-12 text-center text-slate-500">
-                                <i class=\"fa-solid fa-database text-3xl text-slate-300 mb-3 block\"></i>
-                                Nenhum registo de clima salvo na base de dados.
+                                <i class="fa-solid fa-database text-3xl text-slate-300 mb-3 block"></i>
+                                Nenhum registro de clima salvo na base de dados.
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
     </main>
 

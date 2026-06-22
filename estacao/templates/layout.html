@@ -30,23 +30,51 @@
 
 <body class="bg-slate-50 font-[Inter]">
 
-    <div class="mobile-topbar md:hidden bg-white border-b px-4 py-3 flex items-center justify-between gap-3 sticky top-0 z-30">
-        <span class="min-w-0 font-semibold text-slate-700 flex items-center gap-2">
-            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo da estação" class="h-9 w-9 rounded-xl shadow-sm" />
-            <span class="truncate text-sm">Estação Meteorológica</span>
-        </span>
-        <div class="flex items-center gap-2">
-            <button id="themeToggleMobile" type="button"
-                class="theme-toggle text-slate-700"
-                aria-label="Alternar modo escuro">
-                <i class="fa-solid fa-moon"></i>
-            </button>
-            <button id="menuToggleMobile" onclick="toggleMenu()" class="text-slate-700 text-2xl px-2"
-                aria-label="Abrir menu" aria-controls="menuLateral" aria-expanded="false">
-                <i class="fa-solid fa-bars"></i>
-            </button>
+    <header class="mobile-topbar md:hidden bg-white border-b sticky top-0 z-30">
+        <div class="mobile-topbar-main">
+            <span class="min-w-0 font-semibold text-slate-700 flex items-center gap-2">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo da estação" class="h-9 w-9 rounded-xl shadow-sm" />
+                <span class="truncate text-sm">Estação Meteorológica</span>
+            </span>
+            <div class="flex items-center gap-2">
+                <button id="themeToggleMobile" type="button"
+                    class="theme-toggle text-slate-700"
+                    aria-label="Alternar modo escuro">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+                <button id="menuToggleMobile" onclick="toggleMenu()" class="text-slate-700 text-2xl px-2"
+                    aria-label="Abrir menu" aria-controls="menuLateral" aria-expanded="false">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+            </div>
         </div>
-    </div>
+
+        <nav class="mobile-quick-nav" aria-label="Navegação principal">
+            <a href="/" class="mobile-quick-link {% if request.path == '/' %}is-active{% endif %}"
+                {% if request.path == '/' %}aria-current="page"{% endif %}>
+                <i class="fa-solid fa-house"></i>
+                <span>Início</span>
+            </a>
+            <a href="/historico"
+                class="mobile-quick-link {% if request.path.startswith('/historico') %}is-active{% endif %}"
+                {% if request.path.startswith('/historico') %}aria-current="page"{% endif %}>
+                <i class="fa-solid fa-chart-line"></i>
+                <span>Histórico</span>
+            </a>
+            <a href="/previsao"
+                class="mobile-quick-link {% if request.path.startswith('/previsao') %}is-active{% endif %}"
+                {% if request.path.startswith('/previsao') %}aria-current="page"{% endif %}>
+                <i class="fa-solid fa-cloud-sun-rain"></i>
+                <span>Previsão</span>
+            </a>
+            <a href="/sobre"
+                class="mobile-quick-link {% if request.path.startswith('/sobre') %}is-active{% endif %}"
+                {% if request.path.startswith('/sobre') %}aria-current="page"{% endif %}>
+                <i class="fa-solid fa-circle-info"></i>
+                <span>Sobre</span>
+            </a>
+        </nav>
+    </header>
 
     <div id="menuOverlay" onclick="toggleMenu()"
         class="fixed inset-0 bg-black/50 hidden z-40 md:hidden backdrop-blur-sm transition-opacity"></div>

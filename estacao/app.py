@@ -11,6 +11,14 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
 app.config["RATELIMIT_ENABLED"] = (
     os.environ.get("RATELIMIT_ENABLED", "true").strip().lower() == "true"
 )
+app.config["RATELIMIT_STORAGE_URI"] = os.environ.get(
+    "RATELIMIT_STORAGE_URI",
+    "memory://",
+)
+app.config["RATELIMIT_KEY_PREFIX"] = os.environ.get(
+    "RATELIMIT_KEY_PREFIX",
+    "estacao",
+)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = (

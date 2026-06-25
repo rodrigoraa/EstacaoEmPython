@@ -21,6 +21,7 @@ from flask import (
 import database
 from extensions import limiter
 from time_utils import formatar_local
+from unsubscribe_tokens import normalizar_telefone
 
 admin_routes = Blueprint("admin", __name__)
 
@@ -168,57 +169,10 @@ def preparar_historico_admin(linhas):
     return resultado
 
 
-def normalizar_telefone(valor):
-    return "".join(filter(str.isdigit, valor or ""))
-
-
 def garantir_estruturas_admin(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            telefone TEXT NOT NULL UNIQUE,
-            endereco TEXT,
-            ativo INTEGER DEFAULT 1,
-            receber_whatsapp INTEGER DEFAULT 0,
-            criado_em TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    database.garantir_coluna(conn, "usuarios", "ativo", "INTEGER DEFAULT 1")
-    database.garantir_coluna(conn, "usuarios", "receber_whatsapp", "INTEGER DEFAULT 0")
-    database.garantir_coluna(conn, "usuarios", "criado_em", "TEXT")
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS alertas_envios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-            usuario_id INTEGER,
-            nome TEXT,
-            telefone TEXT,
-            status TEXT NOT NULL,
-            mensagem TEXT,
-            erro TEXT
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS cadastro_eventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-            acao TEXT NOT NULL,
-            usuario_id INTEGER,
-            nome TEXT,
-            telefone TEXT,
-            endereco TEXT,
-            receber_whatsapp INTEGER,
-            detalhe TEXT
-        )
-        """
-    )
+    database.garantir_tabela_usuarios(conn)
+    database.garantir_tabela_alertas_envios(conn)
+    database.garantir_tabela_cadastro_eventos(conn)
 
 
 def registrar_evento_admin(
@@ -231,27 +185,15 @@ def registrar_evento_admin(
     receber_whatsapp=None,
     detalhe=None,
 ):
-    conn.execute(
-        """
-        INSERT INTO cadastro_eventos (
-            acao,
-            usuario_id,
-            nome,
-            telefone,
-            endereco,
-            receber_whatsapp,
-            detalhe
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            acao,
-            usuario_id,
-            nome,
-            telefone,
-            endereco,
-            receber_whatsapp,
-            detalhe,
-        ),
+    database.registrar_cadastro_evento(
+        conn,
+        acao,
+        usuario_id=usuario_id,
+        nome=nome,
+        telefone=telefone,
+        endereco=endereco,
+        receber_whatsapp=receber_whatsapp,
+        detalhe=detalhe,
     )
 
 

@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request
+import acumulados
 import database
 import calendar
 import os
@@ -6,6 +7,16 @@ import json
 from time_utils import data_local
 
 api_routes = Blueprint("api", __name__)
+
+
+def maior_float(*valores):
+    maior = 0.0
+    for valor in valores:
+        try:
+            maior = max(maior, float(valor or 0))
+        except (TypeError, ValueError):
+            continue
+    return maior
 
 
 def rajada_maxima_estado_alertas():
@@ -17,6 +28,16 @@ def rajada_maxima_estado_alertas():
         except (TypeError, ValueError):
             return None
         return rajada if rajada > 0 else None
+
+    try:
+        acumulado = acumulados.obter_acumulado_diario(data_local())
+        rajada = extrair_rajada(
+            {"rajada_max_nuvem": acumulado.get("rajada_max_corrigida")}
+        )
+        if rajada is not None:
+            return rajada
+    except Exception as e:
+        print(f"Erro ao ler rajada corrigida no banco: {e}", flush=True)
 
     try:
         estado = database.obter_estado_alertas()
@@ -79,25 +100,17 @@ def api_clima():
         """
     ).fetchone()
 
-    chuva_hoje_max = conn.execute(
-        """
-        SELECT MAX(chuva_hoje) as chuva_hoje
-        FROM historico_clima
-        WHERE COALESCE(substr(data_hora_local, 1, 10), date(data_hora)) = ?
-        """
-        ,
-        (data_local(),),
-    ).fetchone()
-
     conn.close()
 
     if not row:
         return jsonify({"erro": "Sem dados"})
 
-    rajada_do_dia = row["vento_rajada"]
+    acumulado = acumulados.obter_acumulado_diario(data_local())
+    chuva_corrigida = acumulado.get("chuva_total_corrigida", 0) if acumulado else 0
+    rajada_corrigida = acumulado.get("rajada_max_corrigida", 0) if acumulado else 0
+
     rajada_estado = rajada_maxima_estado_alertas()
-    if rajada_estado is not None:
-        rajada_do_dia = max(row["vento_rajada"], rajada_estado)
+    rajada_do_dia = maior_float(row["vento_rajada"], rajada_corrigida, rajada_estado)
 
     data_hora_exibicao = row["data_hora_local"] or row["data_hora"]
     hora = data_hora_exibicao[11:19]
@@ -117,16 +130,14 @@ def api_clima():
             "vento_dir": row["vento_dir"],
             "chuva_rate": row["chuva_rate"],
             "chuva_evento": row["chuva_evento"],
-            # Em queda de energia alguns aparelhos podem reiniciar o contador
-            # diario. Para a tela ao vivo, nunca exibimos menos chuva do que o
-            # maior acumulado ja persistido no dia.
-            "chuva_hoje": max(row["chuva_hoje"] or 0, chuva_hoje_max["chuva_hoje"] or 0),
+            "chuva_hoje": maior_float(row["chuva_hoje"], chuva_corrigida),
             "hora_leitura": hora,
         }
     )
 
 @api_routes.route("/api/historico")
 def api_historico():
+    data_hoje = data_local()
     conn = database.get_db()
 
     dados = conn.execute(
@@ -142,19 +153,20 @@ def api_historico():
         ORDER BY hora ASC
         """
         ,
-        (data_local(),),
+        (data_hoje,),
     ).fetchall()
 
     conn.close()
 
     resultado = []
+    chuva_corrigida_por_hora = acumulados.serie_chuva_corrigida_por_hora(data_hoje)
 
     for row in dados:
         resultado.append(
             {
                 "timestamp": row["hora"],
                 "temperatura": row["temp"],
-                "chuva": row["chuva_hoje"],
+                "chuva": chuva_corrigida_por_hora.get(row["hora"], row["chuva_hoje"]),
                 "vento": row["vento_vel"],
             }
         )
@@ -184,29 +196,40 @@ def api_ultimo():
     if not row:
         return jsonify({})
 
+    acumulado = acumulados.obter_acumulado_diario(data_local())
+    chuva_corrigida = acumulado.get("chuva_total_corrigida", 0) if acumulado else 0
+
     return jsonify(
         {
             "timestamp": row["data_hora_local"] or row["data_hora"],
             "temperatura": row["temp"],
             "vento": row["vento_vel"],
-            "chuva": row["chuva"],
+            "chuva": maior_float(row["chuva"], chuva_corrigida),
         }
     )
 
 @api_routes.route("/api/historico_semana")
 def api_historico_semana():
     conn = database.get_db()
+    database.garantir_tabela_acumulados_diarios(conn)
+    conn.commit()
 
     dados = conn.execute(
         """
         SELECT
-            strftime('%w', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) as dia_semana,
-            MAX(chuva_hoje) as chuva
-        FROM historico_clima
-        WHERE strftime('%W', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = strftime('%W', ?)
-          AND strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = strftime('%Y', ?)
-        GROUP BY dia_semana
-        ORDER BY dia_semana ASC
+            strftime('%w', h.data) as dia_semana,
+            COALESCE(a.chuva_total_corrigida, h.chuva) as chuva
+        FROM (
+            SELECT
+                COALESCE(substr(data_hora_local, 1, 10), date(data_hora)) as data,
+                MAX(chuva_hoje) as chuva
+            FROM historico_clima
+            WHERE strftime('%W', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = strftime('%W', ?)
+              AND strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = strftime('%Y', ?)
+            GROUP BY data
+        ) h
+        LEFT JOIN acumulados_diarios a ON a.data = h.data
+        ORDER BY h.data ASC
         """
         ,
         (data_local(), data_local()),
@@ -229,19 +252,29 @@ def historico_mes():
         return jsonify([])
 
     conn = database.get_db()
+    database.garantir_tabela_acumulados_diarios(conn)
+    conn.commit()
 
     dados = conn.execute(
         """
         SELECT 
-            strftime('%d', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) as dia,
-            ROUND(AVG(temp), 1) as temperatura,
-            MAX(chuva_hoje) as chuva,
-            MAX(vento_vel) as vento
-        FROM historico_clima
-        WHERE strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ? 
-          AND strftime('%m', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
-        GROUP BY dia
-        ORDER BY dia
+            strftime('%d', h.data) as dia,
+            h.temperatura,
+            COALESCE(a.chuva_total_corrigida, h.chuva) as chuva,
+            h.vento
+        FROM (
+            SELECT
+                COALESCE(substr(data_hora_local, 1, 10), date(data_hora)) as data,
+                ROUND(AVG(temp), 1) as temperatura,
+                MAX(chuva_hoje) as chuva,
+                MAX(vento_vel) as vento
+            FROM historico_clima
+            WHERE strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
+              AND strftime('%m', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
+            GROUP BY data
+        ) h
+        LEFT JOIN acumulados_diarios a ON a.data = h.data
+        ORDER BY h.data
         """,
         (ano, mes),
     ).fetchall()
@@ -259,16 +292,27 @@ def api_recordes_mes():
         return jsonify({})
 
     conn = database.get_db()
+    database.garantir_tabela_acumulados_diarios(conn)
+    conn.commit()
 
     row = conn.execute(
         """
         SELECT
-            MAX(temp) as max_temp,
-            MAX(vento_vel) as max_vento,
-            MAX(chuva_hoje) as max_chuva
-        FROM historico_clima
-        WHERE strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
-          AND strftime('%m', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
+            MAX(h.max_temp) as max_temp,
+            MAX(h.max_vento) as max_vento,
+            MAX(COALESCE(a.chuva_total_corrigida, h.max_chuva)) as max_chuva
+        FROM (
+            SELECT
+                COALESCE(substr(data_hora_local, 1, 10), date(data_hora)) as data,
+                MAX(temp) as max_temp,
+                MAX(vento_vel) as max_vento,
+                MAX(chuva_hoje) as max_chuva
+            FROM historico_clima
+            WHERE strftime('%Y', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
+              AND strftime('%m', COALESCE(substr(data_hora_local, 1, 10), date(data_hora))) = ?
+            GROUP BY data
+        ) h
+        LEFT JOIN acumulados_diarios a ON a.data = h.data
         """,
         (ano, mes),
     ).fetchone()

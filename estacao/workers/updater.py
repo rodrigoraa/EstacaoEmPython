@@ -7,6 +7,7 @@ sys.path.insert(0, BASE_DIR)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import time
 import json
+import acumulados
 import database
 from persistence import salvar_historico_clima
 from time_utils import agora_local, data_local
@@ -96,24 +97,6 @@ def salvar_estado(estado):
         log(f"⚠️ Não foi possível salvar estado de alertas em arquivo: {erro}")
 
 
-def garantir_tabela_alertas(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS alertas_envios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-            usuario_id INTEGER,
-            nome TEXT,
-            telefone TEXT,
-            status TEXT NOT NULL,
-            mensagem TEXT,
-            erro TEXT
-        )
-        """
-    )
-    conn.commit()
-
-
 def registrar_envio_alerta(conn, usuario, telefone, status, mensagem, erro=None):
     conn.execute(
         """
@@ -142,7 +125,8 @@ def enviar_alerta(mensagem):
     log(f"🚨 Disparando Alerta Crítico para usuários...")
     conn = database.get_db()
     conn.row_factory = sqlite3.Row
-    garantir_tabela_alertas(conn)
+    database.garantir_tabela_alertas_envios(conn)
+    conn.commit()
     enviados = 0
     falhas = 0
 
@@ -387,15 +371,23 @@ def executar():
         salvar_historico_clima(dados, leitura_bruta_id=leitura_bruta_id)
         log("💾 Histórico salvo antes de alertas e processamentos")
 
-        estado = carregar_estado()
-        if estado.get("rajada_max_nuvem") != rajada_max:
-            estado["rajada_max_nuvem"] = rajada_max
-            salvar_estado(estado)
+        acumulado = acumulados.atualizar_acumulado_diario(dados, data_local())
+        rajada_corrigida = acumulado["rajada_max_corrigida"]
+        chuva_corrigida = acumulado["chuva_total_corrigida"]
+        log(
+            "Acumulados corrigidos do dia: "
+            f"rajada máxima {rajada_corrigida} km/h | chuva {chuva_corrigida} mm"
+        )
 
-        rajada_alerta = max(rajada, rajada_max)
+        rajada_alerta = max(rajada, rajada_max, rajada_corrigida)
         if rajada_alerta != rajada:
             log(f"Usando rajada máxima do dia para alertas: {rajada_alerta} km/h")
-        verificar_alertas(temp, sensacao, rajada_alerta, chuva_hoje, umidade, uv)
+        verificar_alertas(temp, sensacao, rajada_alerta, chuva_corrigida, umidade, uv)
+
+        estado = carregar_estado()
+        if estado.get("rajada_max_nuvem") != rajada_corrigida:
+            estado["rajada_max_nuvem"] = rajada_corrigida
+            salvar_estado(estado)
 
     except Exception as e:
         log(f"❌ Erro {e}")
@@ -425,8 +417,17 @@ def salvar_resumo_diario_banco(data_ontem_str):
         """,
             (data_ontem_str,),
         ).fetchone()
+        acumulado = acumulados.obter_acumulado_diario(data_ontem_str)
 
         if resumo and resumo[0] is not None:
+            vento_rajada_max = max(
+                resumo[5] or 0,
+                acumulado.get("rajada_max_corrigida", 0) if acumulado else 0,
+            )
+            chuva_total = max(
+                resumo[6] or 0,
+                acumulado.get("chuva_total_corrigida", 0) if acumulado else 0,
+            )
             conn.execute(
                 """
                 INSERT OR REPLACE INTO historico_diario (
@@ -442,8 +443,8 @@ def salvar_resumo_diario_banco(data_ontem_str):
                     round(resumo[2], 1),
                     resumo[3],
                     resumo[4],
-                    resumo[5],
-                    resumo[6],
+                    vento_rajada_max,
+                    chuva_total,
                     resumo[7],
                     resumo[8],
                     resumo[9],

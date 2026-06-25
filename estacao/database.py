@@ -44,6 +44,108 @@ def garantir_tabela_estado_alertas(conn):
     """)
 
 
+def garantir_tabela_acumulados_diarios(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS acumulados_diarios (
+        data TEXT PRIMARY KEY,
+        chuva_total_corrigida REAL NOT NULL DEFAULT 0,
+        chuva_ultima_leitura REAL,
+        chuva_reset_count INTEGER NOT NULL DEFAULT 0,
+        rajada_max_corrigida REAL NOT NULL DEFAULT 0,
+        atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+
+def garantir_tabela_usuarios(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS usuarios (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        nome TEXT NOT NULL,
+        telefone TEXT NOT NULL UNIQUE,
+        endereco TEXT,
+        ativo INTEGER DEFAULT 1,
+        receber_whatsapp INTEGER DEFAULT 0,
+        criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    garantir_coluna(conn, "usuarios", "ativo", "INTEGER DEFAULT 1")
+    garantir_coluna(conn, "usuarios", "receber_whatsapp", "INTEGER DEFAULT 0")
+    garantir_coluna(conn, "usuarios", "criado_em", "TEXT")
+
+
+def garantir_tabela_alertas_envios(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS alertas_envios (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+        usuario_id INTEGER,
+        nome TEXT,
+        telefone TEXT,
+        status TEXT NOT NULL,
+        mensagem TEXT,
+        erro TEXT
+    )
+    """)
+
+
+def garantir_tabela_cadastro_eventos(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS cadastro_eventos (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+        acao TEXT NOT NULL,
+        usuario_id INTEGER,
+        nome TEXT,
+        telefone TEXT,
+        endereco TEXT,
+        receber_whatsapp INTEGER,
+        detalhe TEXT
+    )
+    """)
+
+
+def registrar_cadastro_evento(
+    conn,
+    acao,
+    usuario_id=None,
+    nome=None,
+    telefone=None,
+    endereco=None,
+    receber_whatsapp=None,
+    detalhe=None,
+):
+    garantir_tabela_cadastro_eventos(conn)
+    conn.execute(
+        """
+        INSERT INTO cadastro_eventos (
+            acao,
+            usuario_id,
+            nome,
+            telefone,
+            endereco,
+            receber_whatsapp,
+            detalhe
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            acao,
+            usuario_id,
+            nome,
+            telefone,
+            endereco,
+            receber_whatsapp,
+            detalhe,
+        ),
+    )
+
+
 def obter_estado_alertas():
     conn = get_db()
     try:
@@ -193,6 +295,7 @@ def init_db():
     """)
 
     garantir_tabela_estado_alertas(conn)
+    garantir_tabela_acumulados_diarios(conn)
 
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_leituras_brutas_recebido_em ON leituras_brutas(recebido_em)"
@@ -210,50 +313,9 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora_local ON historico_clima(data_hora_local)"
     )
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        nome TEXT NOT NULL,
-        telefone TEXT NOT NULL UNIQUE,
-        endereco TEXT,
-        ativo INTEGER DEFAULT 1,
-        receber_whatsapp INTEGER DEFAULT 0,
-        criado_em TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS alertas_envios (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-        usuario_id INTEGER,
-        nome TEXT,
-        telefone TEXT,
-        status TEXT NOT NULL,
-        mensagem TEXT,
-        erro TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS cadastro_eventos (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-        acao TEXT NOT NULL,
-        usuario_id INTEGER,
-        nome TEXT,
-        telefone TEXT,
-        endereco TEXT,
-        receber_whatsapp INTEGER,
-        detalhe TEXT
-    )
-    """)
+    garantir_tabela_usuarios(conn)
+    garantir_tabela_alertas_envios(conn)
+    garantir_tabela_cadastro_eventos(conn)
 
     conn.commit()
 

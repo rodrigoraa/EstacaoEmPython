@@ -20,24 +20,6 @@ from unsubscribe_tokens import (
 public_routes = Blueprint("public", __name__)
 
 
-def garantir_tabela_cadastro_eventos(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS cadastro_eventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
-            acao TEXT NOT NULL,
-            usuario_id INTEGER,
-            nome TEXT,
-            telefone TEXT,
-            endereco TEXT,
-            receber_whatsapp INTEGER,
-            detalhe TEXT
-        )
-        """
-    )
-
-
 def registrar_evento_cadastro(
     conn,
     acao,
@@ -48,28 +30,15 @@ def registrar_evento_cadastro(
     receber_whatsapp=None,
     detalhe=None,
 ):
-    garantir_tabela_cadastro_eventos(conn)
-    conn.execute(
-        """
-        INSERT INTO cadastro_eventos (
-            acao,
-            usuario_id,
-            nome,
-            telefone,
-            endereco,
-            receber_whatsapp,
-            detalhe
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            acao,
-            usuario_id,
-            nome,
-            telefone,
-            endereco,
-            receber_whatsapp,
-            detalhe,
-        ),
+    database.registrar_cadastro_evento(
+        conn,
+        acao,
+        usuario_id=usuario_id,
+        nome=nome,
+        telefone=telefone,
+        endereco=endereco,
+        receber_whatsapp=receber_whatsapp,
+        detalhe=detalhe,
     )
 
 

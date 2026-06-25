@@ -75,6 +75,14 @@ class CancelamentoAlertasTest(unittest.TestCase):
         conn.close()
         return total
 
+    def eventos_cadastro(self):
+        conn = self.abrir_banco()
+        eventos = conn.execute(
+            "SELECT acao, telefone, receber_whatsapp FROM cadastro_eventos ORDER BY id"
+        ).fetchall()
+        conn.close()
+        return eventos
+
     def test_get_com_telefone_nao_remove_usuario(self):
         self.cadastrar_usuario()
 
@@ -83,6 +91,87 @@ class CancelamentoAlertasTest(unittest.TestCase):
         self.assertEqual(resposta.status_code, 400)
         self.assertIn("Confirmação necessária".encode("utf-8"), resposta.data)
         self.assertEqual(self.total_usuarios(), 1)
+
+    def test_cadastro_com_whatsapp_envia_confirmacao(self):
+        envios = []
+        self.public_module.enviar_confirmacao_cadastro_whatsapp = (
+            lambda numero, nome: envios.append((numero, nome))
+        )
+
+        resposta = self.client.post(
+            "/",
+            data={
+                "nome": "Maria",
+                "telefone": "(67) 99999-9999",
+                "endereco": "Linha 1",
+                "whatsapp": "1",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
+        self.assertEqual(envios, [("5567999999999", "Maria")])
+
+        conn = self.abrir_banco()
+        usuario = conn.execute(
+            "SELECT nome, telefone, receber_whatsapp FROM usuarios"
+        ).fetchone()
+        conn.close()
+
+        self.assertEqual(usuario["nome"], "Maria")
+        self.assertEqual(usuario["telefone"], "67999999999")
+        self.assertEqual(usuario["receber_whatsapp"], 1)
+        self.assertEqual(
+            [evento["acao"] for evento in self.eventos_cadastro()],
+            ["cadastro", "confirmacao_whatsapp"],
+        )
+
+    def test_cadastro_sem_whatsapp_nao_envia_confirmacao(self):
+        envios = []
+        self.public_module.enviar_confirmacao_cadastro_whatsapp = (
+            lambda numero, nome: envios.append((numero, nome))
+        )
+
+        resposta = self.client.post(
+            "/",
+            data={
+                "nome": "Joao",
+                "telefone": "(67) 98888-7777",
+                "endereco": "Linha 2",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
+        self.assertEqual(envios, [])
+        self.assertEqual(
+            [evento["acao"] for evento in self.eventos_cadastro()],
+            ["cadastro"],
+        )
+
+    def test_cadastro_continua_salvo_se_confirmacao_falhar(self):
+        def falhar_confirmacao(numero, nome):
+            raise RuntimeError("Evolution indisponivel")
+
+        self.public_module.enviar_confirmacao_cadastro_whatsapp = falhar_confirmacao
+
+        resposta = self.client.post(
+            "/",
+            data={
+                "nome": "Ana",
+                "telefone": "(67) 97777-6666",
+                "endereco": "Linha 3",
+                "whatsapp": "1",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
+        self.assertEqual(self.total_usuarios(), 1)
+        self.assertEqual(
+            [evento["acao"] for evento in self.eventos_cadastro()],
+            ["cadastro", "confirmacao_whatsapp_falhou"],
+        )
 
     def test_token_get_confirma_e_post_remove_usuario(self):
         self.cadastrar_usuario()

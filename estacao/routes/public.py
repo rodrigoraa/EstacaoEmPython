@@ -129,6 +129,70 @@ def enviar_link_cancelamento_whatsapp(numero, link_cancelamento):
     enviar_whatsapp(numero, mensagem)
 
 
+def enviar_confirmacao_cadastro_whatsapp(numero, nome):
+    from services.whatsapp_service import enviar_whatsapp
+
+    nome = (nome or "").strip()
+    saudacao = f"Olá, {nome}!" if nome else "Olá!"
+    mensagem = (
+        f"{saudacao}\n\n"
+        "Seu cadastro para receber alertas meteorológicos da EE São José foi confirmado.\n\n"
+        "A partir de agora, você receberá avisos pelo WhatsApp quando a estação "
+        "registrar uma condição de atenção ou agravamento: frio de 12°C ou menos, "
+        "calor de 35°C ou mais, rajadas de vento a partir de 40 km/h, chuva "
+        "acumulada a partir de 50 mm no dia ou umidade de 30% ou menos.\n\n"
+        "Os alertas são enviados somente quando esses limites forem atingidos, "
+        "quando o nível ficar mais crítico ou, no caso do frio, quando a "
+        "temperatura subir e cair novamente."
+    )
+    enviar_whatsapp(numero, mensagem)
+
+
+def tentar_enviar_confirmacao_cadastro(
+    conn,
+    usuario_id,
+    nome,
+    telefone,
+    endereco,
+    receber_whatsapp,
+):
+    if not receber_whatsapp:
+        return
+
+    telefone_envio = telefone_com_codigo_pais(telefone)
+    try:
+        enviar_confirmacao_cadastro_whatsapp(telefone_envio, nome)
+        registrar_evento_cadastro(
+            conn,
+            "confirmacao_whatsapp",
+            usuario_id=usuario_id,
+            nome=nome,
+            telefone=telefone,
+            endereco=endereco,
+            receber_whatsapp=receber_whatsapp,
+            detalhe="Mensagem de confirmacao enviada por WhatsApp",
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Erro ao enviar confirmação de cadastro: {e}")
+        try:
+            registrar_evento_cadastro(
+                conn,
+                "confirmacao_whatsapp_falhou",
+                usuario_id=usuario_id,
+                nome=nome,
+                telefone=telefone,
+                endereco=endereco,
+                receber_whatsapp=receber_whatsapp,
+                detalhe=f"Falha ao enviar confirmacao por WhatsApp: {e}",
+            )
+            conn.commit()
+        except Exception as erro_evento:
+            conn.rollback()
+            print(f"Erro ao registrar falha de confirmação: {erro_evento}")
+
+
 @public_routes.route("/", methods=["GET", "POST"])
 @limiter.limit("5 per hour", methods=["POST"])
 def index():
@@ -154,10 +218,11 @@ def index():
                     "INSERT INTO usuarios (nome, telefone, endereco, receber_whatsapp) VALUES (?, ?, ?, ?)",
                     (nome, telefone, endereco, receber_whatsapp),
                 )
+                usuario_id = cursor.lastrowid
                 registrar_evento_cadastro(
                     conn,
                     "cadastro",
-                    usuario_id=cursor.lastrowid,
+                    usuario_id=usuario_id,
                     nome=nome,
                     telefone=telefone,
                     endereco=endereco,
@@ -165,6 +230,14 @@ def index():
                     detalhe="Cadastro realizado pelo site",
                 )
                 conn.commit()
+                tentar_enviar_confirmacao_cadastro(
+                    conn,
+                    usuario_id,
+                    nome,
+                    telefone,
+                    endereco,
+                    receber_whatsapp,
+                )
                 mensagem = "✅ Cadastro realizado com sucesso!"
             except sqlite3.IntegrityError:
                 registrar_evento_cadastro(

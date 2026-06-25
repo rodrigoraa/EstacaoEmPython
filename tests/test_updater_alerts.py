@@ -87,6 +87,35 @@ class AlertasWorkerTest(unittest.TestCase):
         self.assertIn("Alerta de teste", row["mensagem"])
         self.assertIsNone(row["erro"])
 
+    def test_enviar_alerta_aguarda_dois_segundos_entre_usuarios(self):
+        conn = self.abrir_banco()
+        conn.executemany(
+            """
+            INSERT INTO usuarios (nome, telefone, receber_whatsapp)
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("Maria", "67999999999", 1),
+                ("Joao", "67888888888", 1),
+            ],
+        )
+        conn.commit()
+        conn.close()
+
+        envios = []
+        pausas = []
+        self.updater.log = lambda mensagem: None
+        self.updater.enviar_whatsapp = lambda numero, mensagem: envios.append(
+            (numero, mensagem)
+        )
+        self.updater.time.sleep = lambda segundos: pausas.append(segundos)
+
+        resultado = self.updater.enviar_alerta("Alerta de teste")
+
+        self.assertEqual(resultado, {"total": 2, "enviados": 2, "falhas": 0})
+        self.assertEqual(len(envios), 2)
+        self.assertEqual(pausas, [2])
+
     def test_alerta_frio_rearmado_informa_temperatura_maxima(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
         self.updater.log = lambda mensagem: None

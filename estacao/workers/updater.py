@@ -19,6 +19,7 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br")
 
 INTERVALO = 15
 FRIO_REARME_TEMP = 15.0
+INTERVALO_ENVIO_USUARIOS = 2
 
 
 def log(msg):
@@ -153,7 +154,8 @@ def enviar_alerta(mensagem):
         AND receber_whatsapp = 1
         """
     ).fetchall()
-    for u in usuarios:
+    total_usuarios = len(usuarios)
+    for indice, u in enumerate(usuarios):
         telefone = "".join(filter(str.isdigit, u["telefone"]))
         if not telefone.startswith("55"):
             telefone = "55" + telefone
@@ -180,6 +182,9 @@ def enviar_alerta(mensagem):
             registrar_envio_alerta(conn, u, telefone, "falhou", mensagem_final, str(e))
             falhas += 1
             log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
+
+        if indice < total_usuarios - 1:
+            time.sleep(INTERVALO_ENVIO_USUARIOS)
 
     conn.close()
     return {"total": len(usuarios), "enviados": enviados, "falhas": falhas}

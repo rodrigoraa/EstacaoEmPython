@@ -2,12 +2,20 @@ from datetime import timedelta
 import os
 import sqlite3
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, url_for
 
 import database
 from extensions import limiter
 from services.weather_service import obter_dados, obter_previsao
 from time_utils import agora_local
+from unsubscribe_tokens import (
+    TokenCancelamentoExpirado,
+    TokenCancelamentoInvalido,
+    gerar_token_cancelamento,
+    normalizar_telefone,
+    telefone_com_codigo_pais,
+    validar_token_cancelamento,
+)
 
 public_routes = Blueprint("public", __name__)
 
@@ -78,6 +86,49 @@ def corrigir_texto_env(texto):
     return texto.replace("Sãõ", "São")
 
 
+def estado_cancelamento(titulo, texto, cor, icone, **extra):
+    estado = {
+        "titulo": titulo,
+        "texto": texto,
+        "cor": cor,
+        "icone": icone,
+    }
+    estado.update(extra)
+    return estado
+
+
+def variantes_telefone(telefone):
+    telefone_com_55 = telefone_com_codigo_pais(telefone)
+    telefone_sem_55 = telefone_com_55[2:] if telefone_com_55.startswith("55") else telefone_com_55
+    return telefone_sem_55, telefone_com_55
+
+
+def buscar_usuario_por_telefone(conn, telefone):
+    telefone_sem_55, telefone_com_55 = variantes_telefone(telefone)
+    usuario = conn.execute(
+        """
+        SELECT id, nome, telefone, endereco, receber_whatsapp
+        FROM usuarios
+        WHERE telefone = ? OR telefone = ?
+        LIMIT 1
+        """,
+        (telefone_sem_55, telefone_com_55),
+    ).fetchone()
+    return usuario, telefone_sem_55, telefone_com_55
+
+
+def enviar_link_cancelamento_whatsapp(numero, link_cancelamento):
+    from services.whatsapp_service import enviar_whatsapp
+
+    mensagem = (
+        "Você solicitou o cancelamento dos alertas meteorológicos da EE São José.\n\n"
+        "Para confirmar, acesse o link abaixo:\n"
+        f"{link_cancelamento}\n\n"
+        "Se você não solicitou, ignore esta mensagem."
+    )
+    enviar_whatsapp(numero, mensagem)
+
+
 @public_routes.route("/", methods=["GET", "POST"])
 @limiter.limit("5 per hour", methods=["POST"])
 def index():
@@ -90,7 +141,7 @@ def index():
         whatsapp = request.form.get("whatsapp")
         receber_whatsapp = 1 if whatsapp else 0
 
-        telefone = "".join(filter(str.isdigit, telefone))
+        telefone = normalizar_telefone(telefone)
 
         if not nome or not telefone or not endereco:
             mensagem = "❌ Preencha todos os campos!"
@@ -144,39 +195,104 @@ def index():
     return render_template("index.html", mensagem=mensagem, dias_chuva=dias_chuva)
 
 
-@public_routes.route("/unsubscribe")
-def unsubscribe():
-    telefone = request.args.get("tel")
+@public_routes.route("/unsubscribe/request", methods=["POST"])
+@limiter.limit("10 per hour")
+def solicitar_cancelamento():
+    telefone = normalizar_telefone(request.form.get("telefone"))
 
-    if not telefone:
-        estado = {
-            "titulo": "Número não encontrado",
-            "texto": "Não foi possível identificar o número para cancelamento. Tente novamente pelo botão no painel.",
-            "cor": "#f59e0b",
-            "icone": "<i class='fa-solid fa-triangle-exclamation'></i>",
-        }
+    if len(telefone) < 10:
+        estado = estado_cancelamento(
+            "Número inválido",
+            "Informe um número de WhatsApp válido com DDD para receber o link de confirmação.",
+            "#f59e0b",
+            "<i class='fa-solid fa-triangle-exclamation'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado), 400
+
+    conn = None
+    try:
+        conn = database.get_db()
+        usuario, _, telefone_com_55 = buscar_usuario_por_telefone(conn, telefone)
+
+        if usuario:
+            token = gerar_token_cancelamento(usuario["telefone"])
+            link_cancelamento = url_for("public.unsubscribe", token=token, _external=True)
+            enviar_link_cancelamento_whatsapp(telefone_com_55, link_cancelamento)
+            registrar_evento_cadastro(
+                conn,
+                "cancelamento_solicitado",
+                usuario_id=usuario["id"],
+                nome=usuario["nome"],
+                telefone=usuario["telefone"],
+                endereco=usuario["endereco"],
+                receber_whatsapp=usuario["receber_whatsapp"],
+                detalhe="Link seguro de cancelamento enviado por WhatsApp",
+            )
+        else:
+            registrar_evento_cadastro(
+                conn,
+                "cancelamento_solicitado_nao_encontrado",
+                telefone=telefone,
+                detalhe="Solicitacao de cancelamento para telefone nao cadastrado",
+            )
+
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        estado = estado_cancelamento(
+            "Erro ao enviar confirmação",
+            "Não foi possível enviar o link de confirmação agora. Tente novamente mais tarde.",
+            "#ef4444",
+            "<i class='fa-solid fa-circle-xmark'></i>",
+        )
+        print(f"Erro ao solicitar cancelamento: {e}")
+        return render_template("unsubscribe.html", estado=estado), 500
+    finally:
+        if conn:
+            conn.close()
+
+    estado = estado_cancelamento(
+        "Confira seu WhatsApp",
+        "Se o número estiver cadastrado, enviamos um link de confirmação para concluir o cancelamento.",
+        "#10b981",
+        "<i class='fa-solid fa-paper-plane'></i>",
+    )
+    return render_template("unsubscribe.html", estado=estado)
+
+
+@public_routes.route("/unsubscribe", methods=["GET", "POST"])
+@limiter.limit("60 per hour")
+def unsubscribe():
+    token = request.values.get("token")
+    conn = None
+
+    if not token:
+        estado = estado_cancelamento(
+            "Confirmação necessária",
+            "Para sua segurança, o cancelamento agora precisa de um link de confirmação enviado pelo WhatsApp.",
+            "#f59e0b",
+            "<i class='fa-solid fa-triangle-exclamation'></i>",
+        )
         return render_template("unsubscribe.html", estado=estado), 400
 
     try:
-        telefone = "".join(filter(str.isdigit, telefone))
-
-        if telefone.startswith("55"):
-            telefone_sem_55 = telefone[2:]
-            telefone_com_55 = telefone
-        else:
-            telefone_sem_55 = telefone
-            telefone_com_55 = "55" + telefone
-
+        telefone = validar_token_cancelamento(token)
         conn = database.get_db()
-        usuario = conn.execute(
-            """
-            SELECT id, nome, telefone, endereco, receber_whatsapp
-            FROM usuarios
-            WHERE telefone = ? OR telefone = ?
-            LIMIT 1
-            """,
-            (telefone_sem_55, telefone_com_55),
-        ).fetchone()
+        usuario, telefone_sem_55, telefone_com_55 = buscar_usuario_por_telefone(conn, telefone)
+
+        if request.method == "GET":
+            conn.close()
+            conn = None
+            estado = estado_cancelamento(
+                "Confirmar cancelamento",
+                "Confirme abaixo para parar de receber os alertas meteorológicos no WhatsApp.",
+                "#f59e0b",
+                "<i class='fa-solid fa-bell-slash'></i>",
+                token=token,
+                mostrar_formulario=True,
+            )
+            return render_template("unsubscribe.html", estado=estado)
 
         if usuario:
             registrar_evento_cadastro(
@@ -187,14 +303,14 @@ def unsubscribe():
                 telefone=usuario["telefone"],
                 endereco=usuario["endereco"],
                 receber_whatsapp=usuario["receber_whatsapp"],
-                detalhe="Cancelamento realizado pelo link",
+                detalhe="Cancelamento confirmado por token assinado",
             )
         else:
             registrar_evento_cadastro(
                 conn,
                 "cancelamento_nao_encontrado",
                 telefone=telefone,
-                detalhe="Telefone nao encontrado no momento do cancelamento",
+                detalhe="Telefone nao encontrado no momento do cancelamento por token",
             )
 
         conn.execute(
@@ -203,24 +319,46 @@ def unsubscribe():
         )
         conn.commit()
         conn.close()
+        conn = None
 
-        estado = {
-            "titulo": "Cancelado com sucesso!",
-            "texto": "Você não receberá mais os alertas no WhatsApp.",
-            "cor": "#10b981",
-            "icone": "<i class='fa-solid fa-check'></i>",
-        }
+        estado = estado_cancelamento(
+            "Cancelado com sucesso!",
+            "Você não receberá mais os alertas no WhatsApp.",
+            "#10b981",
+            "<i class='fa-solid fa-check'></i>",
+        )
         return render_template("unsubscribe.html", estado=estado)
 
+    except TokenCancelamentoExpirado:
+        estado = estado_cancelamento(
+            "Link expirado",
+            "Solicite um novo link de cancelamento pelo painel da estação.",
+            "#f59e0b",
+            "<i class='fa-solid fa-clock'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado), 400
+    except TokenCancelamentoInvalido:
+        estado = estado_cancelamento(
+            "Link inválido",
+            "Não foi possível validar este link de cancelamento.",
+            "#f59e0b",
+            "<i class='fa-solid fa-triangle-exclamation'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado), 400
     except Exception as e:
-        estado = {
-            "titulo": "Erro no sistema",
-            "texto": "Ocorreu um erro técnico ao tentar cancelar a sua inscrição. Por favor, tente novamente mais tarde.",
-            "cor": "#ef4444",
-            "icone": "<i class='fa-solid fa-circle-xmark'></i>",
-        }
+        if conn:
+            conn.rollback()
+        estado = estado_cancelamento(
+            "Erro no sistema",
+            "Ocorreu um erro técnico ao tentar cancelar a sua inscrição. Por favor, tente novamente mais tarde.",
+            "#ef4444",
+            "<i class='fa-solid fa-circle-xmark'></i>",
+        )
         print(f"Erro ao cancelar: {e}")
         return render_template("unsubscribe.html", estado=estado), 500
+    finally:
+        if conn:
+            conn.close()
 
 
 @public_routes.route("/sobre")

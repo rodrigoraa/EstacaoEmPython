@@ -37,6 +37,16 @@
             {{ estado.texto | safe }}
         </div>
 
+        {% if estado.mostrar_formulario %}
+        <form method="POST" action="{{ url_for('public.unsubscribe') }}" class="mb-4">
+            <input type="hidden" name="token" value="{{ estado.token }}">
+            <button type="submit"
+                class="inline-block px-6 py-3 bg-rose-600 text-white font-medium text-sm rounded-lg hover:bg-rose-700 transition-colors w-full shadow-sm">
+                Confirmar cancelamento
+            </button>
+        </form>
+        {% endif %}
+
         <a href="/"
             class="inline-block px-6 py-3 bg-slate-800 text-white font-medium text-sm rounded-lg hover:bg-slate-700 transition-colors w-full shadow-sm">
             Voltar ao Painel

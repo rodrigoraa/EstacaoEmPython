@@ -701,6 +701,8 @@ EVOLUTION_URL=https://sua-evolution-api.example.com
 EVOLUTION_API_KEY=chave-da-api
 EVOLUTION_INSTANCE=nome-da-instância
 
+PUBLIC_BASE_URL=https://meteo.eesjv.com.br
+
 RATELIMIT_ENABLED=true
 SESSION_COOKIE_SECURE=true
 SESSION_TIMEOUT_MINUTES=30
@@ -737,6 +739,9 @@ ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
 | `RATELIMIT_ENABLED` | `true` | liga/desliga Flask-Limiter |
 | `SESSION_COOKIE_SECURE` | `false` | usar `true` com HTTPS |
 | `SESSION_TIMEOUT_MINUTES` | `30` | timeout de sessão admin |
+| `PUBLIC_BASE_URL` | `http://meteo.eesjv.com.br` | base pública do site usada em links |
+| `UNSUBSCRIBE_SECRET` | `SECRET_KEY` | chave opcional separada para assinar links de cancelamento |
+| `UNSUBSCRIBE_TOKEN_MAX_AGE_DAYS` | `90` | validade dos links de cancelamento |
 | `FORECAST_CITY` | `Vicentina` | cidade da previsão |
 | `FORECAST_STATE` | `Mato Grosso do Sul` | estado |
 | `FORECAST_COUNTRY` | `Brasil` | país |
@@ -830,9 +835,17 @@ Rate limit:
 5 per hour
 ```
 
-#### `GET /unsubscribe?tel=<telefone>`
+#### `POST /unsubscribe/request`
 
-Remove usuário pelo telefone e registra evento em `cadastro_eventos`.
+Recebe `telefone` e envia um link seguro de confirmação para o WhatsApp cadastrado.
+
+#### `GET /unsubscribe?token=<token>`
+
+Exibe a tela de confirmação para um link de cancelamento assinado.
+
+#### `POST /unsubscribe`
+
+Confirma o cancelamento com `token` assinado e registra evento em `cadastro_eventos`.
 
 #### `GET /sobre`
 
@@ -1422,4 +1435,3 @@ Verificar última leitura:
 ```bash
 sqlite3 estacao/estacao.db "SELECT id, data_hora, temp, umidade, chuva_hoje FROM historico_clima ORDER BY id DESC LIMIT 5;"
 ```
-

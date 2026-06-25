@@ -15,6 +15,7 @@ from services.whatsapp_service import enviar_whatsapp
 
 
 STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br").rstrip("/")
 
 INTERVALO = 15
 FRIO_REARME_TEMP = 15.0
@@ -40,27 +41,58 @@ def estado_alertas_padrao(data=""):
     }
 
 
-def carregar_estado():
+def normalizar_estado_alertas(estado):
+    padrao = estado_alertas_padrao()
+    if not isinstance(estado, dict):
+        return padrao
+
+    for chave, valor in padrao.items():
+        if chave not in estado:
+            estado[chave] = valor
+    return estado
+
+
+def carregar_estado_arquivo():
     padrao = estado_alertas_padrao()
 
     if not os.path.exists(STATE_FILE):
-        return padrao
+        return None
 
     try:
-        with open(STATE_FILE, "r") as f:
-            estado = json.load(f)
-            for chave, valor in padrao.items():
-                if chave not in estado:
-                    estado[chave] = valor
-            return estado
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return normalizar_estado_alertas(json.load(f))
     except (OSError, json.JSONDecodeError) as erro:
         log(f"⚠️ Estado de alertas inválido, usando padrão: {erro}")
         return padrao
 
 
+def carregar_estado():
+    try:
+        estado_banco = database.obter_estado_alertas()
+        if estado_banco is not None:
+            return normalizar_estado_alertas(estado_banco)
+    except (sqlite3.Error, json.JSONDecodeError, TypeError) as erro:
+        log(f"⚠️ Estado de alertas no banco indisponível, usando arquivo: {erro}")
+
+    estado_arquivo = carregar_estado_arquivo()
+    if estado_arquivo is not None:
+        salvar_estado(estado_arquivo)
+        return estado_arquivo
+
+    return estado_alertas_padrao()
+
+
 def salvar_estado(estado):
-    with open(STATE_FILE, "w") as f:
-        json.dump(estado, f)
+    try:
+        database.salvar_estado_alertas(estado)
+    except (sqlite3.Error, TypeError, ValueError) as erro:
+        log(f"⚠️ Não foi possível salvar estado de alertas no banco: {erro}")
+
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(estado, f, ensure_ascii=False, sort_keys=True)
+    except OSError as erro:
+        log(f"⚠️ Não foi possível salvar estado de alertas em arquivo: {erro}")
 
 
 def garantir_tabela_alertas(conn):
@@ -126,7 +158,7 @@ def enviar_alerta(mensagem):
         if not telefone.startswith("55"):
             telefone = "55" + telefone
 
-        link_meteo = f"http://meteo.eesjv.com.br"
+        link_meteo = f"{PUBLIC_BASE_URL}"
         nome_usuario = (u["nome"] or "").strip()
         saudacao = f"ATENÇÃO, {nome_usuario}," if nome_usuario else ""
 

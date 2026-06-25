@@ -7,6 +7,51 @@ from time_utils import data_local
 
 api_routes = Blueprint("api", __name__)
 
+
+def rajada_maxima_estado_alertas():
+    def extrair_rajada(estado):
+        if not estado:
+            return None
+        try:
+            rajada = float(estado.get("rajada_max_nuvem", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        return rajada if rajada > 0 else None
+
+    try:
+        estado = database.obter_estado_alertas()
+        rajada = extrair_rajada(estado)
+        if rajada is not None:
+            return rajada
+    except Exception as e:
+        print(f"Erro ao ler rajada no banco: {e}", flush=True)
+
+    try:
+        caminho_api = os.path.abspath(__file__)
+        pasta_routes = os.path.dirname(caminho_api)
+        pasta_raiz = os.path.dirname(pasta_routes)
+        pasta_pai = os.path.dirname(pasta_raiz)
+
+        locais_possiveis = [
+            os.path.join(pasta_pai, "alert_state.json"),
+            os.path.join(pasta_raiz, "alert_state.json"),
+            "alert_state.json",
+        ]
+
+        for state_file in locais_possiveis:
+            if os.path.exists(state_file):
+                with open(state_file, "r", encoding="utf-8") as f:
+                    estado = json.load(f)
+                    rajada = extrair_rajada(estado)
+                    if rajada is not None:
+                        return rajada
+                break
+    except Exception as e:
+        print(f"Erro ao ler rajada em arquivo: {e}", flush=True)
+
+    return None
+
+
 @api_routes.route("/api/clima")
 def api_clima():
     conn = database.get_db()
@@ -50,29 +95,9 @@ def api_clima():
         return jsonify({"erro": "Sem dados"})
 
     rajada_do_dia = row["vento_rajada"]
-    try:
-        caminho_api = os.path.abspath(__file__)
-        pasta_routes = os.path.dirname(caminho_api)
-        pasta_raiz = os.path.dirname(pasta_routes)
-        pasta_pai = os.path.dirname(pasta_raiz)
-
-        locais_possiveis = [
-            os.path.join(pasta_pai, "alert_state.json"),
-            os.path.join(pasta_raiz, "alert_state.json"),
-            "alert_state.json",
-        ]
-
-        for state_file in locais_possiveis:
-            if os.path.exists(state_file):
-                with open(state_file, "r") as f:
-                    estado = json.load(f)
-                    if "rajada_max_nuvem" in estado and estado["rajada_max_nuvem"] > 0:
-                        rajada_do_dia = max(
-                            row["vento_rajada"], estado["rajada_max_nuvem"]
-                        )
-                break  
-    except Exception as e:
-        print(f"Erro ao ler rajada: {e}", flush=True)
+    rajada_estado = rajada_maxima_estado_alertas()
+    if rajada_estado is not None:
+        rajada_do_dia = max(row["vento_rajada"], rajada_estado)
 
     data_hora_exibicao = row["data_hora_local"] or row["data_hora"]
     hora = data_hora_exibicao[11:19]

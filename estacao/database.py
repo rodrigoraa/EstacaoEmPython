@@ -1,8 +1,10 @@
 import os
+import json
 import sqlite3
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
+ALERT_STATE_KEY = "principal"
 
 
 def configurar_conexao(conn):
@@ -30,6 +32,54 @@ def coluna_existe(conn, tabela, coluna):
 def garantir_coluna(conn, tabela, coluna, definicao):
     if not coluna_existe(conn, tabela, coluna):
         conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}")
+
+
+def garantir_tabela_estado_alertas(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS estado_alertas (
+        chave TEXT PRIMARY KEY,
+        valor_json TEXT NOT NULL,
+        atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+
+def obter_estado_alertas():
+    conn = get_db()
+    try:
+        garantir_tabela_estado_alertas(conn)
+        conn.commit()
+        row = conn.execute(
+            "SELECT valor_json FROM estado_alertas WHERE chave = ?",
+            (ALERT_STATE_KEY,),
+        ).fetchone()
+        if not row:
+            return None
+        return json.loads(row["valor_json"])
+    finally:
+        conn.close()
+
+
+def salvar_estado_alertas(estado):
+    conn = get_db()
+    try:
+        garantir_tabela_estado_alertas(conn)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO estado_alertas (
+                chave,
+                valor_json,
+                atualizado_em
+            ) VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (ALERT_STATE_KEY, json.dumps(estado, ensure_ascii=False, sort_keys=True)),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -141,6 +191,8 @@ def init_db():
         uv_max REAL
     )
     """)
+
+    garantir_tabela_estado_alertas(conn)
 
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_leituras_brutas_recebido_em ON leituras_brutas(recebido_em)"

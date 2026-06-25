@@ -708,8 +708,8 @@
         telefone = "55" + telefone;
       }
 
-      // Redireciona para a sua rota do flask que cancela a assinatura
-      window.location.href = `/unsubscribe?tel=${telefone}`;
+      document.getElementById("telefone-cancelar-normalizado").value = telefone;
+      document.getElementById("form-cancelar-alertas").submit();
     }
 
     function iniciarRelogioAoVivo() {
@@ -878,15 +878,18 @@
       </div>
       
       <p class="text-sm text-slate-500 mb-6">
-        Insira o seu número de WhatsApp abaixo para deixar de receber os nossos avisos meteorológicos automáticos.
+        Insira o seu número de WhatsApp abaixo para receber um link seguro de confirmação.
       </p>
 
-      <input 
-        type="text" 
-        id="input-tel-cancelar" 
-        placeholder="(DD) 9XXXX-XXXX" 
-        class="w-full border-2 border-slate-200 rounded-xl px-3 py-2 mb-6 focus:outline-none focus:border-rose-400 font-bold text-slate-700"
-      >
+      <form id="form-cancelar-alertas" method="POST" action="/unsubscribe/request">
+        <input type="hidden" id="telefone-cancelar-normalizado" name="telefone">
+        <input
+          type="text"
+          id="input-tel-cancelar"
+          placeholder="(DD) 9XXXX-XXXX"
+          class="w-full border-2 border-slate-200 rounded-xl px-3 py-2 mb-6 focus:outline-none focus:border-rose-400 font-bold text-slate-700"
+        >
+      </form>
 
       <div class="flex justify-end gap-3">
         <button 
@@ -901,7 +904,7 @@
           onclick="confirmarCancelamento()" 
           class="px-4 py-2 text-sm bg-rose-500 hover:bg-rose-600 transition text-white rounded-lg font-bold shadow-md"
         >
-          Cancelar Avisos
+          Enviar Link
         </button>
       </div>
     </div>

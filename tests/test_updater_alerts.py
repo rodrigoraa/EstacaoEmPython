@@ -83,6 +83,28 @@ class AlertasWorkerTest(unittest.TestCase):
         self.assertIn("Alerta de teste", row["mensagem"])
         self.assertIsNone(row["erro"])
 
+    def test_alerta_frio_rearmado_informa_temperatura_maxima(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.data_local = lambda: "2026-06-25"
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+
+        mensagens = []
+        self.updater.enviar_alerta = lambda mensagem: mensagens.append(
+            mensagem
+        ) or {"total": 1, "enviados": 1, "falhas": 0}
+
+        self.updater.verificar_alertas(12.0, 12.0, 0, 0, 50, 0)
+        self.updater.verificar_alertas(25.0, 25.0, 0, 0, 50, 0)
+        self.updater.verificar_alertas(12.0, 12.0, 0, 0, 50, 0)
+
+        self.assertEqual(len(mensagens), 2)
+        self.assertIn("Temperatura Baixa!*", mensagens[0])
+        self.assertNotIn("caiu novamente", mensagens[0])
+        self.assertIn("Temperatura Baixa novamente!*", mensagens[1])
+        self.assertIn("subiu até *25.0°C*", mensagens[1])
+        self.assertIn("caiu novamente para *12.0°C*", mensagens[1])
+
 
 if __name__ == "__main__":
     unittest.main()

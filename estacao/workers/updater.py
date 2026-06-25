@@ -17,6 +17,7 @@ from services.whatsapp_service import enviar_whatsapp
 STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
 
 INTERVALO = 15
+FRIO_REARME_TEMP = 15.0
 
 
 def log(msg):
@@ -24,9 +25,9 @@ def log(msg):
     print(f"[{agora}] {msg}", flush=True)
 
 
-def carregar_estado():
-    padrao = {
-        "data": "",
+def estado_alertas_padrao(data=""):
+    return {
+        "data": data,
         "nivel_calor": 0,
         "nivel_frio": 0,
         "nivel_vento": 0,
@@ -34,7 +35,13 @@ def carregar_estado():
         "nivel_umidade": 0,
         "nivel_uv": 0,
         "rajada_max_nuvem": 0.0,
+        "frio_rearmado": False,
+        "temp_max_apos_alerta_frio": None,
     }
+
+
+def carregar_estado():
+    padrao = estado_alertas_padrao()
 
     if not os.path.exists(STATE_FILE):
         return padrao
@@ -146,11 +153,13 @@ def enviar_alerta(mensagem):
     return {"total": len(usuarios), "enviados": enviados, "falhas": falhas}
 
 
-def marcar_alerta_enviado(estado, chave_nivel, nivel, mensagem):
+def marcar_alerta_enviado(estado, chave_nivel, nivel, mensagem, atualizacoes=None):
     resultado = enviar_alerta(mensagem)
 
     if resultado["enviados"] > 0:
         estado[chave_nivel] = nivel
+        if atualizacoes:
+            estado.update(atualizacoes)
         salvar_estado(estado)
         return True
 
@@ -159,6 +168,50 @@ def marcar_alerta_enviado(estado, chave_nivel, nivel, mensagem):
         f"de {resultado['total']} destinatarios."
     )
     return False
+
+
+def atualizar_estado_rearme_frio(estado, temp):
+    if estado["nivel_frio"] <= 0 and not estado.get("frio_rearmado"):
+        return
+
+    temp_max = estado.get("temp_max_apos_alerta_frio")
+    alterado = False
+
+    if temp_max is None or temp > temp_max:
+        estado["temp_max_apos_alerta_frio"] = temp
+        temp_max = temp
+        alterado = True
+
+    if estado["nivel_frio"] > 0 and temp_max >= FRIO_REARME_TEMP:
+        estado["nivel_frio"] = 0
+        estado["frio_rearmado"] = True
+        alterado = True
+        log(
+            "Alerta de frio rearmado apos temperatura subir "
+            f"para {temp_max:.1f}°C."
+        )
+
+    if alterado:
+        salvar_estado(estado)
+
+
+def mensagem_frio(titulo, texto_base, temp, sensacao, estado):
+    temp_max = estado.get("temp_max_apos_alerta_frio")
+    if estado.get("frio_rearmado") and temp_max is not None and temp_max > temp:
+        return (
+            f"{titulo} novamente!*\n"
+            f"A temperatura subiu até *{temp_max:.1f}°C* e caiu novamente "
+            f"para *{temp:.1f}°C*.\n"
+            f"Sensação térmica de *{sensacao:.1f}°C*.\n"
+            f"{texto_base}"
+        )
+
+    return (
+        f"{titulo}!*\n"
+        f"Registrados *{temp:.1f}°C*\n"
+        f"Sensação térmica de *{sensacao:.1f}°C*.\n"
+        f"{texto_base}"
+    )
 
 
 def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
@@ -170,16 +223,10 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         if estado.get("data") != "":
             salvar_resumo_diario_banco(estado["data"])
 
-        estado = {
-            "data": hoje,
-            "nivel_calor": 0,
-            "nivel_frio": 0,
-            "nivel_vento": 0,
-            "nivel_chuva": 0,
-            "nivel_umidade": 0,
-            "nivel_uv": 0,
-        }
+        estado = estado_alertas_padrao(hoje)
         salvar_estado(estado)
+
+    atualizar_estado_rearme_frio(estado, temp)
 
     if temp >= 40 and estado["nivel_calor"] < 2:
         msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{temp:.1f}°C*\nSensação térmica de *{sensacao:.1f}°C*.\nRisco iminente de insolação. Evite exposição ao sol!"
@@ -190,16 +237,52 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_calor", 1, msg)
 
     if temp <= 0 and estado["nivel_frio"] < 3:
-        msg = f"🥶 *ALERTA MÁXIMO: Frio Congelante!*\nOs termômetros despencaram para *{temp:.1f}°C*\nSensação térmica de *{sensacao:.1f}°C*.\nCondição extrema com alto risco de geada!"
-        marcar_alerta_enviado(estado, "nivel_frio", 3, msg)
+        msg = mensagem_frio(
+            "🥶 *ALERTA MÁXIMO: Frio Congelante",
+            "Condição extrema com alto risco de geada!",
+            temp,
+            sensacao,
+            estado,
+        )
+        marcar_alerta_enviado(
+            estado,
+            "nivel_frio",
+            3,
+            msg,
+            {"frio_rearmado": False, "temp_max_apos_alerta_frio": temp},
+        )
 
     elif temp <= 5 and estado["nivel_frio"] < 2:
-        msg = f"🧊 *ALERTA CRÍTICO: Frio Extremo!*\nA temperatura caiu para *{temp:.1f}°C*\nSensação térmica de *{sensacao:.1f}°C*.\nProteja-se do frio."
-        marcar_alerta_enviado(estado, "nivel_frio", 2, msg)
+        msg = mensagem_frio(
+            "🧊 *ALERTA CRÍTICO: Frio Extremo",
+            "Proteja-se do frio.",
+            temp,
+            sensacao,
+            estado,
+        )
+        marcar_alerta_enviado(
+            estado,
+            "nivel_frio",
+            2,
+            msg,
+            {"frio_rearmado": False, "temp_max_apos_alerta_frio": temp},
+        )
 
     elif temp <= 12 and estado["nivel_frio"] < 1:
-        msg = f"❄️ *ALERTA: Temperatura Baixa!*\nRegistrados *{temp:.1f}°C*\nSensação térmica de *{sensacao:.1f}°C*.\nFrio incomum para a região."
-        marcar_alerta_enviado(estado, "nivel_frio", 1, msg)
+        msg = mensagem_frio(
+            "❄️ *ALERTA: Temperatura Baixa",
+            "Frio incomum para a região.",
+            temp,
+            sensacao,
+            estado,
+        )
+        marcar_alerta_enviado(
+            estado,
+            "nivel_frio",
+            1,
+            msg,
+            {"frio_rearmado": False, "temp_max_apos_alerta_frio": temp},
+        )
 
     if rajada >= 100 and estado["nivel_vento"] < 3:
         msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*.\nAlto risco de destelhamentos e queda de árvores!"
@@ -218,7 +301,7 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_chuva", 2, msg)
 
     elif chuva_hoje >= 50 and estado["nivel_chuva"] < 1:
-        msg = f"🌧️ *ALERTA: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm*.\nRisco de alagamentos em pontos isolados.\nDirija com cuidado."
+        msg = f"🌧️ *ALERTA: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm*.\nDirija com cuidado."
         marcar_alerta_enviado(estado, "nivel_chuva", 1, msg)
 
     if umidade <= 20 and estado["nivel_umidade"] < 2:

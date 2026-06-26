@@ -20,7 +20,7 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br")
 
 INTERVALO = 15
 FRIO_REARME_TEMP = 15.0
-INTERVALO_ENVIO_USUARIOS = 2
+INTERVALO_ENVIO_USUARIOS = 20
 
 
 def log(msg):

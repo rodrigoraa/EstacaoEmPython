@@ -25,7 +25,7 @@ def enviar_whatsapp(numero, mensagem):
 
     numero = numero.replace("+", "").replace(" ", "")
 
-    payload = {"number": numero, "text": mensagem}
+    payload = {"number": numero, "text": mensagem, "linkPreview": False}
 
     headers = {"Content-Type": "application/json", "apikey": EVOLUTION_API_KEY}
 

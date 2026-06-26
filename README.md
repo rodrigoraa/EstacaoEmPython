@@ -704,6 +704,7 @@ EVOLUTION_INSTANCE=nome-da-instância
 PUBLIC_BASE_URL=https://meteo.eesjv.com.br
 
 RATELIMIT_ENABLED=true
+PUBLIC_CADASTRO_RATE_LIMIT=60 per hour
 SESSION_COOKIE_SECURE=true
 SESSION_TIMEOUT_MINUTES=30
 
@@ -737,6 +738,7 @@ ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
 | Variável | Padrão | Finalidade |
 |---|---|---|
 | `RATELIMIT_ENABLED` | `true` | liga/desliga Flask-Limiter |
+| `PUBLIC_CADASTRO_RATE_LIMIT` | `60 per hour` | limite de envios do formulario publico de cadastro por IP |
 | `SESSION_COOKIE_SECURE` | `false` | usar `true` com HTTPS |
 | `SESSION_TIMEOUT_MINUTES` | `30` | timeout de sessão admin |
 | `PUBLIC_BASE_URL` | `http://meteo.eesjv.com.br` | base pública do site usada em links |
@@ -832,7 +834,7 @@ Campos de formulario:
 Rate limit:
 
 ```text
-5 per hour
+PUBLIC_CADASTRO_RATE_LIMIT, por padrão 60 per hour
 ```
 
 #### `POST /unsubscribe/request`

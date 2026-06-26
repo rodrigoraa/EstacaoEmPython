@@ -18,6 +18,7 @@ from unsubscribe_tokens import (
 )
 
 public_routes = Blueprint("public", __name__)
+PUBLIC_CADASTRO_RATE_LIMIT = os.environ.get("PUBLIC_CADASTRO_RATE_LIMIT", "60 per hour")
 
 
 def registrar_evento_cadastro(
@@ -163,7 +164,7 @@ def tentar_enviar_confirmacao_cadastro(
 
 
 @public_routes.route("/", methods=["GET", "POST"])
-@limiter.limit("5 per hour", methods=["POST"])
+@limiter.limit(PUBLIC_CADASTRO_RATE_LIMIT, methods=["POST"])
 def index():
     mensagem = ""
 

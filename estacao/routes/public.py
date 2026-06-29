@@ -114,8 +114,8 @@ def enviar_confirmacao_cadastro_whatsapp(numero, nome):
         "Os alertas são enviados somente quando esses limites forem atingidos, "
         "quando o nível ficar mais crítico ou, no caso do frio, quando a "
         "temperatura subir e cair novamente.\n\n"
-        "Para continuar recebendo os alertas meteorológicos com mais estabilidade, salve este número nos seus contatos como _Alertas EE São José_."
-        "Isso ajuda o WhatsApp a reconhecer que você quer receber nossos avisos e reduz o risco de restrição da nossa conta."
+        "Para continuar recebendo os alertas meteorológicos com mais estabilidade, salve este número nos seus contatos como _Alertas EE São José_.\n"
+        "Isso ajuda o WhatsApp a reconhecer que você quer receber nossos avisos e reduz o risco de restrição da nossa conta.\n\n"
         "Os alertas são enviados somente para quem solicitou receber. Para cancelar, acesse: http://meteo.eesjv.com.br"
     )
     enviar_whatsapp(numero, mensagem)

@@ -114,7 +114,7 @@ class AlertasWorkerTest(unittest.TestCase):
 
         self.assertEqual(resultado, {"total": 2, "enviados": 2, "falhas": 0})
         self.assertEqual(len(envios), 2)
-        self.assertEqual(pausas, [2])
+        self.assertEqual(pausas, [self.updater.INTERVALO_ENVIO_USUARIOS])
 
     def test_alerta_frio_rearmado_informa_temperatura_maxima(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")

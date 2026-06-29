@@ -93,6 +93,25 @@ def garantir_tabela_alertas_envios(conn):
     """)
 
 
+def garantir_tabela_campanhas_whatsapp_envios(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS campanhas_whatsapp_envios (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        campanha_id TEXT NOT NULL,
+        data_hora TEXT DEFAULT CURRENT_TIMESTAMP,
+        usuario_id INTEGER NOT NULL,
+        nome TEXT,
+        telefone TEXT,
+        status TEXT NOT NULL,
+        mensagem TEXT,
+        erro TEXT,
+        UNIQUE(campanha_id, usuario_id)
+    )
+    """)
+
+
 def garantir_tabela_cadastro_eventos(conn):
     conn.execute("""
     CREATE TABLE IF NOT EXISTS cadastro_eventos (
@@ -315,6 +334,7 @@ def init_db():
 
     garantir_tabela_usuarios(conn)
     garantir_tabela_alertas_envios(conn)
+    garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)
 
     conn.commit()

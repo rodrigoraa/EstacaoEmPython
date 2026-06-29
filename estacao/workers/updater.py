@@ -153,6 +153,8 @@ def enviar_alerta(mensagem):
             f"{saudacao}\n" 
             f"{mensagem}\n\n"
             f"📍 _Vicentina MS - Distrito de São José_\n"
+            f"📍 _Para continuar recebendo os alertas meteorológicos com mais estabilidade, salve este número nos seus contatos como "Alertas EE São José"_\n"
+            f"📍 _Isso ajuda o WhatsApp a reconhecer que você quer receber nossos avisos e reduz o risco de restrição da conta de envio._\n"
             f" Para mais informações, acesse:\n"
             f"{link_meteo}"
         )

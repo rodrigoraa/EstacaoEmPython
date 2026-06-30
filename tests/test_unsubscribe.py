@@ -92,12 +92,7 @@ class CancelamentoAlertasTest(unittest.TestCase):
         self.assertIn("Confirmação necessária".encode("utf-8"), resposta.data)
         self.assertEqual(self.total_usuarios(), 1)
 
-    def test_cadastro_com_whatsapp_envia_confirmacao(self):
-        envios = []
-        self.public_module.enviar_confirmacao_cadastro_whatsapp = (
-            lambda numero, nome: envios.append((numero, nome))
-        )
-
+    def test_cadastro_com_whatsapp_nao_envia_confirmacao(self):
         resposta = self.client.post(
             "/",
             data={
@@ -110,7 +105,6 @@ class CancelamentoAlertasTest(unittest.TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
-        self.assertEqual(envios, [("5567999999999", "Maria")])
 
         conn = self.abrir_banco()
         usuario = conn.execute(
@@ -123,15 +117,10 @@ class CancelamentoAlertasTest(unittest.TestCase):
         self.assertEqual(usuario["receber_whatsapp"], 1)
         self.assertEqual(
             [evento["acao"] for evento in self.eventos_cadastro()],
-            ["cadastro", "confirmacao_whatsapp"],
+            ["cadastro"],
         )
 
-    def test_cadastro_sem_whatsapp_nao_envia_confirmacao(self):
-        envios = []
-        self.public_module.enviar_confirmacao_cadastro_whatsapp = (
-            lambda numero, nome: envios.append((numero, nome))
-        )
-
+    def test_cadastro_sem_whatsapp_salva_sem_confirmacao(self):
         resposta = self.client.post(
             "/",
             data={
@@ -143,18 +132,12 @@ class CancelamentoAlertasTest(unittest.TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
-        self.assertEqual(envios, [])
         self.assertEqual(
             [evento["acao"] for evento in self.eventos_cadastro()],
             ["cadastro"],
         )
 
-    def test_cadastro_continua_salvo_se_confirmacao_falhar(self):
-        def falhar_confirmacao(numero, nome):
-            raise RuntimeError("Evolution indisponivel")
-
-        self.public_module.enviar_confirmacao_cadastro_whatsapp = falhar_confirmacao
-
+    def test_cadastro_com_whatsapp_nao_depende_da_evolution(self):
         resposta = self.client.post(
             "/",
             data={
@@ -170,7 +153,7 @@ class CancelamentoAlertasTest(unittest.TestCase):
         self.assertEqual(self.total_usuarios(), 1)
         self.assertEqual(
             [evento["acao"] for evento in self.eventos_cadastro()],
-            ["cadastro", "confirmacao_whatsapp_falhou"],
+            ["cadastro"],
         )
 
     def test_token_get_confirma_e_post_remove_usuario(self):

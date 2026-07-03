@@ -16,9 +16,6 @@ class AlertasWorkerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["ESTACAO_DB"] = str(Path(self.tmp.name) / "estacao_teste.db")
-        os.environ["EVOLUTION_URL"] = "http://localhost"
-        os.environ["EVOLUTION_API_KEY"] = "fake"
-        os.environ["EVOLUTION_INSTANCE"] = "fake"
         os.environ["SECRET_KEY"] = "segredo-teste"
 
         import database
@@ -34,9 +31,6 @@ class AlertasWorkerTest(unittest.TestCase):
         self.tmp.cleanup()
         for chave in (
             "ESTACAO_DB",
-            "EVOLUTION_URL",
-            "EVOLUTION_API_KEY",
-            "EVOLUTION_INSTANCE",
             "SECRET_KEY",
         ):
             os.environ.pop(chave, None)
@@ -46,7 +40,7 @@ class AlertasWorkerTest(unittest.TestCase):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def test_enviar_alerta_registra_envio_para_usuario_inscrito(self):
+    def test_enviar_alerta_enfileira_para_usuario_inscrito(self):
         conn = self.abrir_banco()
         conn.execute(
             """
@@ -58,36 +52,33 @@ class AlertasWorkerTest(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        envios = []
         self.updater.log = lambda mensagem: None
-        self.updater.enviar_whatsapp = lambda numero, mensagem: envios.append(
-            (numero, mensagem)
-        )
 
         resultado = self.updater.enviar_alerta("Alerta de teste")
 
-        self.assertEqual(resultado, {"total": 1, "enviados": 1, "falhas": 0})
-        self.assertEqual(envios[0][0], "5567999999999")
-        self.assertIn("Alerta de teste", envios[0][1])
-        self.assertNotIn("/unsubscribe?token=", envios[0][1])
-        self.assertNotIn("Para cancelar os alertas", envios[0][1])
+        self.assertEqual(resultado, {"total": 1, "enfileirados": 1, "falhas": 0})
 
         conn = self.abrir_banco()
         row = conn.execute(
             """
-            SELECT nome, telefone, status, mensagem, erro
-            FROM alertas_envios
+            SELECT nome, telefone, status, tentativas, mensagem, erro
+            FROM alertas_fila
             """
         ).fetchone()
+        total_envios = conn.execute("SELECT COUNT(*) FROM alertas_envios").fetchone()[0]
         conn.close()
 
         self.assertEqual(row["nome"], "Maria")
         self.assertEqual(row["telefone"], "5567999999999")
-        self.assertEqual(row["status"], "enviado")
+        self.assertEqual(row["status"], "pendente")
+        self.assertEqual(row["tentativas"], 0)
         self.assertIn("Alerta de teste", row["mensagem"])
+        self.assertNotIn("/unsubscribe?token=", row["mensagem"])
+        self.assertNotIn("Para cancelar os alertas", row["mensagem"])
         self.assertIsNone(row["erro"])
+        self.assertEqual(total_envios, 0)
 
-    def test_enviar_alerta_aguarda_dois_segundos_entre_usuarios(self):
+    def test_enviar_alerta_nao_aguarda_entre_usuarios(self):
         conn = self.abrir_banco()
         conn.executemany(
             """
@@ -102,19 +93,19 @@ class AlertasWorkerTest(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        envios = []
         pausas = []
         self.updater.log = lambda mensagem: None
-        self.updater.enviar_whatsapp = lambda numero, mensagem: envios.append(
-            (numero, mensagem)
-        )
         self.updater.time.sleep = lambda segundos: pausas.append(segundos)
 
         resultado = self.updater.enviar_alerta("Alerta de teste")
 
-        self.assertEqual(resultado, {"total": 2, "enviados": 2, "falhas": 0})
-        self.assertEqual(len(envios), 2)
-        self.assertEqual(pausas, [self.updater.INTERVALO_ENVIO_USUARIOS])
+        self.assertEqual(resultado, {"total": 2, "enfileirados": 2, "falhas": 0})
+        self.assertEqual(pausas, [])
+
+        conn = self.abrir_banco()
+        total_fila = conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0]
+        conn.close()
+        self.assertEqual(total_fila, 2)
 
     def test_alerta_frio_rearmado_informa_temperatura_maxima(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
@@ -125,7 +116,7 @@ class AlertasWorkerTest(unittest.TestCase):
         mensagens = []
         self.updater.enviar_alerta = lambda mensagem: mensagens.append(
             mensagem
-        ) or {"total": 1, "enviados": 1, "falhas": 0}
+        ) or {"total": 1, "enfileirados": 1, "falhas": 0}
 
         self.updater.verificar_alertas(12.0, 12.0, 0, 0, 50, 0)
         self.updater.verificar_alertas(25.0, 25.0, 0, 0, 50, 0)

@@ -103,10 +103,11 @@ flowchart LR
 
 ## 2. Arquitetura do Sistema
 
-O projeto tem dois processos principais:
+O projeto tem tres processos principais:
 
 1. **Aplicação Flask** (`estacao/app.py`): serve páginas, APIs, admin e webhooks.
-2. **Worker de coleta** (`estacao/workers/updater.py`): consulta a estação a cada 15 segundos, persiste dados e dispara alertas.
+2. **Worker de coleta** (`estacao/workers/updater.py`): consulta a estação a cada 15 segundos, persiste dados e enfileira alertas.
+3. **Worker de WhatsApp** (`estacao/workers/whatsapp_sender.py`): envia a fila de alertas pela Evolution API sem bloquear a coleta.
 
 Esses processos compartilham o mesmo banco SQLite.
 
@@ -193,8 +194,13 @@ flowchart TD
         B --> C[salvar_leitura_bruta]
         B --> D[salvar_historico_clima]
         D --> E[verificar_alertas]
-        E --> F[enviar_alerta]
-        F --> G[registrar_envio_alerta]
+        E --> F[enfileirar_alerta]
+        F --> G[alertas_fila]
+    end
+
+    subgraph WhatsApp
+        G --> N[whatsapp_sender.py]
+        N --> O[registrar alertas_envios]
     end
 
     subgraph Flask
@@ -304,7 +310,8 @@ O arquivo `estacao/requirements.txt` contém muitas dependências que não apare
 | `estacao/services/` | integrações externas |
 | `estacao/templates/` | páginas Jinja2 |
 | `estacao/static/` | CSS e imagens |
-| `estacao/workers/updater.py` | processo periódico de coleta e alertas |
+| `estacao/workers/updater.py` | processo periódico de coleta e criação de fila de alertas |
+| `estacao/workers/whatsapp_sender.py` | processo separado que envia a fila de WhatsApp |
 | `tests/test_persistence.py` | testes de persistência, WAL, timezone e integridade |
 
 ---
@@ -386,11 +393,12 @@ A persistência ocorre em duas camadas:
 6. A leitura bruta é salva imediatamente em `leituras_brutas`.
 7. O worker salva a leitura processada em `historico_clima`.
 8. O worker atualiza estado de alertas e verifica limites.
-9. Se necessário, envia WhatsApp via Evolution API.
-10. O envio de alerta é registrado em `alertas_envios`.
-11. O frontend consulta APIs JSON.
-12. Templates e gráficos exibem dados ao usuário.
-13. O admin consulta últimos registros, envios e eventos.
+9. Se necessário, grava mensagens pendentes em `alertas_fila`.
+10. O worker `whatsapp_sender.py` envia WhatsApp via Evolution API.
+11. O envio de alerta é registrado em `alertas_envios`.
+12. O frontend consulta APIs JSON.
+13. Templates e gráficos exibem dados ao usuário.
+14. O admin consulta últimos registros, envios e eventos.
 
 ### Fluxo de Persistência
 
@@ -411,7 +419,7 @@ sequenceDiagram
     P->>DB: INSERT historico_clima
     DB-->>P: commit
     W->>A: verificar_alertas(...)
-    A->>DB: INSERT alertas_envios
+    A->>DB: INSERT alertas_fila
 ```
 
 ### Saída dos Dados
@@ -540,6 +548,24 @@ Auditoria de envios WhatsApp.
 | `status` | TEXT NOT NULL | `enviado` ou `falhou` |
 | `mensagem` | TEXT | mensagem enviada |
 | `erro` | TEXT | erro em caso de falha |
+
+#### `alertas_fila`
+
+Fila de alertas pendentes para envio WhatsApp. Criada de forma aditiva; não substitui tabelas históricas de clima.
+
+| Coluna | Tipo | Finalidade |
+|---|---|---|
+| `id` | INTEGER PK AUTOINCREMENT | identificador |
+| `criado_em` | TEXT DEFAULT CURRENT_TIMESTAMP | criação do item |
+| `atualizado_em` | TEXT DEFAULT CURRENT_TIMESTAMP | última mudança de status |
+| `usuario_id` | INTEGER | usuário |
+| `nome` | TEXT | nome no momento do alerta |
+| `telefone` | TEXT NOT NULL | telefone normalizado |
+| `mensagem` | TEXT NOT NULL | mensagem a enviar |
+| `status` | TEXT NOT NULL DEFAULT `pendente` | `pendente`, `enviando`, `enviado` ou `falhou` |
+| `tentativas` | INTEGER DEFAULT 0 | total de tentativas |
+| `erro` | TEXT | último erro |
+| `enviado_em` | TEXT | data/hora de sucesso |
 
 #### `cadastro_eventos`
 
@@ -729,9 +755,9 @@ ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
 | `SECRET_KEY` | Sim para sessões seguras | `app.py` | Flask session |
 | `ADMIN_PASSWORD` ou `ADMIN_PASSWORD_HASH` | Sim | `routes/admin.py` | sem isso o módulo admin falha |
 | `WEBHOOK_SECRET` | Sim | `routes/webhook.py` | sem isso o módulo webhook falha |
-| `EVOLUTION_URL` | Sim para worker/WhatsApp | `whatsapp_service.py` | sem isso o worker falha ao importar |
-| `EVOLUTION_API_KEY` | Sim para worker/WhatsApp | `whatsapp_service.py` | chave Evolution |
-| `EVOLUTION_INSTANCE` | Sim para worker/WhatsApp | `whatsapp_service.py` | instância |
+| `EVOLUTION_URL` | Sim para worker de WhatsApp | `whatsapp_service.py` | sem isso o envio falha ao importar |
+| `EVOLUTION_API_KEY` | Sim para worker de WhatsApp | `whatsapp_service.py` | chave Evolution |
+| `EVOLUTION_INSTANCE` | Sim para worker de WhatsApp | `whatsapp_service.py` | instância |
 
 ### Variáveis Opcionais
 
@@ -751,6 +777,8 @@ ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
 | `FORECAST_LAT` | vazio | latitude fixa opcional |
 | `FORECAST_LON` | vazio | longitude fixa opcional |
 | `ESTACAO_DB` | `estacao/estacao.db` | caminho do SQLite |
+| `INTERVALO_ENVIO_USUARIOS` | `20` | pausa, em segundos, entre envios do worker de WhatsApp |
+| `INTERVALO_WHATSAPP_SEM_FILA` | `5` | pausa quando não há alerta pendente |
 | `ALLOWED_DEPLOY_REPO` | `rodrigoraa/EstacaoEmPython` | repo aceito no webhook |
 | `ALLOWED_DEPLOY_BRANCH` | `refs/heads/main` | branch aceita no webhook |
 
@@ -1109,10 +1137,11 @@ O worker apenas registra `Sem dados` e tenta novamente no próximo ciclo.
 
 ### Falhas de WhatsApp
 
-O envio via Evolution API:
+O envio via Evolution API fica no processo `workers/whatsapp_sender.py`:
 
 - usa timeout de 15 segundos;
 - levanta exceção se HTTP não for 2xx;
+- marca o item da `alertas_fila` como `enviado` ou `falhou`;
 - registra sucesso/falha em `alertas_envios`.
 
 ### Falhas de Estado de Alertas
@@ -1220,6 +1249,25 @@ User=servidor
 WorkingDirectory=/var/www/EstacaoEmPython/estacao
 EnvironmentFile=/var/www/EstacaoEmPython/estacao/.env
 ExecStart=/var/www/EstacaoEmPython/.venv/bin/python workers/updater.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Exemplo de systemd para Worker de WhatsApp
+
+```ini
+[Unit]
+Description=Worker WhatsApp Estacao Meteorologica
+After=network.target
+
+[Service]
+User=servidor
+WorkingDirectory=/var/www/EstacaoEmPython/estacao
+EnvironmentFile=/var/www/EstacaoEmPython/estacao/.env
+ExecStart=/var/www/EstacaoEmPython/.venv/bin/python workers/whatsapp_sender.py
 Restart=always
 RestartSec=5
 

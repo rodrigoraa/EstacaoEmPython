@@ -93,6 +93,39 @@ def garantir_tabela_alertas_envios(conn):
     """)
 
 
+def garantir_tabela_alertas_fila(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS alertas_fila (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        criado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TEXT DEFAULT CURRENT_TIMESTAMP,
+        usuario_id INTEGER,
+        nome TEXT,
+        telefone TEXT NOT NULL,
+        mensagem TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        tentativas INTEGER NOT NULL DEFAULT 0,
+        erro TEXT,
+        enviado_em TEXT
+    )
+    """)
+    garantir_coluna(conn, "alertas_fila", "criado_em", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "atualizado_em", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "usuario_id", "INTEGER")
+    garantir_coluna(conn, "alertas_fila", "nome", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "telefone", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "mensagem", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "status", "TEXT DEFAULT 'pendente'")
+    garantir_coluna(conn, "alertas_fila", "tentativas", "INTEGER DEFAULT 0")
+    garantir_coluna(conn, "alertas_fila", "erro", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "enviado_em", "TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alertas_fila_status_id ON alertas_fila(status, id)"
+    )
+
+
 def garantir_tabela_campanhas_whatsapp_envios(conn):
     conn.execute("""
     CREATE TABLE IF NOT EXISTS campanhas_whatsapp_envios (
@@ -334,6 +367,7 @@ def init_db():
 
     garantir_tabela_usuarios(conn)
     garantir_tabela_alertas_envios(conn)
+    garantir_tabela_alertas_fila(conn)
     garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)
 

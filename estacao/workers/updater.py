@@ -12,7 +12,6 @@ import database
 from persistence import salvar_historico_clima
 from time_utils import agora_local, data_local
 from services.weather_service import obter_dados
-from services.whatsapp_service import enviar_whatsapp
 
 
 STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
@@ -20,7 +19,6 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br")
 
 INTERVALO = 15
 FRIO_REARME_TEMP = 15.0
-INTERVALO_ENVIO_USUARIOS = 20
 
 
 def log(msg):
@@ -97,87 +95,93 @@ def salvar_estado(estado):
         log(f"⚠️ Não foi possível salvar estado de alertas em arquivo: {erro}")
 
 
-def registrar_envio_alerta(conn, usuario, telefone, status, mensagem, erro=None):
+def telefone_alerta(telefone):
+    telefone = "".join(filter(str.isdigit, telefone or ""))
+    if telefone and not telefone.startswith("55"):
+        telefone = "55" + telefone
+    return telefone
+
+
+def montar_mensagem_alerta(usuario, mensagem):
+    link_meteo = f"{PUBLIC_BASE_URL}"
+    nome_usuario = (usuario["nome"] or "").strip()
+    saudacao = f"ATENÇÃO, {nome_usuario}," if nome_usuario else ""
+
+    return (
+        f"{saudacao}\n"
+        f"{mensagem}\n\n"
+        f"📍 _Vicentina MS - Distrito de São José_\n"
+        f" Para mais informações, acesse:\n"
+        f"{link_meteo}"
+    )
+
+
+def enfileirar_alerta_usuario(conn, usuario, telefone, mensagem):
     conn.execute(
         """
-        INSERT INTO alertas_envios (
+        INSERT INTO alertas_fila (
             usuario_id,
             nome,
             telefone,
-            status,
             mensagem,
-            erro
-        ) VALUES (?, ?, ?, ?, ?, ?)
+            status,
+            tentativas
+        ) VALUES (?, ?, ?, ?, 'pendente', 0)
         """,
         (
             usuario["id"],
             usuario["nome"],
             telefone,
-            status,
             mensagem,
-            erro,
         ),
     )
-    conn.commit()
 
 
 def enviar_alerta(mensagem):
-    log(f"🚨 Disparando Alerta Crítico para usuários...")
+    log(f"🚨 Enfileirando alerta para usuários...")
     conn = database.get_db()
     conn.row_factory = sqlite3.Row
-    database.garantir_tabela_alertas_envios(conn)
+    database.garantir_tabela_alertas_fila(conn)
     conn.commit()
-    enviados = 0
+    enfileirados = 0
     falhas = 0
 
-    usuarios = conn.execute(
-        """
-        SELECT id, nome, telefone
-        FROM usuarios
-        WHERE (ativo = 1 OR ativo IS NULL)
-        AND receber_whatsapp = 1
-        """
-    ).fetchall()
-    total_usuarios = len(usuarios)
-    for indice, u in enumerate(usuarios):
-        telefone = "".join(filter(str.isdigit, u["telefone"]))
-        if not telefone.startswith("55"):
-            telefone = "55" + telefone
+    try:
+        usuarios = conn.execute(
+            """
+            SELECT id, nome, telefone
+            FROM usuarios
+            WHERE (ativo = 1 OR ativo IS NULL)
+            AND receber_whatsapp = 1
+            ORDER BY id
+            """
+        ).fetchall()
 
-        link_meteo = f"{PUBLIC_BASE_URL}"
-        nome_usuario = (u["nome"] or "").strip()
-        saudacao = f"ATENÇÃO, {nome_usuario}," if nome_usuario else ""
+        for usuario in usuarios:
+            telefone = telefone_alerta(usuario["telefone"])
+            mensagem_final = montar_mensagem_alerta(usuario, mensagem)
 
-        # Estrutura base da mensagem para todos os alertas
-        mensagem_final = (
-            f"{saudacao}\n" 
-            f"{mensagem}\n\n"
-            f"📍 _Vicentina MS - Distrito de São José_\n"
-            f" Para mais informações, acesse:\n"
-            f"{link_meteo}"
-        )
+            try:
+                enfileirar_alerta_usuario(conn, usuario, telefone, mensagem_final)
+                enfileirados += 1
+                log(f"✅ Alerta enfileirado para {usuario['nome']}")
+            except Exception as e:
+                falhas += 1
+                log(f"❌ Erro ao enfileirar {usuario['nome']} ({telefone}) {e}")
 
-        try:
-            enviar_whatsapp(telefone, mensagem_final)
-            registrar_envio_alerta(conn, u, telefone, "enviado", mensagem_final)
-            enviados += 1
-            log(f"✅ Enviado para {u['nome']}")
-        except Exception as e:
-            registrar_envio_alerta(conn, u, telefone, "falhou", mensagem_final, str(e))
-            falhas += 1
-            log(f"❌ Erro envio {u['nome']} ({telefone}) {e}")
-
-        if indice < total_usuarios - 1:
-            time.sleep(INTERVALO_ENVIO_USUARIOS)
-
-    conn.close()
-    return {"total": len(usuarios), "enviados": enviados, "falhas": falhas}
+        conn.commit()
+        return {"total": len(usuarios), "enfileirados": enfileirados, "falhas": falhas}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def marcar_alerta_enviado(estado, chave_nivel, nivel, mensagem, atualizacoes=None):
     resultado = enviar_alerta(mensagem)
 
-    if resultado["enviados"] > 0:
+    if resultado["enfileirados"] > 0:
         estado[chave_nivel] = nivel
         if atualizacoes:
             estado.update(atualizacoes)
@@ -185,7 +189,7 @@ def marcar_alerta_enviado(estado, chave_nivel, nivel, mensagem, atualizacoes=Non
         return True
 
     log(
-        f"Alerta nao marcado como enviado: {resultado['falhas']} falhas "
+        f"Alerta nao marcado como enfileirado: {resultado['falhas']} falhas "
         f"de {resultado['total']} destinatarios."
     )
     return False

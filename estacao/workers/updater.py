@@ -321,10 +321,9 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
             {"frio_rearmado": False, "temp_max_apos_alerta_frio": temp},
         )
 
-    elif temp <= 12.5 and estado["nivel_frio"] < 1:
+    elif temp <= 12.4 and estado["nivel_frio"] < 1:
         msg = mensagem_frio(
             "❄️ *ALERTA: Temperatura Baixa",
-            "Frio incomum para a região.",
             temp,
             sensacao,
             estado,
@@ -338,19 +337,19 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         )
 
     if rajada >= 100 and estado["nivel_vento"] < 3:
-        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*.\nAlto risco de destelhamentos e queda de árvores!"
+        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*."
         marcar_alerta_enviado(estado, "nivel_vento", 3, msg)
 
     elif rajada >= 70 and estado["nivel_vento"] < 2:
-        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*.\nPossibilidade de danos. Atenção redobrada."
+        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*."
         marcar_alerta_enviado(estado, "nivel_vento", 2, msg)
 
     elif rajada >= 40 and estado["nivel_vento"] < 1:
-        msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*.\nRisco de queda de galhos."
+        msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*."
         marcar_alerta_enviado(estado, "nivel_vento", 1, msg)
 
     if chuva_hoje >= 70 and estado["nivel_chuva"] < 2:
-        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje.\nRisco de enxurradas!"
+        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje."
         marcar_alerta_enviado(estado, "nivel_chuva", 2, msg)
 
     elif chuva_hoje >= 50 and estado["nivel_chuva"] < 1:
@@ -362,7 +361,7 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
         marcar_alerta_enviado(estado, "nivel_umidade", 2, msg)
 
     elif umidade <= 30 and estado["nivel_umidade"] < 1:
-        msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*.\nCausa desconforto respiratório."
+        msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*."
         marcar_alerta_enviado(estado, "nivel_umidade", 1, msg)
 
 

@@ -1,6 +1,7 @@
 import sys
 import os
 import sqlite3
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
@@ -220,51 +221,78 @@ def atualizar_estado_rearme_frio(estado, temp):
         salvar_estado(estado)
 
 
+def formatar_temperatura_alerta(valor):
+    try:
+        temperatura = Decimal(str(valor)).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    except (InvalidOperation, TypeError, ValueError):
+        return f"{valor}°C"
+
+    return f"{temperatura}°C"
+
+
 def mensagem_frio(titulo, texto_base, temp, sensacao, estado):
     temp_max = estado.get("temp_max_apos_alerta_frio")
     if estado.get("frio_rearmado") and temp_max is not None and temp_max > temp:
         return (
             f"{titulo} novamente!*\n"
-            f"A temperatura subiu até *{temp_max:.1f}°C* e caiu novamente "
-            f"para *{temp:.1f}°C*.\n"
-            f"Sensação térmica de *{sensacao:.1f}°C*.\n"
+            f"A temperatura subiu até *{formatar_temperatura_alerta(temp_max)}* "
+            f"e caiu novamente para *{formatar_temperatura_alerta(temp)}*.\n"
+            f"Sensação térmica de *{formatar_temperatura_alerta(sensacao)}*.\n"
             f"{texto_base}"
         )
 
     return (
         f"{titulo}!*\n"
-        f"Registrados *{temp:.1f}°C*\n"
-        f"Sensação térmica de *{sensacao:.1f}°C*.\n"
+        f"Registrados *{formatar_temperatura_alerta(temp)}*\n"
+        f"Sensação térmica de *{formatar_temperatura_alerta(sensacao)}*.\n"
         f"{texto_base}"
     )
+
+
+def estado_alertas_novo_dia(estado_anterior, hoje):
+    estado = estado_alertas_padrao(hoje)
+
+    if (
+        estado_anterior.get("nivel_frio", 0) > 0
+        or estado_anterior.get("frio_rearmado")
+    ):
+        estado["nivel_frio"] = estado_anterior.get("nivel_frio", 0)
+        estado["frio_rearmado"] = estado_anterior.get("frio_rearmado", False)
+        estado["temp_max_apos_alerta_frio"] = estado_anterior.get(
+            "temp_max_apos_alerta_frio"
+        )
+
+    return estado
 
 
 def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
     estado = carregar_estado()
     hoje = data_local()
 
-    # Mudança de dia: Salva o resumo de ontem no banco de dados e zera a memória de alertas
+    # Mudança de dia: salva o resumo e inicia o novo dia preservando frio ativo.
     if estado.get("data") != hoje:
         if estado.get("data") != "":
             salvar_resumo_diario_banco(estado["data"])
 
-        estado = estado_alertas_padrao(hoje)
+        estado = estado_alertas_novo_dia(estado, hoje)
         salvar_estado(estado)
 
     atualizar_estado_rearme_frio(estado, temp)
 
     if temp >= 40 and estado["nivel_calor"] < 2:
-        msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{temp:.1f}°C*\nSensação térmica de *{sensacao:.1f}°C*.\nRisco iminente de insolação. Evite exposição ao sol!"
+        msg = f"🔥 *ALERTA CRÍTICO: Temperatura Muito Alta!*\nOs termômetros atingiram *{formatar_temperatura_alerta(temp)}*\nSensação térmica de *{formatar_temperatura_alerta(sensacao)}*.\nRisco iminente de insolação. Evite exposição ao sol!"
         marcar_alerta_enviado(estado, "nivel_calor", 2, msg)
 
     elif temp >= 35 and estado["nivel_calor"] < 1:
-        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{temp:.1f}°C*\nSensação térmica de *{sensacao:.1f}°C*.\nCalor forte na região."
+        msg = f"🌡️ *ALERTA: Temperatura Alta!*\nRegistrados *{formatar_temperatura_alerta(temp)}*\nSensação térmica de *{formatar_temperatura_alerta(sensacao)}*.\nCalor forte na região."
         marcar_alerta_enviado(estado, "nivel_calor", 1, msg)
 
     if temp <= 2 and estado["nivel_frio"] < 3:
         msg = mensagem_frio(
             "🥶 *ALERTA MÁXIMO: Frio Congelante",
-            "Condição extrema com alto risco de geada!",
+            "Alto risco de geada!",
             temp,
             sensacao,
             estado,
@@ -293,10 +321,9 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
             {"frio_rearmado": False, "temp_max_apos_alerta_frio": temp},
         )
 
-    elif temp <= 12.5 and estado["nivel_frio"] < 1:
+    elif temp <= 12.4 and estado["nivel_frio"] < 1:
         msg = mensagem_frio(
             "❄️ *ALERTA: Temperatura Baixa",
-            "Frio incomum para a região.",
             temp,
             sensacao,
             estado,

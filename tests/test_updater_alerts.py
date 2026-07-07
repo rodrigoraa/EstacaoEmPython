@@ -126,8 +126,52 @@ class AlertasWorkerTest(unittest.TestCase):
         self.assertIn("Temperatura Baixa!*", mensagens[0])
         self.assertNotIn("caiu novamente", mensagens[0])
         self.assertIn("Temperatura Baixa novamente!*", mensagens[1])
-        self.assertIn("subiu até *25.0°C*", mensagens[1])
-        self.assertIn("caiu novamente para *12.0°C*", mensagens[1])
+        self.assertIn("subiu até *25°C*", mensagens[1])
+        self.assertIn("caiu novamente para *12°C*", mensagens[1])
+        self.assertNotIn(".0°C", mensagens[1])
+
+    def test_alerta_formata_temperatura_sem_casas_decimais(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.data_local = lambda: "2026-06-25"
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+
+        mensagens = []
+        self.updater.enviar_alerta = lambda mensagem: mensagens.append(
+            mensagem
+        ) or {"total": 1, "enfileirados": 1, "falhas": 0}
+
+        self.updater.verificar_alertas(12.5, 12.4, 0, 0, 50, 0)
+
+        self.assertEqual(len(mensagens), 1)
+        self.assertIn("Registrados *13°C*", mensagens[0])
+        self.assertIn("Sensação térmica de *12°C*", mensagens[0])
+        self.assertNotIn("12.5°C", mensagens[0])
+        self.assertNotIn("12.4°C", mensagens[0])
+
+    def test_alerta_frio_nao_repete_na_virada_do_dia_sem_rearme(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+
+        datas = iter(["2026-06-25", "2026-06-26"])
+        self.updater.data_local = lambda: next(datas)
+
+        mensagens = []
+        self.updater.enviar_alerta = lambda mensagem: mensagens.append(
+            mensagem
+        ) or {"total": 1, "enfileirados": 1, "falhas": 0}
+
+        self.updater.verificar_alertas(12.0, 12.0, 0, 0, 50, 0)
+        self.updater.verificar_alertas(11.8, 11.8, 0, 0, 50, 0)
+
+        estado = self.updater.carregar_estado()
+
+        self.assertEqual(len(mensagens), 1)
+        self.assertEqual(estado["data"], "2026-06-26")
+        self.assertEqual(estado["nivel_frio"], 1)
+        self.assertFalse(estado["frio_rearmado"])
+        self.assertEqual(estado["temp_max_apos_alerta_frio"], 12.0)
 
     def test_carregar_estado_migra_arquivo_para_banco(self):
         arquivo_estado = Path(self.tmp.name) / "alert_state.json"

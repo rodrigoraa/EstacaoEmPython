@@ -122,7 +122,7 @@ O backend é Flask, organizado por Blueprints:
 
 ### Frontend
 
-O frontend é renderizado com Jinja2, HTML, Tailwind via CDN, CSS próprio e JavaScript em templates.
+O frontend é renderizado com Jinja2, HTML, Tailwind via CDN versionado, CSS próprio e JavaScript em templates.
 
 Componentes principais:
 
@@ -135,7 +135,8 @@ Componentes principais:
 - `templates/admin_painel.html`: painel administrativo.
 - `templates/unsubscribe.html`: feedback de cancelamento.
 
-Os gráficos usam Chart.js via CDN.
+Os gráficos usam Chart.js servido localmente em `static/vendor/chartjs`.
+Os ícones usam Font Awesome servido localmente em `static/vendor/fontawesome`.
 
 ### Banco de Dados
 
@@ -727,6 +728,7 @@ EVOLUTION_URL=https://sua-evolution-api.example.com
 EVOLUTION_API_KEY=chave-da-api
 EVOLUTION_INSTANCE=nome-da-instância
 
+AMBIENT_PUBLIC_SLUG=a535a0b6ff603c1d2376abc99e689f2f
 PUBLIC_BASE_URL=https://meteo.eesjv.com.br
 
 RATELIMIT_ENABLED=true
@@ -767,6 +769,7 @@ ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
 | `PUBLIC_CADASTRO_RATE_LIMIT` | `60 per hour` | limite de envios do formulario publico de cadastro por IP |
 | `SESSION_COOKIE_SECURE` | `false` | usar `true` com HTTPS |
 | `SESSION_TIMEOUT_MINUTES` | `30` | timeout de sessão admin |
+| `AMBIENT_PUBLIC_SLUG` | `a535a0b6ff603c1d2376abc99e689f2f` | slug público da estação na Ambient Weather |
 | `PUBLIC_BASE_URL` | `http://meteo.eesjv.com.br` | base pública do site usada em links |
 | `UNSUBSCRIBE_SECRET` | `SECRET_KEY` | chave opcional separada para assinar links de cancelamento |
 | `UNSUBSCRIBE_TOKEN_MAX_AGE_DAYS` | `90` | validade dos links de cancelamento |

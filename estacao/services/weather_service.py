@@ -1,3 +1,5 @@
+import os
+
 import requests
 from datetime import datetime
 
@@ -8,7 +10,9 @@ from persistence import (
     salvar_leitura_bruta,
 )
 
-PUBLIC_SLUG = "a535a0b6ff603c1d2376abc99e689f2f"
+DEFAULT_PUBLIC_SLUG = "a535a0b6ff603c1d2376abc99e689f2f"
+PUBLIC_SLUG = os.environ.get("AMBIENT_PUBLIC_SLUG", DEFAULT_PUBLIC_SLUG).strip()
+PUBLIC_SLUG = PUBLIC_SLUG or DEFAULT_PUBLIC_SLUG
 
 URL = f"https://lightning.ambientweather.net/devices?public.slug={PUBLIC_SLUG}"
 

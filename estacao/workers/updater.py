@@ -321,7 +321,7 @@ def verificar_alertas(temp, sensacao, rajada, chuva_hoje, umidade, uv):
             {"frio_rearmado": False, "temp_max_apos_alerta_frio": temp},
         )
 
-    elif temp <= 12.4 and estado["nivel_frio"] < 1:
+    elif temp <= 12.5 and estado["nivel_frio"] < 1:
         msg = mensagem_frio(
             "❄️ *ALERTA: Temperatura Baixa",
             "Frio incomum para a região.",

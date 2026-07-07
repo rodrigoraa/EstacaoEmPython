@@ -126,6 +126,34 @@ def garantir_tabela_alertas_fila(conn):
     )
 
 
+def garantir_tabela_logs_persistencia(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS logs_persistencia (
+
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        data_hora TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        nivel TEXT NOT NULL,
+        origem TEXT,
+        mensagem TEXT NOT NULL,
+        detalhe TEXT
+    )
+    """)
+
+
+def garantir_tabela_health_check_estado(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS health_check_estado (
+        chave TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        assinatura TEXT,
+        mensagem TEXT,
+        notificado_em TEXT,
+        atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+
 def garantir_tabela_campanhas_whatsapp_envios(conn):
     conn.execute("""
     CREATE TABLE IF NOT EXISTS campanhas_whatsapp_envios (
@@ -316,18 +344,7 @@ def init_db():
     garantir_coluna(conn, "leituras_brutas", "bateria", "TEXT")
     garantir_coluna(conn, "leituras_brutas", "sinal", "TEXT")
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS logs_persistencia (
-
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        data_hora TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        nivel TEXT NOT NULL,
-        origem TEXT,
-        mensagem TEXT NOT NULL,
-        detalhe TEXT
-    )
-    """)
+    garantir_tabela_logs_persistencia(conn)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS historico_diario (
@@ -368,6 +385,7 @@ def init_db():
     garantir_tabela_usuarios(conn)
     garantir_tabela_alertas_envios(conn)
     garantir_tabela_alertas_fila(conn)
+    garantir_tabela_health_check_estado(conn)
     garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)
 

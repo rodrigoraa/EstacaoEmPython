@@ -20,7 +20,7 @@ from flask import (
 
 import database
 from extensions import limiter
-from time_utils import formatar_local
+from time_utils import agora_local, formatar_local, para_local
 from unsubscribe_tokens import normalizar_telefone
 
 admin_routes = Blueprint("admin", __name__)
@@ -172,6 +172,7 @@ def preparar_historico_admin(linhas):
 def garantir_estruturas_admin(conn):
     database.garantir_tabela_usuarios(conn)
     database.garantir_tabela_alertas_envios(conn)
+    database.garantir_tabela_alertas_fila(conn)
     database.garantir_tabela_cadastro_eventos(conn)
 
 
@@ -227,6 +228,105 @@ def resumo_usuarios_admin(conn):
         "usuarios_pausados": conn.execute(
             "SELECT COUNT(*) FROM usuarios WHERE ativo = 0"
         ).fetchone()[0],
+    }
+
+
+def minutos_desde(valor, assume_utc=True):
+    dt = para_local(valor, assume_utc=assume_utc)
+    if not dt:
+        return None
+
+    segundos = (agora_local() - dt).total_seconds()
+    return max(0, int(segundos // 60))
+
+
+def texto_tempo_decorrido(minutos):
+    if minutos is None:
+        return "sem registro"
+    if minutos < 1:
+        return "agora"
+    if minutos == 1:
+        return "1 min"
+    if minutos < 60:
+        return f"{minutos} min"
+
+    horas = minutos // 60
+    resto = minutos % 60
+    if resto == 0:
+        return f"{horas} h"
+    return f"{horas} h {resto} min"
+
+
+def obter_saude_sistema_admin(conn):
+    limite_atraso_minutos = int(os.environ.get("ADMIN_UPDATER_ATRASO_MINUTOS", "5"))
+
+    ultima_leitura = conn.execute(
+        """
+        SELECT id, data_hora, data_hora_local
+        FROM historico_clima
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    data_leitura = None
+    minutos_leitura = None
+    if ultima_leitura:
+        data_leitura = ultima_leitura["data_hora_local"] or ultima_leitura["data_hora"]
+        minutos_leitura = minutos_desde(data_leitura, assume_utc=False)
+
+    filas = conn.execute(
+        """
+        SELECT status, COUNT(*) as total
+        FROM alertas_fila
+        GROUP BY status
+        """
+    ).fetchall()
+    totais_fila = {row["status"]: row["total"] for row in filas}
+
+    ultimo_envio = conn.execute(
+        """
+        SELECT data_hora, status
+        FROM alertas_envios
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    pendentes = totais_fila.get("pendente", 0)
+    enviando = totais_fila.get("enviando", 0)
+    falhou = totais_fila.get("falhou", 0)
+
+    coleta_ok = minutos_leitura is not None and minutos_leitura <= limite_atraso_minutos
+    fila_ok = pendentes == 0 and enviando == 0 and falhou == 0
+
+    if coleta_ok and fila_ok:
+        status_geral = "ok"
+        status_texto = "Operando"
+    elif minutos_leitura is None:
+        status_geral = "atencao"
+        status_texto = "Sem leituras"
+    else:
+        status_geral = "atencao"
+        status_texto = "Atenção"
+
+    return {
+        "status_geral": status_geral,
+        "status_texto": status_texto,
+        "coleta_ok": coleta_ok,
+        "ultima_leitura": formatar_data_admin(data_leitura, assume_utc=False)
+        if data_leitura
+        else "-",
+        "ultima_leitura_tempo": texto_tempo_decorrido(minutos_leitura),
+        "limite_atraso_minutos": limite_atraso_minutos,
+        "fila_pendentes": pendentes,
+        "fila_enviando": enviando,
+        "fila_falhou": falhou,
+        "fila_ok": fila_ok,
+        "ultimo_envio": formatar_data_admin(ultimo_envio["data_hora"], assume_utc=True)
+        if ultimo_envio
+        else "-",
+        "ultimo_envio_status": ultimo_envio["status"] if ultimo_envio else "-",
     }
 
 
@@ -365,6 +465,7 @@ def admin():
     conn.commit()
     usuarios = conn.execute("SELECT * FROM usuarios ORDER BY id DESC").fetchall()
     resumo_usuarios = resumo_usuarios_admin(conn)
+    saude_sistema = obter_saude_sistema_admin(conn)
     historico = conn.execute(
         "SELECT * FROM historico_clima ORDER BY id DESC LIMIT 5"
     ).fetchall()
@@ -382,6 +483,7 @@ def admin():
         "admin_painel.html",
         usuarios=preparar_usuarios_admin(usuarios),
         resumo_usuarios=resumo_usuarios,
+        saude_sistema=saude_sistema,
         historico=preparar_historico_admin(historico),
         alertas=preparar_eventos_admin(alertas, assume_utc=True),
         eventos_cadastro=preparar_eventos_admin(eventos_cadastro, assume_utc=True),

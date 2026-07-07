@@ -128,7 +128,50 @@ class AdminUsuariosTest(unittest.TestCase):
 
         self.assertEqual(resposta.status_code, 200)
         self.assertIn("Usuários cadastrados".encode("utf-8"), resposta.data)
+        self.assertIn("Saúde do sistema".encode("utf-8"), resposta.data)
         self.assertIn(f"editar-usuario-{usuario_id}".encode("utf-8"), resposta.data)
+
+    def test_admin_calcula_saude_do_sistema(self):
+        conn = self.abrir_banco()
+        agora = self.admin_module.agora_local().replace(microsecond=0).isoformat()
+        conn.execute(
+            """
+            INSERT INTO historico_clima (data_hora_local, data_hora, temp)
+            VALUES (?, ?, ?)
+            """,
+            (agora, agora, 22.0),
+        )
+        conn.execute(
+            """
+            INSERT INTO alertas_fila (telefone, mensagem, status)
+            VALUES (?, ?, ?)
+            """,
+            ("5567999999999", "Alerta pendente", "pendente"),
+        )
+        conn.execute(
+            """
+            INSERT INTO alertas_fila (telefone, mensagem, status)
+            VALUES (?, ?, ?)
+            """,
+            ("5567888888888", "Alerta falhou", "falhou"),
+        )
+        conn.execute(
+            """
+            INSERT INTO alertas_envios (telefone, status, mensagem)
+            VALUES (?, ?, ?)
+            """,
+            ("5567777777777", "enviado", "Alerta enviado"),
+        )
+        conn.commit()
+
+        saude = self.admin_module.obter_saude_sistema_admin(conn)
+        conn.close()
+
+        self.assertTrue(saude["coleta_ok"])
+        self.assertEqual(saude["fila_pendentes"], 1)
+        self.assertEqual(saude["fila_falhou"], 1)
+        self.assertEqual(saude["ultimo_envio_status"], "enviado")
+        self.assertEqual(saude["status_geral"], "atencao")
 
     def test_admin_nao_permite_telefone_duplicado(self):
         usuario_id = self.cadastrar_usuario(nome="Maria", telefone="67999999999")

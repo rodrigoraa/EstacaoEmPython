@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 import database
-from time_utils import agora_local, formatar_local, iso_utc, para_local
+from time_utils import agora_local, formatar_local, iso_utc, minutos_desde
 from unsubscribe_tokens import telefone_com_codigo_pais
 
 
@@ -48,14 +48,6 @@ def garantir_estruturas(conn):
     database.garantir_tabela_logs_persistencia(conn)
     database.garantir_tabela_health_check_estado(conn)
     conn.commit()
-
-
-def minutos_desde(valor, assume_utc=True):
-    dt = para_local(valor, assume_utc=assume_utc)
-    if not dt:
-        return None
-    diferenca = agora_local() - dt
-    return max(0, int(diferenca.total_seconds() // 60))
 
 
 def registrar_log(conn, nivel, mensagem, detalhe=None):

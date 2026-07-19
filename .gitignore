@@ -4,21 +4,11 @@
 alert_state.json
 estado_alertas.json
 
-venv/
-
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-
 .env
-
-estacao.db
-alert_state.json
 
 venv/
 .venv/
+.venv-cleanup/
 env/
 ENV/
 

@@ -1,4 +1,3 @@
-from datetime import timedelta
 import os
 import sqlite3
 
@@ -7,7 +6,6 @@ from flask import Blueprint, render_template, request, url_for
 import database
 from extensions import limiter
 from services.weather_service import obter_dados, obter_previsao
-from time_utils import agora_local
 from unsubscribe_tokens import (
     TokenCancelamentoExpirado,
     TokenCancelamentoInvalido,
@@ -19,28 +17,6 @@ from unsubscribe_tokens import (
 
 public_routes = Blueprint("public", __name__)
 PUBLIC_CADASTRO_RATE_LIMIT = os.environ.get("PUBLIC_CADASTRO_RATE_LIMIT", "60 per hour")
-
-
-def registrar_evento_cadastro(
-    conn,
-    acao,
-    usuario_id=None,
-    nome=None,
-    telefone=None,
-    endereco=None,
-    receber_whatsapp=None,
-    detalhe=None,
-):
-    database.registrar_cadastro_evento(
-        conn,
-        acao,
-        usuario_id=usuario_id,
-        nome=nome,
-        telefone=telefone,
-        endereco=endereco,
-        receber_whatsapp=receber_whatsapp,
-        detalhe=detalhe,
-    )
 
 
 def corrigir_texto_env(texto):
@@ -125,7 +101,7 @@ def index():
                     (nome, telefone, endereco, receber_whatsapp),
                 )
                 usuario_id = cursor.lastrowid
-                registrar_evento_cadastro(
+                database.registrar_cadastro_evento(
                     conn,
                     "cadastro",
                     usuario_id=usuario_id,
@@ -138,7 +114,7 @@ def index():
                 conn.commit()
                 mensagem = "✅ Cadastro realizado com sucesso!"
             except sqlite3.IntegrityError:
-                registrar_evento_cadastro(
+                database.registrar_cadastro_evento(
                     conn,
                     "cadastro_duplicado",
                     nome=nome,
@@ -152,18 +128,7 @@ def index():
             finally:
                 conn.close()
 
-    dias_chuva = []
-    dias_semana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
-    hoje = agora_local().replace(tzinfo=None)
-
-    for i in range(6, -1, -1):
-        data_alvo = hoje - timedelta(days=i)
-        dia_str = dias_semana[int(data_alvo.strftime("%w"))]
-        dias_chuva.append(
-            {"label": dia_str, "valor": 0, "altura": 0, "is_hoje": (i == 0)}
-        )
-
-    return render_template("index.html", mensagem=mensagem, dias_chuva=dias_chuva)
+    return render_template("index.html", mensagem=mensagem)
 
 
 @public_routes.route("/unsubscribe/request", methods=["POST"])
@@ -189,7 +154,7 @@ def solicitar_cancelamento():
             token = gerar_token_cancelamento(usuario["telefone"])
             link_cancelamento = url_for("public.unsubscribe", token=token, _external=True)
             enviar_link_cancelamento_whatsapp(telefone_com_55, link_cancelamento)
-            registrar_evento_cadastro(
+            database.registrar_cadastro_evento(
                 conn,
                 "cancelamento_solicitado",
                 usuario_id=usuario["id"],
@@ -200,7 +165,7 @@ def solicitar_cancelamento():
                 detalhe="Link seguro de cancelamento enviado por WhatsApp",
             )
         else:
-            registrar_evento_cadastro(
+            database.registrar_cadastro_evento(
                 conn,
                 "cancelamento_solicitado_nao_encontrado",
                 telefone=telefone,
@@ -266,7 +231,7 @@ def unsubscribe():
             return render_template("unsubscribe.html", estado=estado)
 
         if usuario:
-            registrar_evento_cadastro(
+            database.registrar_cadastro_evento(
                 conn,
                 "cancelamento",
                 usuario_id=usuario["id"],
@@ -277,7 +242,7 @@ def unsubscribe():
                 detalhe="Cancelamento confirmado por token assinado",
             )
         else:
-            registrar_evento_cadastro(
+            database.registrar_cadastro_evento(
                 conn,
                 "cancelamento_nao_encontrado",
                 telefone=telefone,

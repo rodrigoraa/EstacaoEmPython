@@ -654,45 +654,40 @@
       modal.style.setProperty("background", "rgba(2, 6, 23, 0.74)", "important");
     }
 
-    function abrirCadastro() {
-      const modal = document.getElementById("modalCadastro");
+    function abrirModal(idModal) {
+      const modal = document.getElementById(idModal);
       prepararModal(modal);
       modal.classList.remove("hidden");
       modal.classList.add("flex");
       modal.setAttribute("aria-hidden", "false");
       document.body.classList.add("modal-open");
+    }
+
+    function fecharModal(idModal) {
+      const modal = document.getElementById(idModal);
+      const scrollY = Number(modal.dataset.scrollY || 0);
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      modal.style.setProperty("display", "none", "important");
+      modal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      window.scrollTo(0, scrollY);
+    }
+
+    function abrirCadastro() {
+      abrirModal("modalCadastro");
     }
 
     function fecharCadastro() {
-      const modal = document.getElementById("modalCadastro");
-      const scrollY = Number(modal.dataset.scrollY || 0);
-      modal.classList.add("hidden");
-      modal.classList.remove("flex");
-      modal.style.setProperty("display", "none", "important");
-      modal.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("modal-open");
-      window.scrollTo(0, scrollY);
+      fecharModal("modalCadastro");
     }
 
-    // FUNÇÕES DE CANCELAR ALERTAS
     function abrirCancelarAlertas() {
-      const modal = document.getElementById("modalCancelar");
-      prepararModal(modal);
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
-      modal.setAttribute("aria-hidden", "false");
-      document.body.classList.add("modal-open");
+      abrirModal("modalCancelar");
     }
 
     function fecharCancelarAlertas() {
-      const modal = document.getElementById("modalCancelar");
-      const scrollY = Number(modal.dataset.scrollY || 0);
-      modal.classList.add("hidden");
-      modal.classList.remove("flex");
-      modal.style.setProperty("display", "none", "important");
-      modal.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("modal-open");
-      window.scrollTo(0, scrollY);
+      fecharModal("modalCancelar");
     }
 
     function confirmarCancelamento() {
@@ -725,6 +720,21 @@
       }, 1000);
     }
 
+    function aplicarMascaraTelefone(input) {
+      if (!input) return;
+
+      input.addEventListener("input", function () {
+        let valor = this.value.replace(/\D/g, "");
+        if (valor.startsWith("55")) valor = valor.substring(2);
+        if (valor.length > 11) valor = valor.substring(0, 11);
+        if (valor.length > 6)
+          valor = `(${valor.substring(0, 2)}) ${valor.substring(2, 7)}-${valor.substring(7)}`;
+        else if (valor.length > 2)
+          valor = `(${valor.substring(0, 2)}) ${valor.substring(2)}`;
+        this.value = valor;
+      });
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
       iniciarRelogioAoVivo();
       buscarClima();
@@ -755,35 +765,8 @@
         fecharCancelarAlertas();
       });
 
-      // Formatação do telefone no formulário de Cadastro
-      const telInput = document.getElementById("telefone");
-      if (telInput) {
-        telInput.addEventListener("input", function () {
-          let valor = this.value.replace(/\D/g, "");
-          if (valor.startsWith("55")) valor = valor.substring(2);
-          if (valor.length > 11) valor = valor.substring(0, 11);
-          if (valor.length > 6)
-            valor = `(${valor.substring(0, 2)}) ${valor.substring(2, 7)}-${valor.substring(7)}`;
-          else if (valor.length > 2)
-            valor = `(${valor.substring(0, 2)}) ${valor.substring(2)}`;
-          this.value = valor;
-        });
-      }
-
-      // Formatação do telefone no formulário de Cancelar
-      const telCancelar = document.getElementById("input-tel-cancelar");
-      if (telCancelar) {
-        telCancelar.addEventListener("input", function () {
-          let valor = this.value.replace(/\D/g, "");
-          if (valor.startsWith("55")) valor = valor.substring(2);
-          if (valor.length > 11) valor = valor.substring(0, 11);
-          if (valor.length > 6)
-            valor = `(${valor.substring(0, 2)}) ${valor.substring(2, 7)}-${valor.substring(7)}`;
-          else if (valor.length > 2)
-            valor = `(${valor.substring(0, 2)}) ${valor.substring(2)}`;
-          this.value = valor;
-        });
-      }
+      aplicarMascaraTelefone(document.getElementById("telefone"));
+      aplicarMascaraTelefone(document.getElementById("input-tel-cancelar"));
     });
   
   </script>

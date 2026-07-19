@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +42,79 @@ class AlertasWorkerTest(unittest.TestCase):
         conn = sqlite3.connect(os.environ["ESTACAO_DB"])
         conn.row_factory = sqlite3.Row
         return conn
+
+    def test_executar_persiste_antes_de_processar_alertas(self):
+        dados = {
+            "leitura_bruta_id": 321,
+            "station_data_hora_local": "2026-07-19T12:00:00-04:00",
+            "temp": 25.0,
+            "sensacao": 26.0,
+            "umidade": 70.0,
+            "pressao": 1012.0,
+            "uv": 3.0,
+            "radiacao": 450.0,
+            "vento": 8.0,
+            "rajada": 12.0,
+            "rajada_max": 15.0,
+            "vento_dir": 180.0,
+            "chuva_rate": 0.0,
+            "chuva_evento": 1.0,
+            "chuva_hoje": 2.0,
+            "validade_alertas": {
+                "temperatura": True,
+                "sensacao": True,
+                "vento": True,
+                "chuva": True,
+                "umidade": True,
+                "uv": True,
+            },
+        }
+        ordem = []
+        persistir = mock.Mock(side_effect=lambda *args, **kwargs: ordem.append("persistir"))
+        acumular = mock.Mock(
+            side_effect=lambda *args, **kwargs: ordem.append("acumular")
+            or {"rajada_max_corrigida": 15.0, "chuva_total_corrigida": 2.0}
+        )
+        alertar = mock.Mock(side_effect=lambda *args, **kwargs: ordem.append("alertar"))
+
+        with (
+            mock.patch.object(self.updater, "obter_dados", return_value=dados),
+            mock.patch.object(
+                self.updater,
+                "preparar_dados_novo_dia",
+                return_value=(dados, "2026-07-19"),
+            ),
+            mock.patch.object(self.updater, "salvar_historico_clima", persistir),
+            mock.patch.object(
+                self.updater.acumulados,
+                "atualizar_acumulado_diario",
+                acumular,
+            ),
+            mock.patch.object(self.updater, "verificar_alertas", alertar),
+            mock.patch.object(
+                self.updater,
+                "carregar_estado",
+                return_value={"rajada_max_nuvem": 15.0},
+            ),
+            mock.patch.object(self.updater, "salvar_estado"),
+            mock.patch.object(self.updater, "log"),
+        ):
+            self.updater.executar()
+
+        self.assertEqual(ordem, ["persistir", "acumular", "alertar"])
+        persistir.assert_called_once_with(dados, leitura_bruta_id=321)
+        acumular.assert_called_once_with(dados, "2026-07-19")
+        alertar.assert_called_once_with(
+            25.0,
+            26.0,
+            15.0,
+            2.0,
+            70.0,
+            3.0,
+            data_referencia="2026-07-19",
+            ocorrido_em_local="2026-07-19T12:00:00-04:00",
+            validade_alertas=dados["validade_alertas"],
+        )
 
     def test_enviar_alerta_enfileira_para_usuario_inscrito(self):
         conn = self.abrir_banco()

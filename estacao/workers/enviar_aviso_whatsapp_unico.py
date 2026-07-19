@@ -1,6 +1,5 @@
 import argparse
 import os
-import sqlite3
 import sys
 import time
 
@@ -140,7 +139,6 @@ def deve_pular_envio(registro, retry_failed=False):
 
 def enviar_campanha(campanha_id, template, intervalo, confirmar=False, limite=None, retry_failed=False):
     conn = database.get_db()
-    conn.row_factory = sqlite3.Row
     garantir_estruturas(conn)
 
     usuarios = listar_destinatarios(conn)

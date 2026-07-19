@@ -1,1508 +1,379 @@
-# Sistema Web da Estação Meteorológica
+# Estação meteorológica em Flask
 
-Documentação técnica do sistema Python/Flask usado para coletar, persistir, exibir e alertar dados de uma estação meteorológica pública da Ambient Weather.
+Aplicação web para coletar dados públicos da Ambient Weather, manter histórico em SQLite, exibir condições e previsões meteorológicas e distribuir alertas pelo WhatsApp por meio da Evolution API.
 
-> Status deste README: baseado na estrutura real do projeto aberto em `D:\Projetos\EstacaoEmPython`, incluindo os módulos atuais de persistência, timezone, painel público, painel administrativo, APIs, webhook de deploy e worker de coleta.
+O sistema é composto por três processos principais:
 
-## Índice
+1. a aplicação Flask atende páginas, APIs, administração e webhooks;
+2. o `updater` coleta e persiste leituras, calcula acumulados e cria alertas na fila;
+3. o `whatsapp_sender` consome a fila e envia mensagens.
 
-1. [Visão Geral do Projeto](#1-visão-geral-do-projeto)
-2. [Arquitetura do Sistema](#2-arquitetura-do-sistema)
-3. [Tecnologias Utilizadas](#3-tecnologias-utilizadas)
-4. [Estrutura de Pastas](#4-estrutura-de-pastas)
-5. [Funcionamento da Estação](#5-funcionamento-da-estação)
-6. [Fluxo Completo dos Dados](#6-fluxo-completo-dos-dados)
-7. [Banco de Dados](#7-banco-de-dados)
-8. [Sistema de Horários e Timezone](#8-sistema-de-horários-e-timezone)
-9. [Instalação](#9-instalação)
-10. [Configuração](#10-configuração)
-11. [Como Executar](#11-como-executar)
-12. [APIs e Rotas](#12-apis-e-rotas)
-13. [Painel Administrativo](#13-painel-administrativo)
-14. [Persistência e Segurança dos Dados](#14-persistência-e-segurança-dos-dados)
-15. [Logs e Monitoramento](#15-logs-e-monitoramento)
-16. [Tratamento de Erros](#16-tratamento-de-erros)
-17. [Testes](#17-testes)
-18. [Deploy e Produção](#18-deploy-e-produção)
-19. [Backup e Recuperação](#19-backup-e-recuperação)
-20. [Melhorias Futuras](#20-melhorias-futuras)
-21. [Troubleshooting](#21-troubleshooting)
-22. [Comentários Técnicos](#22-comentarios-técnicos)
+Há também um health check operacional e uma ferramenta idempotente para campanhas pontuais. Todos os processos compartilham o mesmo SQLite e usam o timezone `America/Campo_Grande`.
 
----
-
-## 1. Visão Geral do Projeto
-
-Este projeto é uma aplicação web para monitoramento meteorológico local do Distrito de São José, Vicentina/MS. Ele consulta dados de uma estação meteorológica publicada na Ambient Weather, grava o histórico em SQLite, mostra informações ao público em páginas web responsivas e envia alertas via WhatsApp para usuários cadastrados.
-
-### Objetivo da Aplicação
-
-O sistema existe para:
-
-- coletar leituras meteorológicas periodicamente;
-- persistir dados brutos e processados no banco;
-- exibir condições atuais e gráficos históricos;
-- manter um painel administrativo para usuários, alertas e debug;
-- enviar alertas climáticos críticos por WhatsApp;
-- permitir auditoria posterior dos dados recebidos da estação.
-
-### Dados Monitorados
-
-A coleta atual trata estes campos principais:
-
-| Dado | Campo da Ambient Weather | Nome no código | Unidade no sistema |
-|---|---|---|---|
-| Temperatura | `tempf` | `temp` | Celsius |
-| Sensação térmica | `feelsLike` | `sensacao` | Celsius |
-| Umidade | `humidity` | `umidade` | % |
-| Pressão | `baromrelin` | `pressao` | hPa |
-| Índice UV | `uv` | `uv` | índice |
-| Radiação solar | `solarradiation` | `radiacao` | W/m2 |
-| Vento atual | `windspeedmph` | `vento` | km/h |
-| Rajada atual | `windgustmph` | `rajada` | km/h |
-| Rajada máxima diária | `maxdailygust` | `rajada_max` | km/h |
-| Direção do vento | `winddir` | `vento_dir` | graus |
-| Intensidade de chuva | `rainratein` | `chuva_rate` | mm/h |
-| Chuva do evento | `eventrainin` | `chuva_evento` | mm |
-| Chuva do dia | `dailyrainin` | `chuva_hoje` | mm |
-| Timestamp da estação | `dateutc` | `station_timestamp_ms` | epoch ms UTC |
-| Bateria | campos contendo `batt` ou `battery` | `bateria` | JSON/texto |
-| Sinal | `signal`, `rssi`, etc. | `sinal` | texto |
-| Campos extras | qualquer outro campo | `payload_json` | JSON bruto |
-
-### Funcionalidades Principais
-
-- Página pública com dados ao vivo.
-- Gráficos de temperatura, vento, chuva semanal, chuva mensal e recordes.
-- Página histórica mensal com filtros por mês/ano.
-- Página de previsão usando Open-Meteo.
-- Cadastro público para receber alertas no WhatsApp.
-- Link de cancelamento de alertas.
-- Painel administrativo protegido por senha.
-- Envio de alertas críticos por WhatsApp via Evolution API.
-- Webhooks de deploy para GitHub.
-- Worker separado para coleta periódica da estação.
-- Persistência bruta imediata para reduzir perda de dados em queda de energia.
-
-### Fluxo Resumido dos Dados
-
-```mermaid
-flowchart LR
-    A[Ambient Weather] -->|HTTP GET| B[weather_service.obter_dados]
-    B --> C[Conversão de unidades]
-    C --> D[leituras_brutas: payload completo]
-    C --> E[historico_clima: dados processados]
-    E --> F[APIs Flask]
-    F --> G[Frontend público]
-    E --> H[Painel admin]
-    E --> I[Worker de alertas]
-    I --> J[Evolution API / WhatsApp]
-```
-
----
-
-## 2. Arquitetura do Sistema
-
-O projeto tem tres processos principais:
-
-1. **Aplicação Flask** (`estacao/app.py`): serve páginas, APIs, admin e webhooks.
-2. **Worker de coleta** (`estacao/workers/updater.py`): consulta a estação a cada 15 segundos, persiste dados e enfileira alertas.
-3. **Worker de WhatsApp** (`estacao/workers/whatsapp_sender.py`): envia a fila de alertas pela Evolution API sem bloquear a coleta.
-
-Esses processos compartilham o mesmo banco SQLite.
-
-### Backend
-
-O backend é Flask, organizado por Blueprints:
-
-- `routes/public.py`: rotas públicas e cadastro/cancelamento.
-- `routes/api.py`: endpoints JSON usados pelos gráficos e frontend.
-- `routes/admin.py`: login, painel administrativo e debug.
-- `routes/webhook.py`: webhooks de deploy GitHub.
-
-### Frontend
-
-O frontend é renderizado com Jinja2, HTML, Tailwind via CDN versionado, CSS próprio e JavaScript em templates.
-
-Componentes principais:
-
-- `templates/layout.html`: layout base para páginas públicas.
-- `templates/index.html`: dashboard ao vivo.
-- `templates/historico.html`: histórico mensal.
-- `templates/previsao.html`: previsão do tempo.
-- `templates/sobre.html`: página institucional.
-- `templates/admin_login.html`: login admin.
-- `templates/admin_painel.html`: painel administrativo.
-- `templates/unsubscribe.html`: feedback de cancelamento.
-
-Os gráficos usam Chart.js servido localmente em `static/vendor/chartjs`.
-Os ícones usam Font Awesome servido localmente em `static/vendor/fontawesome`.
-
-### Banco de Dados
-
-O banco é SQLite. O caminho padrão é:
-
-```text
-estacao/estacao.db
-```
-
-Pode ser alterado pela variável:
-
-```env
-ESTACAO_DB=/caminho/absoluto/estacao.db
-```
-
-O módulo central é `estacao/database.py`, que configura:
-
-- `PRAGMA journal_mode = WAL`
-- `PRAGMA synchronous = FULL`
-- `PRAGMA busy_timeout = 30000`
-- `PRAGMA foreign_keys = ON`
-
-### Serviços
-
-- `services/weather_service.py`: integra com Ambient Weather e Open-Meteo.
-- `services/whatsapp_service.py`: integra com Evolution API.
-- `persistence.py`: persistência crítica de leituras brutas e processadas.
-- `time_utils.py`: padronização de UTC/local e exibição em `America/Campo_Grande`.
-
-### Threads, Agendamentos e Processos Assíncronos
-
-Não há fila interna nem scheduler no Flask. O comportamento periódico está no processo separado:
-
-```bash
-python workers/updater.py
-```
-
-Ele executa:
-
-```python
-while True:
-    executar()
-    time.sleep(INTERVALO)
-```
-
-`INTERVALO = 15`, portanto a coleta roda a cada 15 segundos.
-
-O webhook de deploy usa `subprocess.Popen`, disparando script externo sem aguardar conclusão.
-
-### Fluxo Interno
-
-```mermaid
-flowchart TD
-    subgraph Worker
-        A[executar] --> B[obter_dados]
-        B --> C[salvar_leitura_bruta]
-        B --> D[salvar_historico_clima]
-        D --> E[verificar_alertas]
-        E --> F[enfileirar_alerta]
-        F --> G[alertas_fila]
-    end
-
-    subgraph WhatsApp
-        G --> N[whatsapp_sender.py]
-        N --> O[registrar alertas_envios]
-    end
-
-    subgraph Flask
-        H[/api/clima/] --> I[historico_clima]
-        J[/api/historico/] --> I
-        K[/admin/] --> I
-        L[/] --> M[templates/index.html]
-    end
-
-    C --> N[(SQLite)]
-    D --> N
-    G --> N
-    I --> N
-```
-
----
-
-## 3. Tecnologias Utilizadas
-
-### Linguagem e Framework
-
-- **Python**: linguagem principal.
-- **Flask 3.1.3**: aplicação web, rotas, Jinja2 e sessões.
-- **Jinja2**: renderização server-side dos templates.
-- **Werkzeug**: infraestrutura Flask.
-
-### Banco de Dados
-
-- **SQLite**: banco local em arquivo.
-- **WAL**: modo de journal para melhorar confiabilidade e concorrência entre app e worker.
-
-### Integrações Externas
-
-- **Ambient Weather**: fonte dos dados da estação.
-- **Open-Meteo**: previsão meteorológica.
-- **Evolution API**: envio de WhatsApp.
-- **GitHub Webhooks**: endpoints de deploy.
-
-### Bibliotecas Importantes
-
-| Biblioteca | Uso real no projeto |
-|---|---|
-| `Flask` | servidor web |
-| `requests` | HTTP para Ambient Weather, Open-Meteo e Evolution API |
-| `python-dotenv` | leitura de `.env` |
-| `bcrypt` | validação de hash de senha admin |
-| `Flask-Limiter` | rate limit em rotas sensíveis |
-| `tzdata` | suporte IANA timezone quando necessário |
-
-### Observação Sobre `requirements.txt`
-
-O arquivo `estacao/requirements.txt` contém muitas dependências que não aparecem diretamente no código atual, como `streamlit`, `pandas`, `matplotlib`, `gspread`, `duckdb`, `ortools`, entre outras. Isso sugere que o arquivo foi reaproveitado ou está superdimensionado. Para deploy mínimo, recomenda-se revisar e separar dependências reais da aplicação.
-
----
-
-## 4. Estrutura de Pastas
+## Estrutura atual
 
 ```text
 .
-├── README.md
+├── estacao/
+│   ├── app.py                         # aplicação Flask/WSGI
+│   ├── init_db.py                     # criação e migração incremental
+│   ├── database.py                    # schema, consultas e fila
+│   ├── persistence.py                 # persistência das leituras
+│   ├── acumulados.py                  # acumulados meteorológicos
+│   ├── time_utils.py                  # UTC e America/Campo_Grande
+│   ├── unsubscribe_tokens.py          # tokens e telefones
+│   ├── extensions.py                  # Flask-Limiter
+│   ├── routes/
+│   │   ├── public.py
+│   │   ├── api.py
+│   │   ├── admin.py
+│   │   └── webhook.py
+│   ├── services/
+│   │   ├── weather_service.py         # Ambient Weather e Open-Meteo
+│   │   └── whatsapp_service.py        # Evolution API
+│   ├── workers/
+│   │   ├── updater.py
+│   │   ├── whatsapp_sender.py
+│   │   ├── health_check.py
+│   │   └── enviar_aviso_whatsapp_unico.py
+│   ├── templates/
+│   ├── static/
+│   └── requirements.txt
 ├── tests/
-│   └── test_persistence.py
-└── estacao/
-    ├── app.py
-    ├── database.py
-    ├── extensions.py
-    ├── init_db.py
-    ├── persistence.py
-    ├── requirements.txt
-    ├── time_utils.py
-    ├── routes/
-    │   ├── admin.py
-    │   ├── api.py
-    │   ├── public.py
-    │   └── webhook.py
-    ├── services/
-    │   ├── weather_service.py
-    │   └── whatsapp_service.py
-    ├── static/
-    │   ├── background.jpg
-    │   ├── logo.png
-    │   └── css/style.css
-    ├── templates/
-    │   ├── admin_login.html
-    │   ├── admin_painel.html
-    │   ├── historico.html
-    │   ├── index.html
-    │   ├── layout.html
-    │   ├── previsao.html
-    │   ├── sobre.html
-    │   └── unsubscribe.html
-    └── workers/
-        └── updater.py
+├── CLEANUP_REPORT.md
+└── README.md
 ```
 
-### Responsabilidades
+O repositório não contém Dockerfile, Compose, unit files do systemd, timers/cron ou os scripts externos de deploy. Esses componentes precisam ser conferidos no host de produção.
 
-| Caminho | Responsabilidade |
-|---|---|
-| `estacao/app.py` | cria Flask app, carrega `.env`, registra blueprints |
-| `estacao/database.py` | conexão SQLite, PRAGMAs e criação/migração de tabelas |
-| `estacao/persistence.py` | persistência crítica de leituras brutas/processadas |
-| `estacao/time_utils.py` | UTC/local, timezone e formatação de datas |
-| `estacao/extensions.py` | extensões Flask compartilhadas |
-| `estacao/init_db.py` | comando simples para inicializar/migrar banco |
-| `estacao/routes/` | rotas HTTP |
-| `estacao/services/` | integrações externas |
-| `estacao/templates/` | páginas Jinja2 |
-| `estacao/static/` | CSS e imagens |
-| `estacao/workers/updater.py` | processo periódico de coleta e criação de fila de alertas |
-| `estacao/workers/whatsapp_sender.py` | processo separado que envia a fila de WhatsApp |
-| `tests/test_persistence.py` | testes de persistência, WAL, timezone e integridade |
+## Instalação
 
----
+Requer Python 3 com suporte a `venv`. Na raiz do repositório:
 
-## 5. Funcionamento da Estação
+### Windows/PowerShell
 
-### Origem dos Dados
-
-Os dados são obtidos por HTTP GET em:
-
-```text
-https://lightning.ambientweather.net/devices?public.slug=<PUBLIC_SLUG>
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r estacao\requirements.txt
 ```
 
-O `PUBLIC_SLUG` está fixo em `services/weather_service.py`.
-
-### Protocolo
-
-O protocolo usado é HTTP/HTTPS com JSON. Não há comunicação serial, MQTT, WebSocket ou push direto da estação neste projeto.
-
-### Frequencia de Atualizacao
-
-O worker consulta a estação a cada 15 segundos:
-
-```python
-INTERVALO = 15
-```
-
-### Parsing
-
-`weather_service.obter_dados()`:
-
-1. faz GET na Ambient Weather;
-2. valida HTTP;
-3. pega `dados["data"][0].get("lastData", dados["data"][0])`;
-4. verifica `dateutc`;
-5. descarta leituras com mais de 10 minutos;
-6. converte unidades;
-7. salva a leitura bruta se `persistir_bruto=True`;
-8. retorna um dicionario processado.
-
-### Validacao
-
-Validacoes existentes:
-
-- request com timeout de 20 segundos;
-- `raise_for_status()`;
-- retorno `None` se não houver `data`;
-- retorno `None` se leitura tiver mais de 600000 ms;
-- valores numéricos ausentes ou inválidos viram padrão, geralmente `0` ou `32` F para temperatura.
-
-### Conversoes
-
-| Conversão | Função |
-|---|---|
-| Fahrenheit para Celsius | `f_to_c` |
-| mph para km/h | `mph_to_kmh` |
-| polegadas para mm | `in_to_mm` |
-| inHg para hPa | multiplicacao por `33.8639` |
-
-### Persistência
-
-A persistência ocorre em duas camadas:
-
-1. `leituras_brutas`: JSON completo recebido da estação.
-2. `historico_clima`: campos convertidos e prontos para consultas/gráficos.
-
----
-
-## 6. Fluxo Completo dos Dados
-
-### Passo a Passo
-
-1. O worker chama `obter_dados()`.
-2. O servico faz request para Ambient Weather.
-3. O JSON bruto é lido.
-4. O timestamp `dateutc` é validado.
-5. Os campos principais são convertidos.
-6. A leitura bruta é salva imediatamente em `leituras_brutas`.
-7. O worker salva a leitura processada em `historico_clima`.
-8. O worker atualiza estado de alertas e verifica limites.
-9. Se necessário, grava mensagens pendentes em `alertas_fila`.
-10. O worker `whatsapp_sender.py` envia WhatsApp via Evolution API.
-11. O envio de alerta é registrado em `alertas_envios`.
-12. O frontend consulta APIs JSON.
-13. Templates e gráficos exibem dados ao usuário.
-14. O admin consulta últimos registros, envios e eventos.
-
-### Fluxo de Persistência
-
-```mermaid
-sequenceDiagram
-    participant W as Worker
-    participant AW as Ambient Weather
-    participant P as persistence.py
-    participant DB as SQLite
-    participant A as Alertas
-
-    W->>AW: GET /devices?public.slug=...
-    AW-->>W: JSON lastData
-    W->>P: salvar_leitura_bruta(raw, dados_convertidos)
-    P->>DB: INSERT leituras_brutas
-    DB-->>P: commit
-    W->>P: salvar_historico_clima(dados)
-    P->>DB: INSERT historico_clima
-    DB-->>P: commit
-    W->>A: verificar_alertas(...)
-    A->>DB: INSERT alertas_fila
-```
-
-### Saída dos Dados
-
-- `/api/clima`: dashboard ao vivo.
-- `/api/historico`: curva diária.
-- `/api/historico_semana`: gráfico semanal.
-- `/api/historico_mes`: gráfico mensal.
-- `/api/historico_consulta`: página histórica.
-- `/admin`: debug e administração.
-
----
-
-## 7. Banco de Dados
-
-### Banco Usado
-
-SQLite em arquivo local.
-
-Configuração central:
-
-```python
-PRAGMA busy_timeout = 30000
-PRAGMA foreign_keys = ON
-PRAGMA journal_mode = WAL
-PRAGMA synchronous = FULL
-```
-
-### Tabelas
-
-#### `historico_clima`
-
-Armazena a leitura processada usada por gráficos, APIs e admin.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `temp` | REAL | temperatura em Celsius |
-| `sensacao` | REAL | sensacao termica em Celsius |
-| `umidade` | REAL | umidade relativa |
-| `pressao` | REAL | pressao em hPa |
-| `uv` | REAL | índice UV |
-| `radiacao` | REAL | radiacao solar |
-| `vento_vel` | REAL | vento atual em km/h |
-| `vento_rajada` | REAL | rajada atual em km/h |
-| `vento_dir` | REAL | direcao do vento em graus |
-| `chuva_rate` | REAL | intensidade de chuva em mm/h |
-| `chuva_evento` | REAL | acumulado do evento em mm |
-| `chuva_hoje` | REAL | acumulado diário em mm |
-| `station_timestamp_ms` | INTEGER | timestamp original da estação |
-| `station_data_hora_utc` | TEXT | timestamp da estação em UTC ISO |
-| `station_data_hora_local` | TEXT | timestamp da estação em America/Campo_Grande |
-| `data_hora_utc` | TEXT | hora de persistência em UTC ISO |
-| `data_hora_local` | TEXT | hora de persistência local ISO |
-| `bateria` | TEXT | dados de bateria em JSON/texto |
-| `sinal` | TEXT | sinal/RSSI quando recebido |
-| `leitura_bruta_id` | INTEGER | referencia logica para `leituras_brutas.id` |
-| `data_hora` | TEXT | campo legado local para compatibilidade |
-
-#### `leituras_brutas`
-
-Armazena tudo que chegou da estação para auditoria.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `origem` | TEXT | origem da leitura |
-| `station_timestamp_ms` | INTEGER | `dateutc` original |
-| `station_data_hora_utc` | TEXT | data/hora da estação em UTC |
-| `station_data_hora_local` | TEXT | data/hora da estação local |
-| `recebido_em` | TEXT | campo local legado |
-| `recebido_em_utc` | TEXT | recebimento em UTC |
-| `recebido_em_local` | TEXT | recebimento local |
-| `persistido_em` | TEXT DEFAULT CURRENT_TIMESTAMP | timestamp SQLite UTC |
-| `payload_json` | TEXT | JSON bruto completo |
-| `dados_convertidos_json` | TEXT | JSON dos campos convertidos |
-| `chuva_rate` | REAL | cópia auditável da chuva rate |
-| `chuva_evento` | REAL | cópia auditável da chuva evento |
-| `chuva_hoje` | REAL | cópia auditável da chuva diária |
-| `bateria` | TEXT | campos de bateria extraidos |
-| `sinal` | TEXT | sinal/RSSI extraido |
-
-#### `historico_diario`
-
-Tabela de resumo diário.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `data` | TEXT PRIMARY KEY | dia do resumo |
-| `temp_min` | REAL | menor temperatura |
-| `temp_max` | REAL | maior temperatura |
-| `temp_media` | REAL | média diária |
-| `umidade_min` | REAL | menor umidade |
-| `umidade_max` | REAL | maior umidade |
-| `vento_rajada_max` | REAL | maior rajada |
-| `chuva_total` | REAL | maior acumulado `chuva_hoje` do dia |
-| `pressao_min` | REAL | menor pressao |
-| `pressao_max` | REAL | maior pressao |
-| `uv_max` | REAL | maior UV |
-
-#### `usuarios`
-
-Cadastro público de contatos.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `nome` | TEXT NOT NULL | nome |
-| `telefone` | TEXT NOT NULL UNIQUE | telefone |
-| `endereco` | TEXT | endereco |
-| `ativo` | INTEGER DEFAULT 1 | status |
-| `receber_whatsapp` | INTEGER DEFAULT 0 | opt-in |
-| `criado_em` | TEXT DEFAULT CURRENT_TIMESTAMP | criado em UTC pelo SQLite |
-
-#### `alertas_envios`
-
-Auditoria de envios WhatsApp.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `data_hora` | TEXT DEFAULT CURRENT_TIMESTAMP | UTC pelo SQLite |
-| `usuario_id` | INTEGER | usuário |
-| `nome` | TEXT | nome no momento do envio |
-| `telefone` | TEXT | telefone usado |
-| `status` | TEXT NOT NULL | `enviado` ou `falhou` |
-| `mensagem` | TEXT | mensagem enviada |
-| `erro` | TEXT | erro em caso de falha |
-| `evento_id` | TEXT | evento meteorológico relacionado |
-
-#### `alertas_eventos`
-
-Registro único de cada ocorrência meteorológica. Separa o evento das mensagens individuais, guarda tipo, nível, valor, horário, fonte, quantidade de destinatários, entregas e falhas. `evento_id` é único e impede que reinícios ou workers concorrentes criem o mesmo alerta novamente.
-
-#### `alertas_fila`
-
-Fila de alertas pendentes para envio WhatsApp. Criada de forma aditiva; não substitui tabelas históricas de clima.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `criado_em` | TEXT DEFAULT CURRENT_TIMESTAMP | criação do item |
-| `atualizado_em` | TEXT DEFAULT CURRENT_TIMESTAMP | última mudança de status |
-| `usuario_id` | INTEGER | usuário |
-| `nome` | TEXT | nome no momento do alerta |
-| `telefone` | TEXT NOT NULL | telefone normalizado |
-| `mensagem` | TEXT NOT NULL | mensagem a enviar |
-| `status` | TEXT NOT NULL DEFAULT `pendente` | `pendente`, `enviando`, `enviado` ou `falhou` |
-| `tentativas` | INTEGER DEFAULT 0 | total de tentativas |
-| `erro` | TEXT | último erro |
-| `enviado_em` | TEXT | data/hora de sucesso |
-| `evento_id` | TEXT | chave idempotente do evento |
-| `prioridade` | INTEGER | críticos são processados primeiro |
-| `proxima_tentativa_em` | TEXT | agenda da repetição automática |
-| `max_tentativas` | INTEGER | limite de tentativas |
-| `erro_permanente` | INTEGER | impede repetição de erro definitivo |
-
-#### `cadastro_eventos`
-
-Auditoria de cadastro/cancelamento.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `data_hora` | TEXT DEFAULT CURRENT_TIMESTAMP | UTC pelo SQLite |
-| `acao` | TEXT NOT NULL | cadastro, cancelamento, duplicado |
-| `usuario_id` | INTEGER | usuário relacionado |
-| `nome` | TEXT | nome |
-| `telefone` | TEXT | telefone |
-| `endereco` | TEXT | endereco |
-| `receber_whatsapp` | INTEGER | opt-in |
-| `detalhe` | TEXT | observação |
-
-#### `logs_persistencia`
-
-Logs persistentes de erro na camada de gravacao.
-
-| Coluna | Tipo | Finalidade |
-|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | identificador |
-| `data_hora` | TEXT DEFAULT CURRENT_TIMESTAMP | UTC pelo SQLite |
-| `nivel` | TEXT NOT NULL | nivel do log |
-| `origem` | TEXT | origem |
-| `mensagem` | TEXT NOT NULL | mensagem |
-| `detalhe` | TEXT | detalhe técnico |
-
-### Índices
-
-Criados pelo `init_db()`:
-
-- `idx_leituras_brutas_recebido_em`
-- `idx_leituras_brutas_station_ts`
-- `idx_historico_clima_data_hora`
-- `idx_historico_clima_data_hora_utc`
-- `idx_historico_clima_data_hora_local`
-
-### Relacionamentos
-
-`historico_clima.leitura_bruta_id` aponta logicamente para `leituras_brutas.id`, mas não há `FOREIGN KEY` declarada no schema atual. Isso preserva compatibilidade com bancos antigos.
-
-### Política de Retenção
-
-Não existe rotina automática de limpeza ou retenção. O banco cresce indefinidamente enquanto o worker estiver ativo.
-
----
-
-## 8. Sistema de Horários e Timezone
-
-### Timezone Local
-
-O timezone local adotado é:
-
-```text
-America/Campo_Grande
-```
-
-Modulo responsavel:
-
-```text
-estacao/time_utils.py
-```
-
-### Padrão Atual
-
-Para novas leituras:
-
-- timestamp original da estação: `station_timestamp_ms`;
-- timestamp da estação em UTC: `station_data_hora_utc`;
-- timestamp da estação local: `station_data_hora_local`;
-- horário de persistência UTC: `data_hora_utc`;
-- horário de persistência local: `data_hora_local`;
-- campo legado local: `data_hora`.
-
-### Exibicao no Admin
-
-O admin converte timestamps para `America/Campo_Grande`.
-
-Para registros antigos, quando não existe `data_hora_local`, o sistema usa fallback em `data_hora`.
-
-### Riscos Conhecidos
-
-- `CURRENT_TIMESTAMP` do SQLite é UTC. Tabelas como `usuarios`, `alertas_envios` e `cadastro_eventos` usam esse padrão.
-- Dados antigos podem ter `data_hora` local sem offset. O sistema trata isso como horário local para histórico.
-- Se o servidor Linux estiver com timezone errado, o código ainda converte explicitamente as novas exibições, mas logs de sistema podem divergir.
-
-### Recomendação no Linux
+### Linux
 
 ```bash
-timedatectl
-sudo timedatectl set-timezone America/Campo_Grande
-```
-
-Confirmar base IANA:
-
-```bash
-ls /usr/share/zoneinfo/America/Campo_Grande
-```
-
----
-
-## 9. Instalação
-
-### Requisitos
-
-- Linux recomendado para produção.
-- Python 3.11+ recomendado.
-- SQLite 3.
-- Git.
-- Acesso HTTP/HTTPS externo para Ambient Weather, Open-Meteo e Evolution API.
-- `tzdata` instalado no sistema.
-
-### Clonar Projeto
-
-```bash
-git clone <URL_DO_REPOSITORIO>
-cd EstacaoEmPython
-```
-
-### Criar Ambiente Virtual
-
-```bash
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
-```
-
-### Instalar Dependencias
-
-```bash
-pip install --upgrade pip
+python -m pip install --upgrade pip
 pip install -r estacao/requirements.txt
 ```
 
-### Criar Banco
+As dependências de produção são deliberadamente pequenas:
+
+- Flask e Flask-Limiter para HTTP e limitação de requisições;
+- bcrypt e itsdangerous para autenticação e tokens;
+- requests para Ambient Weather, Open-Meteo e Evolution API;
+- python-dotenv para carregar configuração local;
+- gunicorn como servidor WSGI de produção;
+- tzdata para garantir os dados IANA do timezone, inclusive no Windows;
+- o extra Redis do Flask-Limiter para armazenamento compartilhado configurável em produção.
+
+## Configuração
+
+Use variáveis do processo ou um arquivo `.env` não versionado. Não grave credenciais, telefones, tokens ou o banco no Git.
+
+### Aplicação e banco
+
+| Variável | Uso | Padrão/comportamento |
+|---|---|---|
+| `SECRET_KEY` | assinatura de sessão e fallback dos tokens de cancelamento | deve ser definida em produção |
+| `ESTACAO_DB` | caminho do SQLite compartilhado | `estacao/estacao.db` |
+| `ADMIN_PASSWORD_HASH` | senha administrativa bcrypt | preferida quando definida |
+| `ADMIN_PASSWORD` | senha administrativa em texto | fallback; uma das duas senhas é obrigatória |
+| `SESSION_COOKIE_SECURE` | cookie apenas por HTTPS | `false` |
+| `SESSION_TIMEOUT_MINUTES` | duração da sessão administrativa | `30` |
+| `RATELIMIT_ENABLED` | liga o Flask-Limiter | `true` |
+| `RATELIMIT_STORAGE_URI` | backend do limiter | `memory://` |
+| `RATELIMIT_KEY_PREFIX` | prefixo das chaves do limiter | `estacao` |
+| `PUBLIC_CADASTRO_RATE_LIMIT` | limite do cadastro público | `60 per hour` |
+
+`WEBHOOK_SECRET` também é obrigatório para importar a aplicação, pois as rotas de deploy são registradas no bootstrap. A aplicação deve receber ainda `ALLOWED_DEPLOY_REPO` e `ALLOWED_DEPLOY_BRANCH` quando os padrões versionados não corresponderem ao ambiente.
+
+Com mais de um worker Gunicorn, `memory://` mantém limites separados por processo. Configure um URI Redis quando o limite precisar ser global.
+
+### Fontes meteorológicas e URLs públicas
+
+| Variável | Uso |
+|---|---|
+| `AMBIENT_PUBLIC_SLUG` | substitui o slug público da estação; valor vazio preserva o fallback interno |
+| `PUBLIC_BASE_URL` | base dos links públicos enviados nas mensagens |
+| `FORECAST_CITY` | cidade consultada no Open-Meteo |
+| `FORECAST_STATE` | estado usado na geocodificação |
+| `FORECAST_COUNTRY` | país usado na geocodificação |
+| `FORECAST_LABEL` | rótulo mostrado na página de previsão |
+| `FORECAST_LAT` / `FORECAST_LON` | coordenadas opcionais que evitam geocodificação |
+
+A precedência do slug da Ambient Weather é: valor não vazio de `AMBIENT_PUBLIC_SLUG`, seguido pelo fallback versionado. Não remova o fallback sem garantir a variável em todos os processos.
+
+### Evolution API e envio
+
+| Variável | Uso | Padrão |
+|---|---|---|
+| `EVOLUTION_URL` | URL da Evolution API | obrigatória para envio |
+| `EVOLUTION_API_KEY` | autenticação | obrigatória para envio |
+| `EVOLUTION_INSTANCE` | instância de WhatsApp | obrigatória para envio |
+| `INTERVALO_ENVIO_USUARIOS` | segundos entre envios | `20` |
+| `INTERVALO_WHATSAPP_SEM_FILA` | espera quando a fila está vazia | `5` |
+| `WHATSAPP_ENVIANDO_EXPIRADO_MINUTOS` | recuperação de item preso em envio | `10` |
+| `WHATSAPP_WORKERS` | consumidores concorrentes | `3`, mínimo `1` |
+| `WHATSAPP_MAX_TENTATIVAS` | tentativas máximas por item | `4`, mínimo `1` |
+| `UNSUBSCRIBE_SECRET` | segredo específico dos tokens de cancelamento | fallback para `SECRET_KEY` |
+| `UNSUBSCRIBE_TOKEN_MAX_AGE_DAYS` | validade do token | `90` |
+
+O serviço de WhatsApp valida as três variáveis da Evolution API ao ser importado. Configure-as antes de iniciar o sender, a campanha ou qualquer fluxo que efetivamente envie mensagens.
+
+### Limites dos alertas
+
+Os padrões atuais são contratos operacionais e não devem ser alterados sem decisão de domínio:
+
+| Família | Variáveis e padrões |
+|---|---|
+| calor | `ALERTA_CALOR_NIVEL_1=35`, `ALERTA_CALOR_NIVEL_2=40`, `ALERTA_CALOR_REARME=33` |
+| frio | `ALERTA_FRIO_NIVEL_1=12.4`, `ALERTA_FRIO_NIVEL_2=5`, `ALERTA_FRIO_NIVEL_3=2`, `ALERTA_FRIO_REARME=15` |
+| vento | `ALERTA_VENTO_NIVEL_1=40`, `ALERTA_VENTO_NIVEL_2=70`, `ALERTA_VENTO_NIVEL_3=100` |
+| chuva | `ALERTA_CHUVA_NIVEL_1=50`, `ALERTA_CHUVA_NIVEL_2=70` |
+| umidade | `ALERTA_UMIDADE_NIVEL_1=30`, `ALERTA_UMIDADE_NIVEL_2=20`, `ALERTA_UMIDADE_REARME=35` |
+| confirmação | `ALERTA_CONFIRMACOES_NIVEL_1=2`, mínimo `1` |
+
+### Health check e campanha
+
+| Variável | Padrão |
+|---|---|
+| `ADMIN_UPDATER_ATRASO_MINUTOS` | `5` |
+| `HEALTH_UPDATER_ATRASO_MINUTOS` | valor administrativo acima |
+| `HEALTH_FILA_PENDENTE_MINUTOS` | `30` |
+| `HEALTH_FALHAS_MINIMAS` | `1` |
+| `HEALTH_ALERT_COOLDOWN_MINUTOS` | `60` |
+| `ADMIN_ALERT_PHONE` | vazio; necessário para notificação administrativa |
+| `INTERVALO_CAMPANHA_WHATSAPP` | `10` segundos |
+| `WHATSAPP_CAMPAIGN_ID` | identificador padrão versionado |
+
+## Banco, estado e concorrência
+
+Inicialize ou atualize a estrutura a partir do diretório `estacao/`:
 
 ```bash
 cd estacao
 python init_db.py
 ```
 
-### Criar `.env`
+O comando é incremental: cria estruturas ausentes e acrescenta colunas legadas necessárias. Não apaga dados. As 13 tabelas atuais são:
 
-O projeto carrega `.env` em `app.py` e `whatsapp_service.py`.
-
-Exemplo:
-
-```env
-SECRET_KEY=troque-esta-chave
-
-ADMIN_PASSWORD=senha-forte
-# ou use ADMIN_PASSWORD_HASH=
-
-WEBHOOK_SECRET=segredo-do-webhook
-
-EVOLUTION_URL=https://sua-evolution-api.example.com
-EVOLUTION_API_KEY=chave-da-api
-EVOLUTION_INSTANCE=nome-da-instância
-
-AMBIENT_PUBLIC_SLUG=a535a0b6ff603c1d2376abc99e689f2f
-PUBLIC_BASE_URL=https://meteo.eesjv.com.br
-
-RATELIMIT_ENABLED=true
-PUBLIC_CADASTRO_RATE_LIMIT=60 per hour
-SESSION_COOKIE_SECURE=true
-SESSION_TIMEOUT_MINUTES=30
-
-FORECAST_CITY=Vicentina
-FORECAST_STATE=Mato Grosso do Sul
-FORECAST_COUNTRY=Brasil
-FORECAST_LABEL=Distrito de São José, Vicentina/MS
-FORECAST_LAT=
-FORECAST_LON=
-
-ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
+```text
+historico_clima             leituras_brutas
+historico_diario            estado_alertas
+acumulados_diarios          usuarios
+alertas_envios              alertas_fila
+alertas_eventos             logs_persistencia
+health_check_estado         campanhas_whatsapp_envios
+cadastro_eventos
 ```
 
----
+O acesso compartilhado preserva:
 
-## 10. Configuração
+- WAL, `synchronous=FULL` e `busy_timeout`;
+- retry para contenção transitória do SQLite;
+- transações e reivindicação atômica da fila com `BEGIN IMMEDIATE`;
+- conexão separada por thread do sender;
+- chaves e índices de idempotência para alertas e campanhas;
+- colunas de horário legadas, UTC e local, necessárias para bancos existentes.
 
-### Variáveis Obrigatórias
+O estado de alertas é primariamente persistido na tabela `estado_alertas`. O arquivo `alert_state.json` continua como fallback e fonte de migração/recuperação. As duas camadas são intencionais; não remova nenhuma sem cobrir reinício, migração e falha de banco.
 
-| Variável | Obrigatória | Usada em | Observação |
-|---|---:|---|---|
-| `SECRET_KEY` | Sim para sessões seguras | `app.py` | Flask session |
-| `ADMIN_PASSWORD` ou `ADMIN_PASSWORD_HASH` | Sim | `routes/admin.py` | sem isso o módulo admin falha |
-| `WEBHOOK_SECRET` | Sim | `routes/webhook.py` | sem isso o módulo webhook falha |
-| `EVOLUTION_URL` | Sim para worker de WhatsApp | `whatsapp_service.py` | sem isso o envio falha ao importar |
-| `EVOLUTION_API_KEY` | Sim para worker de WhatsApp | `whatsapp_service.py` | chave Evolution |
-| `EVOLUTION_INSTANCE` | Sim para worker de WhatsApp | `whatsapp_service.py` | instância |
+Faça backup consistente do SQLite e dos arquivos de estado antes de manutenção no host. Com WAL ativo, prefira a API de backup do SQLite ou pare os processos antes de copiar o conjunto de arquivos do banco.
 
-### Variáveis Opcionais
+## Execução
 
-| Variável | Padrão | Finalidade |
-|---|---|---|
-| `RATELIMIT_ENABLED` | `true` | liga/desliga Flask-Limiter |
-| `PUBLIC_CADASTRO_RATE_LIMIT` | `60 per hour` | limite de envios do formulario publico de cadastro por IP |
-| `SESSION_COOKIE_SECURE` | `false` | usar `true` com HTTPS |
-| `SESSION_TIMEOUT_MINUTES` | `30` | timeout de sessão admin |
-| `AMBIENT_PUBLIC_SLUG` | `a535a0b6ff603c1d2376abc99e689f2f` | slug público da estação na Ambient Weather |
-| `PUBLIC_BASE_URL` | `http://meteo.eesjv.com.br` | base pública do site usada em links |
-| `UNSUBSCRIBE_SECRET` | `SECRET_KEY` | chave opcional separada para assinar links de cancelamento |
-| `UNSUBSCRIBE_TOKEN_MAX_AGE_DAYS` | `90` | validade dos links de cancelamento |
-| `FORECAST_CITY` | `Vicentina` | cidade da previsão |
-| `FORECAST_STATE` | `Mato Grosso do Sul` | estado |
-| `FORECAST_COUNTRY` | `Brasil` | país |
-| `FORECAST_LABEL` | `Distrito de São José, Vicentina/MS` | label exibido |
-| `FORECAST_LAT` | vazio | latitude fixa opcional |
-| `FORECAST_LON` | vazio | longitude fixa opcional |
-| `ESTACAO_DB` | `estacao/estacao.db` | caminho do SQLite |
-| `INTERVALO_ENVIO_USUARIOS` | `20` | pausa, em segundos, entre envios do worker de WhatsApp |
-| `INTERVALO_WHATSAPP_SEM_FILA` | `5` | pausa quando não há alerta pendente |
-| `WHATSAPP_WORKERS` | `3` | envios simultâneos controlados |
-| `WHATSAPP_MAX_TENTATIVAS` | `4` | limite de tentativas automáticas |
-| `ALERTA_CONFIRMACOES_NIVEL_1` | `2` | leituras consecutivas exigidas no nível 1 |
-| `ALERTA_CALOR_NIVEL_1` / `NIVEL_2` / `REARME` | `35` / `40` / `33` | limites de calor em °C |
-| `ALERTA_FRIO_NIVEL_1` / `NIVEL_2` / `NIVEL_3` / `REARME` | `12.4` / `5` / `2` / `15` | limites de frio em °C |
-| `ALERTA_VENTO_NIVEL_1` / `NIVEL_2` / `NIVEL_3` | `40` / `70` / `100` | limites de rajada em km/h |
-| `ALERTA_CHUVA_NIVEL_1` / `NIVEL_2` | `50` / `70` | limites diários em mm |
-| `ALERTA_UMIDADE_NIVEL_1` / `NIVEL_2` / `REARME` | `30` / `20` / `35` | limites percentuais |
-| `ALLOWED_DEPLOY_REPO` | `rodrigoraa/EstacaoEmPython` | repo aceito no webhook |
-| `ALLOWED_DEPLOY_BRANCH` | `refs/heads/main` | branch aceita no webhook |
-
-### Portas
-
-Em desenvolvimento, `app.py` roda:
-
-```python
-host="0.0.0.0", port=8080
-```
-
-Em produção, recomenda-se Gunicorn atrás de Nginx/Apache.
-
----
-
-## 11. Como Executar
-
-### Desenvolvimento
-
-Terminal 1: aplicação web.
+Os imports dos entrypoints atuais pressupõem o diretório de trabalho `estacao/`:
 
 ```bash
-cd EstacaoEmPython/estacao
-source ../.venv/bin/activate
+cd estacao
+```
+
+### Aplicação Flask
+
+Desenvolvimento:
+
+```bash
 python app.py
 ```
 
-Acesse:
-
-```text
-http://localhost:8080
-```
-
-Terminal 2: worker de coleta.
+Produção:
 
 ```bash
-cd EstacaoEmPython/estacao
-source ../.venv/bin/activate
-python workers/updater.py
-```
-
-### Produção com Gunicorn
-
-Exemplo:
-
-```bash
-cd /var/www/EstacaoEmPython/estacao
-source ../.venv/bin/activate
 gunicorn -w 2 -b 127.0.0.1:8080 app:app
 ```
 
-> `gunicorn` não está listado explicitamente no `requirements.txt` atual. Instale se for usar essa estratégia.
-
-### Worker em Produção
-
-O worker deve ser executado separadamente. Exemplo com systemd está na seção de deploy.
-
----
-
-## 12. APIs e Rotas
-
-### Rotas Publicas
-
-#### `GET /`
-
-Renderiza dashboard público.
-
-#### `POST /`
-
-Cadastra usuário para alertas.
-
-Campos de formulario:
-
-| Campo | Obrigatório | Observação |
-|---|---:|---|
-| `nome` | Sim | nome |
-| `telefone` | Sim | apenas dígitos são mantidos |
-| `endereco` | Sim | endereco |
-| `whatsapp` | Não | checkbox opt-in |
-
-Rate limit:
-
-```text
-PUBLIC_CADASTRO_RATE_LIMIT, por padrão 60 per hour
-```
-
-#### `POST /unsubscribe/request`
-
-Recebe `telefone` e envia um link seguro de confirmação para o WhatsApp cadastrado.
-
-#### `GET /unsubscribe?token=<token>`
-
-Exibe a tela de confirmação para um link de cancelamento assinado.
-
-#### `POST /unsubscribe`
-
-Confirma o cancelamento com `token` assinado e registra evento em `cadastro_eventos`.
-
-#### `GET /sobre`
-
-Renderiza página institucional.
-
-#### `GET /historico`
-
-Renderiza página de histórico mensal.
-
-#### `GET /previsao`
-
-Renderiza previsão obtida na Open-Meteo.
-
-### APIs JSON
-
-#### `GET /api/clima`
-
-Retorna a última leitura.
-
-Exemplo:
-
-```json
-{
-  "local": "Vicentina MS - Distrito de São José (EE São José)",
-  "temp": 25.4,
-  "sensacao": 26.0,
-  "umidade": 80,
-  "pressao": 1012.3,
-  "uv": 2,
-  "radiacao": 450,
-  "vento_atual": 8.1,
-  "vento_rajada": 19.3,
-  "vento_rajada_max": 25.7,
-  "vento_dir": 180,
-  "chuva_rate": 0.0,
-  "chuva_evento": 10.2,
-  "chuva_hoje": 12.7,
-  "hora_leitura": "14:30:10"
-}
-```
-
-Observação: `chuva_hoje` usa o maior acumulado persistido no dia para evitar regressão visual se a estação reiniciar o contador após queda de energia.
-
-#### `GET /api/historico`
-
-Retorna dados agrupados por hora do dia local.
-
-```json
-[
-  {
-    "timestamp": "14:00",
-    "temperatura": 25.1,
-    "chuva": 12.7,
-    "vento": 8.0
-  }
-]
-```
-
-#### `GET /api/ultimo`
-
-Retorna última leitura simplificada.
-
-#### `GET /api/historico_semana`
-
-Retorna acumulado de chuva por dia da semana atual.
-
-#### `GET /api/historico_mes?ano=2026&mes=05`
-
-Retorna temperatura média, chuva e vento por dia do mês.
-
-#### `GET /api/recordes_mes?ano=2026&mes=05`
-
-Retorna máximos do mês.
-
-#### `GET /api/historico_consulta?ano=2026&mes=05`
-
-Retorna séries completas para a página `historico`.
-
-#### `GET /api/anos_disponiveis`
-
-Retorna anos disponíveis em `historico_diario`.
-
-### Rotas Administrativas
-
-#### `GET /admin`
-
-Mostra login ou painel, conforme sessão.
-
-#### `POST /admin`
-
-Autentica admin. Usa CSRF.
-
-#### `POST /admin/logout`
-
-Finaliza sessão.
-
-#### `POST /admin/deletar/<id>`
-
-Remove usuário cadastrado. Requer admin autenticado e CSRF.
-
-### Webhooks de Deploy
-
-#### `POST /deploy/python`
-
-Valida assinatura GitHub e dispara:
-
-```text
-sudo -u servidor /bin/bash /var/www/deploy/deploy-python.sh
-```
-
-#### `POST /deploy/php`
-
-Valida assinatura GitHub e dispara:
-
-```text
-sudo -u servidor /bin/bash /var/www/deploy/deploy-php.sh
-```
-
----
-
-## 13. Painel Administrativo
-
-O painel admin fica em:
-
-```text
-/admin
-```
-
-### Autenticacao
-
-Aceita:
-
-- `ADMIN_PASSWORD`; ou
-- `ADMIN_PASSWORD_HASH` com bcrypt.
-
-Usa:
-
-- sessão Flask;
-- CSRF manual;
-- timeout por `SESSION_TIMEOUT_MINUTES`;
-- rate limit no POST de login.
-
-### Conteudo do Painel
-
-- Status da Evolution API.
-- Histórico de cadastros/cancelamentos.
-- Lista de usuários inscritos.
-- Envios de alertas recentes.
-- Debug dos últimos registros de clima.
-
-### Horários no Admin
-
-Os horários são formatados para `America/Campo_Grande`.
-
-Eventos de cadastro e alertas originalmente usam `CURRENT_TIMESTAMP` do SQLite, então são interpretados como UTC e convertidos para local na exibição.
-
-Histórico meteorológico usa `data_hora_local` quando existe; registros antigos usam `data_hora`.
-
----
-
-## 14. Persistência e Segurança dos Dados
-
-### Como o Sistema Evita Perda de Dados
-
-O fluxo de coleta prioriza persistência:
-
-1. dado chega da Ambient Weather;
-2. leitura bruta é salva em `leituras_brutas`;
-3. commit imediato;
-4. histórico processado é salvo em `historico_clima`;
-5. commit imediato;
-6. somente depois o sistema executa alertas e envios externos.
-
-Isso reduz a janela de perda em queda de energia ou travamento.
-
-### Transações
-
-As funções críticas usam:
-
-- `commit()` após insert;
-- `rollback()` em exceção;
-- fechamento de conexão em `finally`;
-- retry para `sqlite3.OperationalError`.
-
-### WAL
-
-`journal_mode=WAL` é ativado em toda conexão via `database.get_db()`.
-
-### Logs Persistentes
-
-Falhas de persistência tentam registrar em `logs_persistencia`.
-
-### O Que Ainda Pode Causar Perda
-
-- Falta de energia antes de a leitura chegar ao servidor.
-- Falha de disco.
-- Banco localizado em filesystem instável.
-- Worker parado.
-- Servidor sem permissão de escrita no SQLite.
-
----
-
-## 15. Logs e Monitoramento
-
-### Logs no Console
-
-O worker imprime mensagens como:
-
-- coleta iniciada;
-- dados principais recebidos;
-- histórico salvo;
-- alertas enviados;
-- erros de envio;
-- erros de resumo diário.
-
-### Logs no Banco
-
-Tabelas de auditoria:
-
-- `logs_persistencia`
-- `alertas_envios`
-- `cadastro_eventos`
-- `leituras_brutas`
-
-### Monitoramento Recomendado
-
-- Monitorar se o worker está ativo.
-- Monitorar crescimento do `estacao.db`.
-- Monitorar tamanho de arquivos `-wal` e `-shm`.
-- Monitorar erros em `logs_persistencia`.
-- Monitorar últimas linhas em `historico_clima`.
-
-Consultas uteis:
-
-```sql
-SELECT * FROM logs_persistencia ORDER BY id DESC LIMIT 20;
-SELECT * FROM historico_clima ORDER BY id DESC LIMIT 5;
-SELECT * FROM leituras_brutas ORDER BY id DESC LIMIT 5;
-```
-
----
-
-## 16. Tratamento de Erros
-
-### Falhas de Rede
-
-`weather_service.obter_dados()` retorna `None` se:
-
-- a requisição falhar;
-- o HTTP retornar erro;
-- não houver `data`;
-- a leitura estiver velha.
-
-O worker apenas registra `Sem dados` e tenta novamente no próximo ciclo.
-
-### Falhas de Banco
-
-`persistence.executar_com_retry()` tenta novamente em `sqlite3.OperationalError`, como `database is locked`.
-
-### Falhas de WhatsApp
-
-O envio via Evolution API fica no processo `workers/whatsapp_sender.py`:
-
-- usa timeout de 15 segundos;
-- levanta exceção se HTTP não for 2xx;
-- marca o item da `alertas_fila` como `enviado` ou `falhou`;
-- registra sucesso/falha em `alertas_envios`.
-
-### Falhas de Estado de Alertas
-
-Se o arquivo JSON de estado estiver ausente ou inválido, o worker usa estado padrão e loga o problema.
-
----
-
-## 17. Testes
-
-Os testes ficam em:
-
-```text
-tests/test_persistence.py
-```
-
-### Cobertura Atual
-
-Testes existentes validam:
-
-- persistência de chuva antes do histórico;
-- relação entre leitura bruta e histórico;
-- salvamento de campos processados;
-- bateria e sinal;
-- preservacao de campos extras no JSON bruto;
-- valores nulos;
-- WAL;
-- retry de gravacao temporaria;
-- timezone `America/Campo_Grande`.
-
-### Como Executar
-
-Na raiz:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Compilacao:
-
-```bash
-python -m compileall estacao tests
-```
-
-### Testes Recomendados
-
-- Testes de rotas Flask com `app.test_client()`.
-- Testes de login/admin.
-- Teste de webhook com assinatura GitHub.
-- Teste de resumo diário.
-- Teste de dados históricos antigos sem colunas novas.
-
----
-
-## 18. Deploy e Produção
-
-### Fluxo Seguro de Deploy
-
-Antes de publicar alteracoes:
-
-```bash
-cd /caminho/do/projeto/estacao
-cp estacao.db estacao.db.backup-$(date +%F-%H%M)
-```
-
-Atualizar código:
-
-```bash
-cd /caminho/do/projeto
-git pull
-cd estacao
-python init_db.py
-```
-
-Reiniciar servicos.
-
-### Exemplo de systemd para Flask
-
-```ini
-[Unit]
-Description=Estacao Meteorologica Flask
-After=network.target
-
-[Service]
-User=servidor
-WorkingDirectory=/var/www/EstacaoEmPython/estacao
-EnvironmentFile=/var/www/EstacaoEmPython/estacao/.env
-ExecStart=/var/www/EstacaoEmPython/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8080 app:app
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Exemplo de systemd para Worker
-
-```ini
-[Unit]
-Description=Worker Estacao Meteorologica
-After=network.target
-
-[Service]
-User=servidor
-WorkingDirectory=/var/www/EstacaoEmPython/estacao
-EnvironmentFile=/var/www/EstacaoEmPython/estacao/.env
-ExecStart=/var/www/EstacaoEmPython/.venv/bin/python workers/updater.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Exemplo de systemd para Worker de WhatsApp
-
-```ini
-[Unit]
-Description=Worker WhatsApp Estacao Meteorologica
-After=network.target
-
-[Service]
-User=servidor
-WorkingDirectory=/var/www/EstacaoEmPython/estacao
-EnvironmentFile=/var/www/EstacaoEmPython/estacao/.env
-ExecStart=/var/www/EstacaoEmPython/.venv/bin/python workers/whatsapp_sender.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Proxy Reverso
-
-Recomenda-se Nginx ou Apache com HTTPS na frente do Gunicorn.
-
-### Docker
-
-Não existe Dockerfile no projeto atual.
-
----
-
-## 19. Backup e Recuperação
-
-### Backup Manual
-
-```bash
-cd /var/www/EstacaoEmPython/estacao
-sqlite3 estacao.db ".backup 'backup-estacao-$(date +%F-%H%M).db'"
-```
-
-Ou:
-
-```bash
-cp estacao.db estacao.db.backup-$(date +%F-%H%M)
-```
-
-Com WAL ativo, o método `.backup` do SQLite é preferível.
-
-### Restauracao
-
-1. Parar Flask e worker.
-2. Copiar backup para `estacao.db`.
-3. Garantir permissoes.
-4. Rodar `python init_db.py`.
-5. Reiniciar servicos.
-
-### Frequencia Recomendada
-
-- Pelo menos diário.
-- Antes de qualquer deploy.
-- Antes de migracoes.
-
----
-
-## 20. Melhorias Futuras
-
-- Separar `requirements.txt` mínimo do arquivo amplo atual.
-- Declarar `FOREIGN KEY` entre `historico_clima` e `leituras_brutas` em nova migração controlada.
-- Criar migrador versionado, por exemplo Alembic ou scripts SQL numerados.
-- Adicionar healthcheck HTTP.
-- Adicionar endpoint admin para últimos erros de persistência.
-- Criar página admin para `leituras_brutas`.
-- Criar backup automático via cron/systemd timer.
-- Criar alerta se o worker ficar sem gravar por X minutos.
-- Revisar armazenamento de `alert_state.json` para usar banco em vez de arquivo.
-- Padronizar todos os timestamps das tabelas auxiliares com colunas UTC/local explícitas.
-- Adicionar testes Flask para APIs e templates.
-- Adicionar lock/controle para evitar dois workers simultâneos gravando duplicado.
-- Considerar PostgreSQL se volume/concurrency crescer muito.
-
----
-
-## 21. Troubleshooting
-
-### App Não Sobe
-
-Verifique variáveis obrigatorias:
-
-```bash
-grep -E "SECRET_KEY|ADMIN_PASSWORD|WEBHOOK_SECRET" .env
-```
-
-Se `WEBHOOK_SECRET` faltar, `routes/webhook.py` levanta erro no import.
-
-### Worker Não Sobe
-
-Verifique Evolution API:
-
-```bash
-grep -E "EVOLUTION_URL|EVOLUTION_API_KEY|EVOLUTION_INSTANCE" .env
-```
-
-`whatsapp_service.py` levanta erro se essas variáveis não existirem.
-
-### Dados Não Aparecem
-
-Verifique se o worker está rodando:
-
-```bash
-systemctl status estacao-worker
-```
-
-Consulte banco:
-
-```sql
-SELECT id, data_hora, temp, chuva_hoje FROM historico_clima ORDER BY id DESC LIMIT 5;
-```
-
-### Banco Errado
-
-Procure bancos duplicados:
-
-```bash
-find /var/www/EstacaoEmPython -name "estacao.db" -ls
-```
-
-Defina `ESTACAO_DB` com caminho absoluto.
-
-### Horario Errado no Admin
-
-Verifique timezone:
-
-```bash
-timedatectl
-```
-
-Confirme colunas novas:
-
-```sql
-PRAGMA table_info(historico_clima);
-```
-
-### Estação Offline
-
-Teste URL da Ambient Weather no servidor:
-
-```bash
-curl -I "https://lightning.ambientweather.net/devices?public.slug=a535a0b6ff603c1d2376abc99e689f2f"
-```
-
-### Falha de Gravação
-
-Consultar:
-
-```sql
-SELECT * FROM logs_persistencia ORDER BY id DESC LIMIT 20;
-```
-
-Verificar permissão:
-
-```bash
-ls -l estacao.db estacao.db-wal estacao.db-shm
-```
-
-### Frontend Sem Atualizar
-
-Verifique `/api/clima`:
-
-```bash
-curl http://127.0.0.1:8080/api/clima
-```
-
----
-
-## 22. Comentários Técnicos
-
-### Decisões de Arquitetura
-
-- O worker é separado do Flask; ambos precisam estar ativos.
-- SQLite é suficiente para uso local/pequeno, mas precisa de backup.
-- WAL foi ativado para aumentar confiabilidade e melhorar leitura concorrente.
-- Persistência bruta imediata é prioridade sobre processamento posterior.
-
-### Pontos Frágeis Encontrados
-
-- `requirements.txt` está superdimensionado.
-- `estado_alertas.json` existe vazio no diretório, mas o worker usa `alert_state.json`.
-- `alert_state.json` é arquivo local, não tabela; pode ser perdido ou corrompido.
-- `CURRENT_TIMESTAMP` ainda é usado em tabelas auxiliares; a exibição converte, mas o schema poderia ser mais explícito.
-- Não há controle para impedir dois workers simultâneos.
-- Não há política de retenção.
-- Não há interface para inspecionar `leituras_brutas`.
-
-### Comandos Uteis
-
-Inicializar/migrar banco:
-
-```bash
-cd estacao
-python init_db.py
-```
-
-Rodar app:
-
-```bash
-python app.py
-```
-
-Rodar worker:
+### Coleta e criação de alertas
 
 ```bash
 python workers/updater.py
 ```
 
-Rodar testes:
+O updater roda continuamente e consulta a estação a cada 15 segundos. Ele persiste primeiro a leitura e os acumulados, depois avalia alertas e cria itens idempotentes na fila.
+
+### Envio da fila de WhatsApp
+
+Contínuo:
+
+```bash
+python workers/whatsapp_sender.py
+```
+
+Modos operacionais preservados:
+
+```bash
+python workers/whatsapp_sender.py --once
+python workers/whatsapp_sender.py --limite 10
+python workers/whatsapp_sender.py --intervalo 5
+python workers/whatsapp_sender.py --retry-failed --limite 10
+```
+
+### Health check
+
+```bash
+python workers/health_check.py
+python workers/health_check.py --no-whatsapp --fail-on-issues
+```
+
+O segundo formato é adequado a cron ou timer: registra o diagnóstico, não envia mensagem administrativa e retorna código `1` quando encontra problemas.
+
+### Campanha pontual
+
+O padrão é simulação, sem envio:
+
+```bash
+python workers/enviar_aviso_whatsapp_unico.py
+```
+
+O envio exige confirmação explícita:
+
+```bash
+python workers/enviar_aviso_whatsapp_unico.py --confirmar
+python workers/enviar_aviso_whatsapp_unico.py --confirmar --limite 10
+python workers/enviar_aviso_whatsapp_unico.py --confirmar --campaign-id aviso-2026
+python workers/enviar_aviso_whatsapp_unico.py --confirmar --mensagem-arquivo mensagem.txt
+python workers/enviar_aviso_whatsapp_unico.py --confirmar --retry-failed
+```
+
+O `campaign-id` participa da idempotência. Reutilize-o somente quando a intenção for retomar a mesma campanha.
+
+## Rotas HTTP
+
+### Páginas e formulários
+
+| Métodos | Rota | Finalidade |
+|---|---|---|
+| `GET`, `POST` | `/` | painel público e cadastro de alertas |
+| `POST` | `/unsubscribe/request` | solicita link de cancelamento |
+| `GET`, `POST` | `/unsubscribe` | valida token e cancela inscrição |
+| `GET` | `/historico` | consulta histórica |
+| `GET` | `/previsao` | previsão Open-Meteo |
+| `GET` | `/sobre` | informações da estação |
+| `GET`, `POST` | `/admin` | login e painel administrativo |
+| `POST` | `/admin/logout` | encerra sessão |
+| `POST` | `/admin/deletar/<id>` | exclui usuário cadastrado |
+| `POST` | `/admin/usuarios/<id>/editar` | edita usuário cadastrado |
+| `GET` | `/favicon.ico` | logo PNG |
+
+### APIs JSON
+
+Todas usam `GET`:
+
+```text
+/api/clima
+/api/historico
+/api/ultimo
+/api/historico_semana
+/api/historico_mes
+/api/recordes_mes
+/api/historico_consulta
+/api/anos_disponiveis
+```
+
+Essas rotas são contratos externos mesmo quando não são chamadas por outra função Python. Preserve nomes, parâmetros e formatos JSON.
+
+### Webhooks
+
+```text
+POST /deploy/python
+POST /deploy/php
+```
+
+Os handlers validam evento, assinatura HMAC, repositório e branch. Depois iniciam scripts externos em `/var/www/deploy/`. Esses scripts e as permissões de `sudo` não fazem parte deste repositório.
+
+## Produção
+
+Mantenha a aplicação, o updater e o sender como processos independentes, todos com o mesmo `WorkingDirectory`, `ESTACAO_DB` e conjunto coerente de variáveis. Um unit file típico precisa equivaler conceitualmente a:
+
+```ini
+[Service]
+WorkingDirectory=/caminho/do/projeto/estacao
+EnvironmentFile=/caminho/seguro/estacao.env
+ExecStart=/caminho/venv/bin/gunicorn -w 2 -b 127.0.0.1:8080 app:app
+Restart=always
+```
+
+Para os workers, troque apenas `ExecStart` por:
+
+```ini
+ExecStart=/caminho/venv/bin/python workers/updater.py
+ExecStart=/caminho/venv/bin/python workers/whatsapp_sender.py
+```
+
+Esses trechos são exemplos; nomes de usuário, diretórios, hardening, proxy reverso, certificados, units e timers reais pertencem ao ambiente de deploy. As variáveis devem existir antes da importação dos módulos.
+
+## Testes e validação
+
+Na raiz do repositório:
 
 ```bash
 python -m unittest discover -s tests -v
+python -m compileall estacao tests
 ```
 
-Verificar tabelas:
+A suíte cobre persistência, WAL e retry, acumulados, regras e idempotência de alertas, fila/retentativas do WhatsApp, usuários administrativos, cancelamento, health check, campanha, timezone, configuração Ambient e execução direta dos workers. Integrações externas são isoladas nos testes; a suíte não deve usar o banco ou credenciais de produção.
+
+Para reproduzir a validação de instalação em um ambiente limpo:
+
+### Windows/PowerShell
+
+```powershell
+python -m venv .venv-cleanup
+.\.venv-cleanup\Scripts\python.exe -m pip install --upgrade pip
+.\.venv-cleanup\Scripts\python.exe -m pip install -r estacao\requirements.txt
+.\.venv-cleanup\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+### Linux
 
 ```bash
-sqlite3 estacao/estacao.db ".tables"
+python -m venv .venv-cleanup
+.venv-cleanup/bin/python -m pip install --upgrade pip
+.venv-cleanup/bin/python -m pip install -r estacao/requirements.txt
+.venv-cleanup/bin/python -m unittest discover -s tests -v
 ```
 
-Verificar última leitura:
+## Diagnóstico rápido
 
-```bash
-sqlite3 estacao/estacao.db "SELECT id, data_hora, temp, umidade, chuva_hoje FROM historico_clima ORDER BY id DESC LIMIT 5;"
-```
+- Falha ao importar `app`: confirme `WEBHOOK_SECRET` e uma das variáveis de senha administrativa; configure também `SECRET_KEY` antes de servir sessões.
+- Sender ou campanha não inicia: confirme as três variáveis `EVOLUTION_*` no ambiente do processo.
+- Banco diferente entre processos: compare o caminho absoluto efetivo de `ESTACAO_DB` e o `WorkingDirectory`.
+- Erros de bloqueio SQLite: confirme que todos os processos usam o mesmo banco local e preserve WAL, timeout e transações existentes.
+- Previsão indisponível: valide rede, coordenadas ou os campos `FORECAST_*`; a página trata indisponibilidade sem alterar a coleta Ambient.
+- Rate limit inconsistente entre workers web: use armazenamento Redis compartilhado.
+- Deploy não dispara: valide os headers do GitHub, repositório/branch permitidos, script externo e permissão de execução no host.
+
+## Auditoria de manutenção
+
+As evidências, decisões de remoção, itens mantidos por compatibilidade e riscos residuais da limpeza de código estão em [`CLEANUP_REPORT.md`](CLEANUP_REPORT.md).

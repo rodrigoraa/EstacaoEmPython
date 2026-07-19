@@ -76,6 +76,15 @@ def para_local(valor, assume_utc=True):
     return dt.astimezone(LOCAL_TZ)
 
 
+def minutos_desde(valor, assume_utc=True):
+    dt = para_local(valor, assume_utc=assume_utc)
+    if not dt:
+        return None
+
+    segundos = (agora_local() - dt).total_seconds()
+    return max(0, int(segundos // 60))
+
+
 def formatar_local(valor, assume_utc=True):
     dt = para_local(valor, assume_utc=assume_utc)
     if not dt:

@@ -20,7 +20,8 @@ from flask import (
 
 import database
 from extensions import limiter
-from time_utils import agora_local, formatar_local, para_local
+from time_utils import agora_local as agora_local
+from time_utils import formatar_local, minutos_desde
 from unsubscribe_tokens import normalizar_telefone
 
 admin_routes = Blueprint("admin", __name__)
@@ -183,28 +184,6 @@ def garantir_estruturas_admin(conn):
     database.garantir_tabela_cadastro_eventos(conn)
 
 
-def registrar_evento_admin(
-    conn,
-    acao,
-    usuario_id=None,
-    nome=None,
-    telefone=None,
-    endereco=None,
-    receber_whatsapp=None,
-    detalhe=None,
-):
-    database.registrar_cadastro_evento(
-        conn,
-        acao,
-        usuario_id=usuario_id,
-        nome=nome,
-        telefone=telefone,
-        endereco=endereco,
-        receber_whatsapp=receber_whatsapp,
-        detalhe=detalhe,
-    )
-
-
 def preparar_usuarios_admin(linhas):
     resultado = []
     for linha in linhas:
@@ -236,15 +215,6 @@ def resumo_usuarios_admin(conn):
             "SELECT COUNT(*) FROM usuarios WHERE ativo = 0"
         ).fetchone()[0],
     }
-
-
-def minutos_desde(valor, assume_utc=True):
-    dt = para_local(valor, assume_utc=assume_utc)
-    if not dt:
-        return None
-
-    segundos = (agora_local() - dt).total_seconds()
-    return max(0, int(segundos // 60))
 
 
 def texto_tempo_decorrido(minutos):
@@ -376,7 +346,7 @@ def deletar_usuario(id):
     ).fetchone()
 
     if usuario:
-        registrar_evento_admin(
+        database.registrar_cadastro_evento(
             conn,
             "exclusao_admin",
             usuario_id=usuario["id"],
@@ -435,7 +405,7 @@ def editar_usuario(id):
             """,
             (nome, telefone, endereco, receber_whatsapp, ativo, id),
         )
-        registrar_evento_admin(
+        database.registrar_cadastro_evento(
             conn,
             "edicao_admin",
             usuario_id=id,

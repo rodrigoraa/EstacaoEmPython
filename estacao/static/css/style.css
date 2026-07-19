@@ -124,17 +124,7 @@ body.modal-open {
 }
 
 .theme-dark #menuLateral {
-    position: fixed !important;
-    top: 0 !important;
     right: auto !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    z-index: 50 !important;
-    width: 88vw;
-    max-width: 16rem;
-    height: 100vh;
-    max-height: 100vh;
-    transform: translateX(0) !important;
     background: var(--panel-bg) !important;
     border-color: var(--panel-border) !important;
     backdrop-filter: none !important;
@@ -247,18 +237,6 @@ body.modal-open {
     box-shadow: inset 0 -2px 6px rgba(0, 0, 0, 0.2);
 }
 
-.gauge-marks {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    background:
-        repeating-linear-gradient(transparent,
-            transparent 19px,
-            rgba(255, 255, 255, 0.3) 19px,
-            rgba(255, 255, 255, 0.3) 20px);
-    z-index: 10;
-}
-
 /* =========================================================
    BUSSOLA
    ========================================================= */
@@ -267,23 +245,7 @@ body.modal-open {
     transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.theme-toggle {
-    width: 2.75rem;
-    height: 2.75rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    border: 1px solid var(--panel-border);
-    background: var(--panel-bg);
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-    transition: transform .2s ease, background-color .2s ease, border-color .2s ease;
-}
-
-.theme-toggle:hover {
-    transform: translateY(-1px);
-}
-
+.theme-toggle,
 .menu-close-button {
     width: 2.75rem;
     height: 2.75rem;
@@ -297,68 +259,9 @@ body.modal-open {
     transition: transform .2s ease, background-color .2s ease, border-color .2s ease;
 }
 
+.theme-toggle:hover,
 .menu-close-button:hover {
     transform: translateY(-1px);
-}
-
-/* =========================================================
-   TEXTO DOS VALORES
-   ========================================================= */
-
-.valor-grande {
-    font-size: 3rem;
-    font-weight: 800;
-    letter-spacing: -1px;
-}
-
-/* =========================================================
-   VARIACOES DE COR DOS CARDS
-   ========================================================= */
-
-.card-temp {
-    border-left: 4px solid #f97316;
-}
-
-.card-vento {
-    border-left: 4px solid #14b8a6;
-}
-
-.card-chuva {
-    border-left: 4px solid #3b82f6;
-}
-
-.card-pressao {
-    border-left: 4px solid #6366f1;
-}
-
-.card-uv {
-    border-left: 4px solid #facc15;
-}
-
-.card-radiacao {
-    border-left: 4px solid #f59e0b;
-}
-
-/* =========================================================
-   ANIMACAO DE ATUALIZACAO
-   ========================================================= */
-
-@keyframes pulseData {
-    0% {
-        opacity: .7;
-    }
-
-    50% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: .7;
-    }
-}
-
-.atualizando {
-    animation: pulseData 1.5s infinite;
 }
 
 .historico-chart-card h3 {
@@ -420,11 +323,7 @@ body.modal-open {
         min-width: 560px;
     }
 
-    .theme-toggle {
-        width: 2.5rem;
-        height: 2.5rem;
-    }
-
+    .theme-toggle,
     .menu-close-button {
         width: 2.5rem;
         height: 2.5rem;
@@ -623,8 +522,6 @@ body.modal-open {
 .theme-dark .bg-white,
 .theme-dark .bg-slate-900,
 .theme-dark .bg-slate-100,
-.theme-dark .bg-slate-50\/50,
-.theme-dark .bg-slate-50\/80,
 .theme-dark .bg-indigo-50,
 .theme-dark .bg-blue-50,
 .theme-dark .bg-orange-50,
@@ -640,8 +537,6 @@ body.modal-open {
 
 .theme-dark .bg-white,
 .theme-dark .bg-slate-50,
-.theme-dark .bg-slate-50\/50,
-.theme-dark .bg-slate-50\/80,
 .theme-dark .bg-slate-100,
 .theme-dark aside,
 .theme-dark .mobile-topbar,

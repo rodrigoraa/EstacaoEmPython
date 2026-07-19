@@ -5,14 +5,15 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import time
 import json
 import acumulados
 import database
+from acumulados import valor_float
 from persistence import salvar_historico_clima
 from time_utils import agora_local, data_local, formatar_local
 from services.weather_service import obter_dados
+from unsubscribe_tokens import telefone_com_codigo_pais
 
 
 STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
@@ -142,13 +143,6 @@ def salvar_estado(estado):
         log(f"⚠️ Não foi possível salvar estado de alertas em arquivo: {erro}")
 
 
-def telefone_alerta(telefone):
-    telefone = "".join(filter(str.isdigit, telefone or ""))
-    if telefone and not telefone.startswith("55"):
-        telefone = "55" + telefone
-    return telefone
-
-
 def montar_mensagem_alerta(usuario, mensagem):
     link_meteo = f"{PUBLIC_BASE_URL}"
     nome_usuario = (usuario["nome"] or "").strip()
@@ -198,7 +192,6 @@ def enfileirar_alerta_usuario(
 def enviar_alerta(mensagem, evento=None):
     log(f"🚨 Enfileirando alerta para usuários...")
     conn = database.get_db()
-    conn.row_factory = sqlite3.Row
     database.garantir_tabela_alertas_fila(conn)
     database.garantir_tabela_alertas_eventos(conn)
     conn.commit()
@@ -247,7 +240,7 @@ def enviar_alerta(mensagem, evento=None):
         ).fetchall()
 
         for usuario in usuarios:
-            telefone = telefone_alerta(usuario["telefone"])
+            telefone = telefone_com_codigo_pais(usuario["telefone"])
             mensagem_final = montar_mensagem_alerta(usuario, mensagem)
 
             try:
@@ -413,13 +406,6 @@ def estado_alertas_novo_dia(estado_anterior, hoje):
         )
 
     return estado
-
-
-def valor_float(valor, padrao=0.0):
-    try:
-        return float(valor)
-    except (TypeError, ValueError):
-        return padrao
 
 
 def data_da_leitura(dados):
@@ -691,18 +677,9 @@ def executar():
         temp = dados["temp"]
         sensacao = dados["sensacao"]
         umidade = dados["umidade"]
-        pressao = dados["pressao"]
-
         uv = dados["uv"]
-        radiacao = dados["radiacao"]
-
-        vento = dados["vento"]
         rajada = dados["rajada"]
         rajada_max = dados.get("rajada_max", rajada)
-        vento_dir = dados["vento_dir"]
-
-        chuva_rate = dados["chuva_rate"]
-        chuva_evento = dados["chuva_evento"]
         chuva_hoje = dados["chuva_hoje"]
 
         log(

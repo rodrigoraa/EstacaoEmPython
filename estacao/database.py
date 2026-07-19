@@ -91,6 +91,7 @@ def garantir_tabela_alertas_envios(conn):
         erro TEXT
     )
     """)
+    garantir_coluna(conn, "alertas_envios", "evento_id", "TEXT")
 
 
 def garantir_tabela_alertas_fila(conn):
@@ -121,8 +122,51 @@ def garantir_tabela_alertas_fila(conn):
     garantir_coluna(conn, "alertas_fila", "tentativas", "INTEGER DEFAULT 0")
     garantir_coluna(conn, "alertas_fila", "erro", "TEXT")
     garantir_coluna(conn, "alertas_fila", "enviado_em", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "evento_id", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "prioridade", "INTEGER DEFAULT 50")
+    garantir_coluna(conn, "alertas_fila", "proxima_tentativa_em", "TEXT")
+    garantir_coluna(conn, "alertas_fila", "max_tentativas", "INTEGER DEFAULT 4")
+    garantir_coluna(conn, "alertas_fila", "erro_permanente", "INTEGER DEFAULT 0")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_alertas_fila_status_id ON alertas_fila(status, id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alertas_fila_prioridade "
+        "ON alertas_fila(status, prioridade DESC, id)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_alertas_fila_evento_usuario "
+        "ON alertas_fila(evento_id, usuario_id) "
+        "WHERE evento_id IS NOT NULL AND usuario_id IS NOT NULL"
+    )
+
+
+def garantir_tabela_alertas_eventos(conn):
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS alertas_eventos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        evento_id TEXT NOT NULL UNIQUE,
+        data_referencia TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        nivel INTEGER NOT NULL,
+        valor REAL,
+        unidade TEXT,
+        ocorrido_em_local TEXT,
+        fonte TEXT,
+        status TEXT NOT NULL DEFAULT 'detectado',
+        destinatarios INTEGER NOT NULL DEFAULT 0,
+        enfileirados INTEGER NOT NULL DEFAULT 0,
+        enviados INTEGER NOT NULL DEFAULT 0,
+        falhas INTEGER NOT NULL DEFAULT 0,
+        mensagem TEXT,
+        detalhe TEXT,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alertas_eventos_data_tipo "
+        "ON alertas_eventos(data_referencia DESC, tipo, nivel)"
     )
 
 
@@ -385,6 +429,7 @@ def init_db():
     garantir_tabela_usuarios(conn)
     garantir_tabela_alertas_envios(conn)
     garantir_tabela_alertas_fila(conn)
+    garantir_tabela_alertas_eventos(conn)
     garantir_tabela_health_check_estado(conn)
     garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)

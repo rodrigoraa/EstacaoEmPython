@@ -84,6 +84,34 @@ class AcumuladosDiariosTest(unittest.TestCase):
 
         self.assertEqual(segundo["rajada_max_corrigida"], 72.5)
 
+    def test_maxdailygust_bruto_antigo_nao_contamina_novo_dia(self):
+        conn = self.abrir_banco()
+        conn.execute(
+            """
+            INSERT INTO leituras_brutas (
+                station_data_hora_local,
+                recebido_em,
+                payload_json,
+                dados_convertidos_json
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (
+                "2026-07-19T00:00:10-04:00",
+                "2026-07-19 00:00:10",
+                "{}",
+                '{"rajada": 8.0, "rajada_max": 40.4}',
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        acumulado = self.acumulados.atualizar_acumulado_diario(
+            {"chuva_hoje": 0.0, "rajada": 8.0, "rajada_max": 8.0},
+            "2026-07-19",
+        )
+
+        self.assertEqual(acumulado["rajada_max_corrigida"], 8.0)
+
     def test_api_clima_exibe_acumulados_corrigidos(self):
         self.inserir_historico("2026-06-25T08:00:00-04:00", 30.0, 45.0)
         self.inserir_historico("2026-06-25T09:00:00-04:00", 0.0, 0.0)

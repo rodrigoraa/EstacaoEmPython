@@ -549,6 +549,11 @@ Auditoria de envios WhatsApp.
 | `status` | TEXT NOT NULL | `enviado` ou `falhou` |
 | `mensagem` | TEXT | mensagem enviada |
 | `erro` | TEXT | erro em caso de falha |
+| `evento_id` | TEXT | evento meteorológico relacionado |
+
+#### `alertas_eventos`
+
+Registro único de cada ocorrência meteorológica. Separa o evento das mensagens individuais, guarda tipo, nível, valor, horário, fonte, quantidade de destinatários, entregas e falhas. `evento_id` é único e impede que reinícios ou workers concorrentes criem o mesmo alerta novamente.
 
 #### `alertas_fila`
 
@@ -567,6 +572,11 @@ Fila de alertas pendentes para envio WhatsApp. Criada de forma aditiva; não sub
 | `tentativas` | INTEGER DEFAULT 0 | total de tentativas |
 | `erro` | TEXT | último erro |
 | `enviado_em` | TEXT | data/hora de sucesso |
+| `evento_id` | TEXT | chave idempotente do evento |
+| `prioridade` | INTEGER | críticos são processados primeiro |
+| `proxima_tentativa_em` | TEXT | agenda da repetição automática |
+| `max_tentativas` | INTEGER | limite de tentativas |
+| `erro_permanente` | INTEGER | impede repetição de erro definitivo |
 
 #### `cadastro_eventos`
 
@@ -782,6 +792,14 @@ ESTACAO_DB=/caminho/absoluto/EstacaoEmPython/estacao/estacao.db
 | `ESTACAO_DB` | `estacao/estacao.db` | caminho do SQLite |
 | `INTERVALO_ENVIO_USUARIOS` | `20` | pausa, em segundos, entre envios do worker de WhatsApp |
 | `INTERVALO_WHATSAPP_SEM_FILA` | `5` | pausa quando não há alerta pendente |
+| `WHATSAPP_WORKERS` | `3` | envios simultâneos controlados |
+| `WHATSAPP_MAX_TENTATIVAS` | `4` | limite de tentativas automáticas |
+| `ALERTA_CONFIRMACOES_NIVEL_1` | `2` | leituras consecutivas exigidas no nível 1 |
+| `ALERTA_CALOR_NIVEL_1` / `NIVEL_2` / `REARME` | `35` / `40` / `33` | limites de calor em °C |
+| `ALERTA_FRIO_NIVEL_1` / `NIVEL_2` / `NIVEL_3` / `REARME` | `12.4` / `5` / `2` / `15` | limites de frio em °C |
+| `ALERTA_VENTO_NIVEL_1` / `NIVEL_2` / `NIVEL_3` | `40` / `70` / `100` | limites de rajada em km/h |
+| `ALERTA_CHUVA_NIVEL_1` / `NIVEL_2` | `50` / `70` | limites diários em mm |
+| `ALERTA_UMIDADE_NIVEL_1` / `NIVEL_2` / `REARME` | `30` / `20` / `35` | limites percentuais |
 | `ALLOWED_DEPLOY_REPO` | `rodrigoraa/EstacaoEmPython` | repo aceito no webhook |
 | `ALLOWED_DEPLOY_BRANCH` | `refs/heads/main` | branch aceita no webhook |
 

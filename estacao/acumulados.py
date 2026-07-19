@@ -70,7 +70,6 @@ def maior_rajada_convertida_json(conn, data):
         maior = max(
             maior,
             valor_float(dados.get("rajada")),
-            valor_float(dados.get("rajada_max")),
         )
 
     return maior

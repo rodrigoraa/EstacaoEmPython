@@ -129,6 +129,8 @@ class AdminUsuariosTest(unittest.TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertIn("Usuários cadastrados".encode("utf-8"), resposta.data)
         self.assertIn("Saúde do sistema".encode("utf-8"), resposta.data)
+        self.assertIn("Eventos meteorológicos".encode("utf-8"), resposta.data)
+        self.assertIn("Entrega média".encode("utf-8"), resposta.data)
         self.assertIn(f"editar-usuario-{usuario_id}".encode("utf-8"), resposta.data)
 
     def test_admin_calcula_saude_do_sistema(self):

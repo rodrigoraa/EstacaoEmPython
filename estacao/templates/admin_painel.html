@@ -179,6 +179,27 @@
                     <p class="mt-1 text-xs text-slate-500">{{ saude_sistema.ultimo_envio }}</p>
                 </div>
             </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 px-5 pb-5">
+                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                    <span class="text-sm font-bold text-slate-700">Item mais antigo</span>
+                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.fila_mais_antiga }}</p>
+                </div>
+                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                    <span class="text-sm font-bold text-slate-700">Falhas em 24h</span>
+                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.falhas_24h }}</p>
+                </div>
+                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                    <span class="text-sm font-bold text-slate-700">Entrega média</span>
+                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.media_entrega_segundos }} s</p>
+                </div>
+                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                    <span class="text-sm font-bold text-slate-700">Virada diária</span>
+                    <p class="mt-2 text-sm font-semibold text-slate-700">
+                        Vento: {{ 'aguardando reset' if saude_sistema.aguardando_reset_vento else 'sincronizado' }}<br>
+                        Chuva: {{ 'aguardando reset' if saude_sistema.aguardando_reset_chuva else 'sincronizada' }}
+                    </p>
+                </div>
+            </div>
         </section>
 
         <div class="flex flex-wrap gap-2 text-sm">
@@ -410,6 +431,33 @@
                     class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
                     Últimos 30 envios
                 </span>
+            </div>
+
+            <div class="px-5 py-4 border-b border-slate-100">
+                <h3 class="text-sm font-bold text-slate-800 mb-3">Eventos meteorológicos</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[900px] text-left border-collapse">
+                        <thead><tr class="bg-slate-50 text-slate-500 text-xs uppercase">
+                            <th class="px-3 py-2">Horário</th><th class="px-3 py-2">Tipo</th>
+                            <th class="px-3 py-2">Nível</th><th class="px-3 py-2">Valor</th>
+                            <th class="px-3 py-2">Status</th><th class="px-3 py-2">Entregas</th>
+                        </tr></thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for evento in eventos_alertas %}
+                            <tr>
+                                <td class="px-3 py-3 font-mono text-xs">{{ evento['data_hora_exibicao'] }}</td>
+                                <td class="px-3 py-3 font-semibold">{{ evento['tipo'] }}</td>
+                                <td class="px-3 py-3">{{ evento['nivel'] }}</td>
+                                <td class="px-3 py-3">{{ evento['valor'] if evento['valor'] is not none else '-' }} {{ evento['unidade'] or '' }}</td>
+                                <td class="px-3 py-3">{{ evento['status'] }}</td>
+                                <td class="px-3 py-3">{{ evento['enviados'] }}/{{ evento['destinatarios'] }}{% if evento['falhas'] %} · {{ evento['falhas'] }} falha(s){% endif %}</td>
+                            </tr>
+                        {% else %}
+                            <tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">Nenhum evento meteorológico registrado.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="overflow-x-auto">

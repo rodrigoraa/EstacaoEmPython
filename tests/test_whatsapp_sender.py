@@ -132,11 +132,46 @@ class WhatsAppSenderTest(unittest.TestCase):
         envio = conn.execute("SELECT status, erro FROM alertas_envios").fetchone()
         conn.close()
 
-        self.assertEqual(fila["status"], "falhou")
+        self.assertEqual(fila["status"], "pendente")
         self.assertEqual(fila["tentativas"], 1)
         self.assertIn("Evolution fora", fila["erro"])
         self.assertEqual(envio["status"], "falhou")
         self.assertIn("Evolution fora", envio["erro"])
+
+    def test_falha_permanente_nao_e_retentada(self):
+        self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+        self.sender.enviar_whatsapp = lambda numero, mensagem: (_ for _ in ()).throw(
+            Exception("Erro Evolution API 400: telefone inválido")
+        )
+
+        self.sender.processar_fila(limite=1, intervalo=0)
+
+        conn = self.abrir_banco()
+        fila = conn.execute(
+            "SELECT status, erro_permanente, proxima_tentativa_em FROM alertas_fila"
+        ).fetchone()
+        conn.close()
+        self.assertEqual(fila["status"], "falhou")
+        self.assertEqual(fila["erro_permanente"], 1)
+        self.assertIsNone(fila["proxima_tentativa_em"])
+
+    def test_prioridade_critica_e_processada_primeiro(self):
+        self.enfileirar(
+            [
+                (1, "Normal", "5567111111111", "Normal"),
+                (2, "Critico", "5567222222222", "Critico"),
+            ]
+        )
+        conn = self.abrir_banco()
+        conn.execute("UPDATE alertas_fila SET prioridade = 100 WHERE nome = 'Critico'")
+        conn.commit()
+        conn.close()
+        envios = []
+        self.sender.enviar_whatsapp = lambda numero, mensagem: envios.append(mensagem)
+
+        self.sender.processar_fila(limite=1, intervalo=0)
+
+        self.assertEqual(envios, ["Critico"])
 
 
 if __name__ == "__main__":

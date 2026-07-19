@@ -152,8 +152,14 @@ def preparar_eventos_admin(linhas, assume_utc=True):
     resultado = []
     for linha in linhas:
         item = dict(linha)
+        valor_data = (
+            item.get("data_hora")
+            or item.get("ocorrido_em_local")
+            or item.get("criado_em")
+        )
         item["data_hora_exibicao"] = formatar_data_admin(
-            item.get("data_hora"), assume_utc=assume_utc
+            valor_data,
+            assume_utc=(assume_utc and not item.get("ocorrido_em_local")),
         )
         resultado.append(item)
     return resultado
@@ -173,6 +179,7 @@ def garantir_estruturas_admin(conn):
     database.garantir_tabela_usuarios(conn)
     database.garantir_tabela_alertas_envios(conn)
     database.garantir_tabela_alertas_fila(conn)
+    database.garantir_tabela_alertas_eventos(conn)
     database.garantir_tabela_cadastro_eventos(conn)
 
 
@@ -297,6 +304,19 @@ def obter_saude_sistema_admin(conn):
     enviando = totais_fila.get("enviando", 0)
     falhou = totais_fila.get("falhou", 0)
 
+    metricas_fila = conn.execute(
+        """
+        SELECT
+            MIN(CASE WHEN status IN ('pendente', 'enviando') THEN criado_em END) AS mais_antigo,
+            SUM(CASE WHEN status = 'falhou' AND atualizado_em >= datetime('now', '-1 day') THEN 1 ELSE 0 END) AS falhas_24h,
+            AVG(CASE WHEN enviado_em IS NOT NULL
+                THEN (julianday(enviado_em) - julianday(criado_em)) * 86400 END) AS media_entrega_segundos
+        FROM alertas_fila
+        """
+    ).fetchone()
+    estado_alertas = database.obter_estado_alertas() or {}
+    minutos_item_antigo = minutos_desde(metricas_fila["mais_antigo"], assume_utc=True)
+
     coleta_ok = minutos_leitura is not None and minutos_leitura <= limite_atraso_minutos
     fila_ok = pendentes == 0 and enviando == 0 and falhou == 0
 
@@ -327,6 +347,11 @@ def obter_saude_sistema_admin(conn):
         if ultimo_envio
         else "-",
         "ultimo_envio_status": ultimo_envio["status"] if ultimo_envio else "-",
+        "fila_mais_antiga": texto_tempo_decorrido(minutos_item_antigo),
+        "falhas_24h": int(metricas_fila["falhas_24h"] or 0),
+        "media_entrega_segundos": round(metricas_fila["media_entrega_segundos"] or 0),
+        "aguardando_reset_vento": bool(estado_alertas.get("aguardando_reset_vento")),
+        "aguardando_reset_chuva": bool(estado_alertas.get("aguardando_reset_chuva")),
     }
 
 
@@ -472,6 +497,9 @@ def admin():
     alertas = conn.execute(
         "SELECT * FROM alertas_envios ORDER BY id DESC LIMIT 30"
     ).fetchall()
+    eventos_alertas = conn.execute(
+        "SELECT * FROM alertas_eventos ORDER BY id DESC LIMIT 30"
+    ).fetchall()
     eventos_cadastro = conn.execute(
         "SELECT * FROM cadastro_eventos ORDER BY id DESC LIMIT 30"
     ).fetchall()
@@ -486,6 +514,7 @@ def admin():
         saude_sistema=saude_sistema,
         historico=preparar_historico_admin(historico),
         alertas=preparar_eventos_admin(alertas, assume_utc=True),
+        eventos_alertas=preparar_eventos_admin(eventos_alertas, assume_utc=True),
         eventos_cadastro=preparar_eventos_admin(eventos_cadastro, assume_utc=True),
         evolution_status=evolution_status,
     )

@@ -43,6 +43,16 @@ def valor_numerico(raw, chave, padrao=0):
         return padrao
 
 
+def campo_numerico_valido(raw, chave, minimo, maximo):
+    if chave not in raw or raw.get(chave) is None:
+        return False
+    try:
+        valor = float(raw[chave])
+    except (TypeError, ValueError):
+        return False
+    return minimo <= valor <= maximo
+
+
 def obter_dados(persistir_bruto=True):
 
     try:
@@ -109,6 +119,17 @@ def obter_dados(persistir_bruto=True):
         "chuva_hoje": chuva_hoje,
         "bateria": extrair_bateria(raw),
         "sinal": extrair_sinal(raw),
+        "validade_alertas": {
+            "temperatura": campo_numerico_valido(raw, "tempf", -76, 140),
+            "sensacao": campo_numerico_valido(raw, "feelsLike", -94, 158),
+            "vento": (
+                campo_numerico_valido(raw, "windgustmph", 0, 200)
+                or campo_numerico_valido(raw, "maxdailygust", 0, 200)
+            ),
+            "chuva": campo_numerico_valido(raw, "dailyrainin", 0, 100),
+            "umidade": campo_numerico_valido(raw, "humidity", 0, 100),
+            "uv": campo_numerico_valido(raw, "uv", 0, 30),
+        },
     }
 
     if persistir_bruto:

@@ -183,6 +183,45 @@ class AlertasWorkerTest(unittest.TestCase):
         conn.close()
         self.assertEqual(total_fila, 2)
 
+    def test_alerta_omite_registro_mas_preserva_horario_no_evento(self):
+        conn = self.abrir_banco()
+        conn.execute(
+            """
+            INSERT INTO usuarios (nome, telefone, receber_whatsapp)
+            VALUES (?, ?, ?)
+            """,
+            ("Rodrigo", "67999999999", 1),
+        )
+        conn.commit()
+        conn.close()
+
+        self.updater.log = lambda mensagem: None
+        estado = self.updater.estado_alertas_padrao("2026-07-20")
+        ocorrido_em_local = "2026-07-20T07:17:00-04:00"
+
+        with mock.patch.object(self.updater, "salvar_estado"):
+            marcado = self.updater.marcar_alerta_enviado(
+                estado,
+                "nivel_vento",
+                1,
+                "🌬️ *ALERTA: Vento Forte!*\nRajadas de *42.2 km/h*.",
+                valor=42.2,
+                unidade="km/h",
+                ocorrido_em_local=ocorrido_em_local,
+            )
+
+        conn = self.abrir_banco()
+        mensagem = conn.execute("SELECT mensagem FROM alertas_fila").fetchone()[0]
+        evento = conn.execute(
+            "SELECT ocorrido_em_local FROM alertas_eventos"
+        ).fetchone()
+        conn.close()
+
+        self.assertTrue(marcado)
+        self.assertNotIn("Registro:", mensagem)
+        self.assertIn("Rajadas de *42.2 km/h*.", mensagem)
+        self.assertEqual(evento["ocorrido_em_local"], ocorrido_em_local)
+
     def test_evento_idempotente_nao_duplica_fila(self):
         self.updater.log = lambda mensagem: None
         conn = self.abrir_banco()

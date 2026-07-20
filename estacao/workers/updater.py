@@ -11,7 +11,7 @@ import acumulados
 import database
 from acumulados import valor_float
 from persistence import salvar_historico_clima
-from time_utils import agora_local, data_local, formatar_local
+from time_utils import agora_local, data_local
 from services.weather_service import obter_dados
 from unsubscribe_tokens import telefone_com_codigo_pais
 
@@ -294,9 +294,6 @@ def marcar_alerta_enviado(
     data_referencia = estado.get("data") or data_local()
     evento_id = f"{data_referencia}:{tipo}:{nivel}:{ciclo}"
     prioridade = 100 if nivel >= 3 else 80 if nivel == 2 else 50
-    if ocorrido_em_local:
-        horario = formatar_local(ocorrido_em_local, assume_utc=False)
-        mensagem = f"{mensagem}\nRegistro: *{horario}*."
 
     resultado = enviar_alerta(
         mensagem,

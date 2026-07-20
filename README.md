@@ -1,4 +1,4 @@
-# Estação meteorológica em Flask
+# Estação meteorológica ee sj
 
 Aplicação web para coletar dados públicos da Ambient Weather, manter histórico em SQLite, exibir condições e previsões meteorológicas e distribuir alertas pelo WhatsApp por meio da Evolution API.
 

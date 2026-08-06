@@ -48,8 +48,8 @@ def configuracao_alertas():
         "vento_1": env_float("ALERTA_VENTO_NIVEL_1", 40),
         "vento_2": env_float("ALERTA_VENTO_NIVEL_2", 70),
         "vento_3": env_float("ALERTA_VENTO_NIVEL_3", 100),
-        "chuva_1": env_float("ALERTA_CHUVA_NIVEL_1", 50),
-        "chuva_2": env_float("ALERTA_CHUVA_NIVEL_2", 70),
+        "chuva_1": env_float("ALERTA_CHUVA_NIVEL_1", 30),
+        "chuva_2": env_float("ALERTA_CHUVA_NIVEL_2", 50),
         "umidade_1": env_float("ALERTA_UMIDADE_NIVEL_1", 30),
         "umidade_2": env_float("ALERTA_UMIDADE_NIVEL_2", 20),
         "umidade_rearme": env_float("ALERTA_UMIDADE_REARME", 35),
@@ -644,7 +644,7 @@ def verificar_alertas(
         marcar_alerta_enviado(estado, "nivel_vento", 1, msg, valor=rajada, unidade="km/h", ocorrido_em_local=ocorrido_em_local)
 
     if validade.get("chuva") and chuva_hoje >= config["chuva_2"] and estado["nivel_chuva"] < 2:
-        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje."
+        msg = f"🌧️ *ALERTA CRÍTICO: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje."
         marcar_alerta_enviado(estado, "nivel_chuva", 2, msg, valor=chuva_hoje, unidade="mm", ocorrido_em_local=ocorrido_em_local)
 
     elif chuva_confirmada and estado["nivel_chuva"] < 1:

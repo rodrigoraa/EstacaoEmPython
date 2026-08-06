@@ -11,7 +11,7 @@ import acumulados
 import database
 from acumulados import valor_float
 from persistence import salvar_historico_clima
-from time_utils import agora_local, data_local
+from time_utils import agora_local, data_local, parse_datetime
 from services.weather_service import obter_dados
 from unsubscribe_tokens import telefone_com_codigo_pais
 
@@ -48,6 +48,9 @@ def configuracao_alertas():
         "vento_1": env_float("ALERTA_VENTO_NIVEL_1", 40),
         "vento_2": env_float("ALERTA_VENTO_NIVEL_2", 70),
         "vento_3": env_float("ALERTA_VENTO_NIVEL_3", 100),
+        "vento_janela_minutos": max(
+            0, env_float("ALERTA_VENTO_JANELA_MINUTOS", 3)
+        ),
         "chuva_1": env_float("ALERTA_CHUVA_NIVEL_1", 30),
         "chuva_2": env_float("ALERTA_CHUVA_NIVEL_2", 50),
         "umidade_1": env_float("ALERTA_UMIDADE_NIVEL_1", 30),
@@ -76,6 +79,9 @@ def estado_alertas_padrao(data=""):
         "chuva_ultima_nuvem": 0.0,
         "aguardando_reset_vento": False,
         "vento_max_dia_anterior": 0.0,
+        "vento_observacao_inicio": None,
+        "vento_observacao_maxima": 0.0,
+        "vento_observacao_maxima_em": None,
         "aguardando_reset_chuva": False,
         "chuva_base_virada": 0.0,
         "confirmacoes": {},
@@ -506,6 +512,108 @@ def confirmar_nivel_1(estado, tipo, condicao):
     return condicao and atual >= necessarias
 
 
+def limpar_observacao_vento(estado):
+    estado["vento_observacao_inicio"] = None
+    estado["vento_observacao_maxima"] = 0.0
+    estado["vento_observacao_maxima_em"] = None
+
+
+def processar_alerta_vento(
+    estado,
+    rajada,
+    ocorrido_em_local,
+    vento_valido,
+    config,
+):
+    if not vento_valido:
+        return
+
+    if rajada >= config["vento_3"] and estado["nivel_vento"] < 3:
+        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*."
+        if marcar_alerta_enviado(
+            estado,
+            "nivel_vento",
+            3,
+            msg,
+            valor=rajada,
+            unidade="km/h",
+            ocorrido_em_local=ocorrido_em_local,
+        ):
+            limpar_observacao_vento(estado)
+            salvar_estado(estado)
+        return
+
+    if rajada >= config["vento_2"] and estado["nivel_vento"] < 2:
+        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*."
+        if marcar_alerta_enviado(
+            estado,
+            "nivel_vento",
+            2,
+            msg,
+            valor=rajada,
+            unidade="km/h",
+            ocorrido_em_local=ocorrido_em_local,
+        ):
+            limpar_observacao_vento(estado)
+            salvar_estado(estado)
+        return
+
+    if estado["nivel_vento"] >= 1:
+        if estado.get("vento_observacao_inicio"):
+            limpar_observacao_vento(estado)
+            salvar_estado(estado)
+        return
+
+    if rajada < config["vento_1"]:
+        return
+
+    agora = agora_local()
+    inicio = parse_datetime(
+        estado.get("vento_observacao_inicio"), assume_utc=False
+    )
+    alterado = False
+
+    if inicio is None:
+        inicio = agora
+        estado["vento_observacao_inicio"] = agora.replace(
+            microsecond=0
+        ).isoformat()
+        estado["vento_observacao_maxima"] = rajada
+        estado["vento_observacao_maxima_em"] = ocorrido_em_local
+        alterado = True
+        log(
+            "Rajada acima do nivel 1; iniciando janela de observacao "
+            f"de {config['vento_janela_minutos']:g} minuto(s)."
+        )
+    elif rajada > valor_float(estado.get("vento_observacao_maxima")):
+        estado["vento_observacao_maxima"] = rajada
+        estado["vento_observacao_maxima_em"] = ocorrido_em_local
+        alterado = True
+
+    if alterado:
+        salvar_estado(estado)
+
+    segundos_observados = max(0.0, (agora - inicio).total_seconds())
+    segundos_necessarios = config["vento_janela_minutos"] * 60
+    if segundos_observados < segundos_necessarios:
+        return
+
+    rajada_maxima = valor_float(estado.get("vento_observacao_maxima"), rajada)
+    maxima_em = estado.get("vento_observacao_maxima_em") or ocorrido_em_local
+    msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada_maxima:.1f} km/h*."
+    if marcar_alerta_enviado(
+        estado,
+        "nivel_vento",
+        1,
+        msg,
+        valor=rajada_maxima,
+        unidade="km/h",
+        ocorrido_em_local=maxima_em,
+    ):
+        limpar_observacao_vento(estado)
+        salvar_estado(estado)
+
+
 def verificar_alertas(
     temp,
     sensacao,
@@ -555,9 +663,6 @@ def verificar_alertas(
         "frio",
         (validade.get("temperatura") and temp <= config["frio_1"])
         or (validade.get("sensacao") and sensacao <= config["frio_1"]),
-    )
-    vento_confirmado = confirmar_nivel_1(
-        estado, "vento", validade.get("vento") and rajada >= config["vento_1"]
     )
     chuva_confirmada = confirmar_nivel_1(
         estado, "chuva", validade.get("chuva") and chuva_hoje >= config["chuva_1"]
@@ -631,17 +736,13 @@ def verificar_alertas(
             ocorrido_em_local=ocorrido_em_local,
         )
 
-    if validade.get("vento") and rajada >= config["vento_3"] and estado["nivel_vento"] < 3:
-        msg = f"🌪️ *ALERTA CRÍTICO: Vento Extremo!*\nRajadas violentas de *{rajada:.1f} km/h*."
-        marcar_alerta_enviado(estado, "nivel_vento", 3, msg, valor=rajada, unidade="km/h", ocorrido_em_local=ocorrido_em_local)
-
-    elif validade.get("vento") and rajada >= config["vento_2"] and estado["nivel_vento"] < 2:
-        msg = f"🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *{rajada:.1f} km/h*."
-        marcar_alerta_enviado(estado, "nivel_vento", 2, msg, valor=rajada, unidade="km/h", ocorrido_em_local=ocorrido_em_local)
-
-    elif vento_confirmado and estado["nivel_vento"] < 1:
-        msg = f"🌬️ *ALERTA: Vento Forte!*\nRajadas de *{rajada:.1f} km/h*."
-        marcar_alerta_enviado(estado, "nivel_vento", 1, msg, valor=rajada, unidade="km/h", ocorrido_em_local=ocorrido_em_local)
+    processar_alerta_vento(
+        estado,
+        rajada,
+        ocorrido_em_local,
+        validade.get("vento", False),
+        config,
+    )
 
     if validade.get("chuva") and chuva_hoje >= config["chuva_2"] and estado["nivel_chuva"] < 2:
         msg = f"🌧️ *ALERTA CRÍTICO: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje."

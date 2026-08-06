@@ -4,6 +4,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -19,6 +20,7 @@ class AlertasWorkerTest(unittest.TestCase):
         os.environ["ESTACAO_DB"] = str(Path(self.tmp.name) / "estacao_teste.db")
         os.environ["SECRET_KEY"] = "segredo-teste"
         os.environ["ALERTA_CONFIRMACOES_NIVEL_1"] = "1"
+        os.environ["ALERTA_VENTO_JANELA_MINUTOS"] = "3"
 
         import database
 
@@ -35,6 +37,7 @@ class AlertasWorkerTest(unittest.TestCase):
             "ESTACAO_DB",
             "SECRET_KEY",
             "ALERTA_CONFIRMACOES_NIVEL_1",
+            "ALERTA_VENTO_JANELA_MINUTOS",
         ):
             os.environ.pop(chave, None)
 
@@ -290,6 +293,81 @@ class AlertasWorkerTest(unittest.TestCase):
         )
 
         self.assertEqual(mensagens, [])
+
+    def test_alerta_vento_aguarda_janela_e_usa_maior_rajada(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        mensagens = []
+        eventos = []
+        inicio = datetime(2026, 7, 19, 12, 0, tzinfo=timezone(timedelta(hours=-4)))
+        horarios = iter(
+            [
+                inicio,
+                inicio + timedelta(minutes=1),
+                inicio + timedelta(minutes=3),
+            ]
+        )
+        self.updater.agora_local = lambda: next(horarios)
+        self.updater.enviar_alerta = lambda mensagem, evento=None: (
+            mensagens.append(mensagem),
+            eventos.append(evento),
+        ) and {"total": 1, "enfileirados": 1, "falhas": 0}
+
+        self.updater.verificar_alertas(
+            25, 25, 40.4, 0, 50, 0,
+            data_referencia="2026-07-19",
+            ocorrido_em_local="2026-07-19T12:00:00-04:00",
+        )
+        self.updater.verificar_alertas(
+            25, 25, 46.2, 0, 50, 0,
+            data_referencia="2026-07-19",
+            ocorrido_em_local="2026-07-19T12:01:00-04:00",
+        )
+        self.assertEqual(mensagens, [])
+
+        self.updater.verificar_alertas(
+            25, 25, 46.2, 0, 50, 0,
+            data_referencia="2026-07-19",
+            ocorrido_em_local="2026-07-19T12:03:00-04:00",
+        )
+
+        self.assertEqual(
+            mensagens,
+            ["🌬️ *ALERTA: Vento Forte!*\nRajadas de *46.2 km/h*."],
+        )
+        self.assertEqual(eventos[0]["valor"], 46.2)
+        self.assertEqual(
+            eventos[0]["ocorrido_em_local"], "2026-07-19T12:01:00-04:00"
+        )
+        estado = self.updater.carregar_estado()
+        self.assertEqual(estado["nivel_vento"], 1)
+        self.assertIsNone(estado["vento_observacao_inicio"])
+
+    def test_alerta_vento_forte_e_imediato_durante_observacao(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        mensagens = []
+        inicio = datetime(2026, 7, 19, 12, 0, tzinfo=timezone(timedelta(hours=-4)))
+        horarios = iter([inicio, inicio + timedelta(seconds=30)])
+        self.updater.agora_local = lambda: next(horarios)
+        self.updater.enviar_alerta = lambda mensagem, evento=None: mensagens.append(
+            mensagem
+        ) or {"total": 1, "enfileirados": 1, "falhas": 0}
+
+        self.updater.verificar_alertas(
+            25, 25, 40.4, 0, 50, 0, data_referencia="2026-07-19"
+        )
+        self.updater.verificar_alertas(
+            25, 25, 72.0, 0, 50, 0, data_referencia="2026-07-19"
+        )
+
+        self.assertEqual(
+            mensagens,
+            ["🌪️ *ALERTA FORTE: Vento Muito Forte!*\nRajadas de *72.0 km/h*."],
+        )
+        estado = self.updater.carregar_estado()
+        self.assertEqual(estado["nivel_vento"], 2)
+        self.assertIsNone(estado["vento_observacao_inicio"])
 
     def test_indice_uv_nao_gera_alerta(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")

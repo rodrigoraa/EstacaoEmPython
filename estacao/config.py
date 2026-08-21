@@ -31,7 +31,11 @@ def env_float(nome, padrao):
 
 
 def public_base_url():
-    valor = env_str("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br").rstrip("/")
+    configurado = env_str("PUBLIC_BASE_URL")
+    if env_str("APP_ENV", "development").lower() == "production" and not configurado:
+        raise RuntimeError("PUBLIC_BASE_URL não configurada em produção")
+
+    valor = (configurado or "http://meteo.eesjv.com.br").rstrip("/")
     partes = urlsplit(valor)
     if partes.scheme not in {"http", "https"} or not partes.netloc:
         raise RuntimeError("PUBLIC_BASE_URL deve ser uma URL http(s) absoluta")
@@ -53,6 +57,7 @@ def validar_configuracao_web():
         faltantes.append("ADMIN_PASSWORD ou ADMIN_PASSWORD_HASH")
     if not env_str("WEBHOOK_SECRET"):
         faltantes.append("WEBHOOK_SECRET")
+    if not env_str("PUBLIC_BASE_URL"):
+        faltantes.append("PUBLIC_BASE_URL")
     if faltantes:
         raise RuntimeError("Configuracao de producao incompleta: " + ", ".join(faltantes))
-

@@ -15,6 +15,68 @@ ESTACAO_DIR = PROJECT_ROOT / "estacao"
 sys.path.insert(0, str(ESTACAO_DIR))
 
 
+class ConfiguracaoProducaoTest(unittest.TestCase):
+    def configuracao_valida(self):
+        return {
+            "APP_ENV": "production",
+            "SECRET_KEY": "segredo-producao",
+            "ADMIN_PASSWORD": "senha-admin",
+            "WEBHOOK_SECRET": "segredo-webhook",
+            "PUBLIC_BASE_URL": "https://meteo.exemplo.test",
+        }
+
+    def test_producao_exige_segredos_e_url_publica(self):
+        import config
+
+        casos = (
+            ("SECRET_KEY", "SECRET_KEY"),
+            ("ADMIN_PASSWORD", "ADMIN_PASSWORD ou ADMIN_PASSWORD_HASH"),
+            ("WEBHOOK_SECRET", "WEBHOOK_SECRET"),
+            ("PUBLIC_BASE_URL", "PUBLIC_BASE_URL"),
+        )
+        for ausente, esperado in casos:
+            with self.subTest(ausente=ausente):
+                ambiente = self.configuracao_valida()
+                ambiente.pop(ausente)
+                with patch.dict(os.environ, ambiente, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, esperado):
+                        config.validar_configuracao_web()
+
+    def test_hash_admin_substitui_senha_em_producao(self):
+        import config
+
+        ambiente = self.configuracao_valida()
+        ambiente.pop("ADMIN_PASSWORD")
+        ambiente["ADMIN_PASSWORD_HASH"] = "scrypt:hash-de-teste"
+        with patch.dict(os.environ, ambiente, clear=True):
+            config.validar_configuracao_web()
+
+    def test_public_base_url_sem_fallback_em_producao(self):
+        import config
+
+        with patch.dict(os.environ, {"APP_ENV": "production"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "PUBLIC_BASE_URL"):
+                config.public_base_url()
+
+    def test_producao_avisa_quando_cookie_secure_esta_desativado(self):
+        import app as app_module
+
+        ambiente = self.configuracao_valida()
+        ambiente.update(
+            {
+                "SESSION_COOKIE_SECURE": "false",
+                "RATELIMIT_ENABLED": "false",
+            }
+        )
+        with patch.dict(os.environ, ambiente, clear=True):
+            with self.assertLogs("app", level="WARNING") as logs:
+                importlib.reload(app_module)
+
+        self.assertTrue(
+            any("SESSION_COOKIE_SECURE=false" in registro for registro in logs.output)
+        )
+
+
 class RotasSegurancaTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

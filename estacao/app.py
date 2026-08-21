@@ -54,6 +54,11 @@ def create_app(config_override=None):
         logger.warning(
             "RATELIMIT_STORAGE_URI=memory:// não compartilha limites entre workers"
         )
+    if app_env == "production" and not aplicacao.config["SESSION_COOKIE_SECURE"]:
+        logger.warning(
+            "SESSION_COOKIE_SECURE=false em produção; use true quando o acesso público "
+            "estiver protegido por HTTPS"
+        )
 
     from routes.admin import admin_routes
     from routes.api import api_routes

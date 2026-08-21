@@ -111,6 +111,48 @@ class MelhoriasMeteorologiaPersistenciaTest(unittest.TestCase):
         self.assertEqual(payload["min_temp"], -5)
         self.assertEqual(payload["temp_min"][:2], [0, -5])
 
+    def consultar_historico_mensal(self, valores):
+        conn = self.abrir_banco()
+        conn.executemany(
+            "INSERT INTO historico_diario (data, temp_max) VALUES (?, ?)",
+            (
+                (f"2026-02-{indice:02d}", valor)
+                for indice, valor in enumerate(valores, start=1)
+            ),
+        )
+        conn.commit()
+        conn.close()
+        app = Flask(__name__)
+        app.register_blueprint(self.api.api_routes)
+        return app.test_client().get(
+            "/api/historico_consulta?ano=2026&mes=02"
+        ).get_json()
+
+    def test_maxima_mensal_quando_todas_temperaturas_sao_negativas(self):
+        payload = self.consultar_historico_mensal((-5, -3, -1))
+        self.assertEqual(payload["max_temp"], -1)
+
+    def test_maxima_mensal_com_temperaturas_negativa_zero_e_positiva(self):
+        payload = self.consultar_historico_mensal((-1, 0, 5))
+        self.assertEqual(payload["max_temp"], 5)
+
+    def test_historico_consulta_rejeita_ano_e_mes_invalidos(self):
+        app = Flask(__name__)
+        app.register_blueprint(self.api.api_routes)
+        client = app.test_client()
+
+        consultas = (
+            "ano=2026&mes=0",
+            "ano=2026&mes=13",
+            "ano=2026&mes=abc",
+            "ano=abc&mes=1",
+        )
+        for query in consultas:
+            with self.subTest(query=query):
+                resposta = client.get(f"/api/historico_consulta?{query}")
+                self.assertEqual(resposta.status_code, 400)
+                self.assertEqual(resposta.get_json(), {"erro": "Ano e mês inválidos"})
+
     def test_tempestade_exige_chuva_atual_e_rajada_temporalmente_proxima(self):
         atual = {
             "chuva_rate": 12,
@@ -179,4 +221,3 @@ class MigrationLegadaTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

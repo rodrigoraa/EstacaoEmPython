@@ -444,6 +444,9 @@ def api_historico_consulta():
     except ValueError:
         return jsonify({"erro": "Ano e mês inválidos"}), 400
 
+    if not 1 <= ano_int <= 9999 or not 1 <= mes_int <= 12:
+        return jsonify({"erro": "Ano e mês inválidos"}), 400
+
     _, num_dias = calendar.monthrange(ano_int, mes_int)
 
     dias_lista = list(range(1, num_dias + 1))
@@ -459,7 +462,7 @@ def api_historico_consulta():
     pressao_max_lista = [0.0] * num_dias
 
     total_chuva = 0.0
-    max_temp = 0.0
+    max_temp = None
     min_temp = None
     max_vento = 0.0
 
@@ -504,7 +507,7 @@ def api_historico_consulta():
         pressao_max_lista[dia_idx] = p_max
 
         total_chuva += chuva_dia
-        if t_max > max_temp:
+        if row["temp_max"] is not None and (max_temp is None or t_max > max_temp):
             max_temp = t_max
         if row["temp_min"] is not None and (min_temp is None or t_min < min_temp):
             min_temp = t_min
@@ -513,6 +516,8 @@ def api_historico_consulta():
 
     if min_temp is None:
         min_temp = 0.0
+    if max_temp is None:
+        max_temp = 0.0
 
     return jsonify(
         {

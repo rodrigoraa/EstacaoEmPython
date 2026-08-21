@@ -32,6 +32,24 @@ O acesso a `/previsao` nunca coleta uma nova leitura oficial nem grava em `leitu
 
 O estado de alertas mantém a precedência `SQLite -> alert_state.json legado -> default`.
 
+### Topologia pública confiável
+
+```text
+Internet
+  ↓
+Cloudflare
+  ↓
+cloudflared
+  ↓
+Nginx
+  ↓
+Gunicorn
+  ↓
+Flask
+```
+
+Nessa topologia, o Gunicorn permanece em endereço local e não recebe conexões diretas da internet. Use `TRUST_PROXY=true` somente quando esse caminho estiver garantido e o proxy confiável sobrescrever os cabeçalhos `X-Forwarded-*`; caso contrário, mantenha `false` para impedir que o cliente forje esquema, host ou IP.
+
 ## Instalação
 
 Requer Python 3.11 ou 3.12 em produção. Python 3.13 também é exercitado localmente, mas confirme a versão do servidor antes de mudá-la.
@@ -58,14 +76,16 @@ Use variáveis do processo ou `.env` não versionado. Nenhum segredo real deve e
 | `ADMIN_PASSWORD_HASH` | vazio | uma senha em produção | hash bcrypt preferido |
 | `ADMIN_PASSWORD` | vazio | uma senha em produção | fallback de senha administrativa |
 | `WEBHOOK_SECRET` | vazio | sim em produção | HMAC SHA-256 dos webhooks |
-| `PUBLIC_BASE_URL` | `http://meteo.eesjv.com.br` | recomendada | origem confiável de links enviados |
+| `PUBLIC_BASE_URL` | fallback HTTP apenas em desenvolvimento | sim em produção | origem pública absoluta dos links enviados |
 | `SESSION_COOKIE_SECURE` | `false` | não | defina `true` somente com HTTPS |
 | `SESSION_TIMEOUT_MINUTES` | `30` | não | expiração administrativa |
 | `TRUST_PROXY` | `false` | não | confia em um salto de proxy reverso |
 | `HSTS_ENABLED` | `false` | não | HSTS; habilite apenas após HTTPS validado |
 | `LOG_LEVEL` | `INFO` | não | nível de logging |
 
-Ative `TRUST_PROXY=true` somente quando a aplicação aceitar tráfego exclusivamente de um nginx/Cloudflare confiável que sobrescreva os cabeçalhos encaminhados. Não exponha o Gunicorn diretamente à internet nessa configuração.
+Em produção, configure explicitamente `PUBLIC_BASE_URL=https://SEU_DOMINIO` depois de validar o certificado e todo o caminho HTTPS. A aplicação recusa iniciar sem essa variável. Configure também `SESSION_COOKIE_SECURE=true`; enquanto ela permanecer `false`, o startup registra um aviso, sem impedir uma transição operacional controlada.
+
+Ative `TRUST_PROXY=true` somente quando a aplicação aceitar tráfego exclusivamente da cadeia confiável acima, que deve sobrescrever os cabeçalhos encaminhados. Não exponha o Gunicorn diretamente à internet nessa configuração.
 
 ### Banco e health
 
@@ -83,6 +103,7 @@ Ative `TRUST_PROXY=true` somente quando a aplicação aceitar tráfego exclusiva
 | `RATELIMIT_STORAGE_URI` | `memory://` | não | backend; use Redis se precisar de limite global |
 | `RATELIMIT_KEY_PREFIX` | `estacao` | não | namespace das chaves |
 | `PUBLIC_CADASTRO_RATE_LIMIT` | `60 per hour` | não | cadastro público |
+| `SIGNUP_RESEND_RATE_LIMIT` | `5 per hour` | não | reenvios de confirmação pendente por IP |
 
 `memory://` é adequado ao desenvolvimento. Em múltiplos workers, cada processo tem seu próprio contador; produção em escala deve apontar para Redis já administrado, sem tornar Redis requisito do projeto.
 
@@ -148,10 +169,17 @@ Não há `DROP`, reconstrução, exclusão, `VACUUM` ou backfill massivo. O defa
 
 Para timestamps não nulos, novas leituras consultam pontualmente a chave lógica `(origem, station_timestamp_ms)` dentro de `BEGIN IMMEDIATE`. Se já existir, o ID é reutilizado e o updater não cria histórico/processamento duplicado. Duplicidades históricas não são apagadas nem modificadas.
 
-Auditoria manual, potencialmente pesada:
+Antes de habilitar a deduplicação em escala, audite as duplicidades em uma janela controlada. A auditoria é manual e pode ser pesada:
 
 ```bash
 python -m estacao.workers.maintenance --audit-duplicates
+```
+
+O mesmo comando no formato legado, executado a partir do diretório `estacao`, é:
+
+```bash
+cd estacao
+python workers/maintenance.py --audit-duplicates
 ```
 
 ### Índices
@@ -163,6 +191,15 @@ python -m estacao.workers.maintenance --create-indexes
 ```
 
 Esse comando pode manter lock de escrita enquanto o SQLite constrói cada índice. Não o inclua no deploy normal.
+
+Formato legado, a partir do diretório `estacao`:
+
+```bash
+cd estacao
+python workers/maintenance.py --create-indexes
+```
+
+Em banco de produção existente, primeiro execute a auditoria e revise o resultado; só depois crie os índices em uma janela controlada. Nenhum desses comandos é executado automaticamente pelo startup ou pelo deploy.
 
 ## Backup consistente
 

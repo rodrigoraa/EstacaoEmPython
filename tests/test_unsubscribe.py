@@ -87,6 +87,18 @@ class CancelamentoAlertasTest(unittest.TestCase):
         conn.close()
         return eventos
 
+    def usuario_por_telefone(self, telefone):
+        conn = self.abrir_banco()
+        usuario = conn.execute(
+            """
+            SELECT id, nome, telefone, endereco, receber_whatsapp, status_cadastro
+            FROM usuarios WHERE telefone = ?
+            """,
+            (telefone,),
+        ).fetchone()
+        conn.close()
+        return usuario
+
     def test_get_com_telefone_nao_remove_usuario(self):
         self.cadastrar_usuario()
 
@@ -162,6 +174,9 @@ class CancelamentoAlertasTest(unittest.TestCase):
         self.assertEqual(self.total_usuarios(), 0)
 
     def test_falha_da_evolution_preserva_cadastro_pendente(self):
+        self.public_module.enviar_link_confirmacao_whatsapp = (
+            lambda *_args: (_ for _ in ()).throw(RuntimeError("indisponível"))
+        )
         resposta = self.client.post(
             "/",
             data={
@@ -179,6 +194,165 @@ class CancelamentoAlertasTest(unittest.TestCase):
             [evento["acao"] for evento in self.eventos_cadastro()],
             ["cadastro"],
         )
+
+    def test_cadastro_pendente_repetido_reenvia_sem_alterar_usuario(self):
+        envios = []
+        self.public_module.enviar_link_confirmacao_whatsapp = (
+            lambda numero, link: envios.append((numero, link))
+        )
+        primeiro = {
+            "nome": "Maria Original",
+            "telefone": "(67) 99999-9999",
+            "endereco": "Linha Original",
+            "whatsapp": "1",
+        }
+        repetido = {
+            "nome": "Nome Alterado",
+            "telefone": "(67) 99999-9999",
+            "endereco": "Endereço Alterado",
+            "whatsapp": "1",
+        }
+
+        self.client.post("/", data=primeiro)
+        resposta = self.client.post("/", data=repetido)
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Se o número estiver".encode("utf-8"), resposta.data)
+        self.assertEqual(self.total_usuarios(), 1)
+        usuario = self.usuario_por_telefone("67999999999")
+        self.assertEqual(usuario["nome"], "Maria Original")
+        self.assertEqual(usuario["endereco"], "Linha Original")
+        self.assertEqual(usuario["receber_whatsapp"], 0)
+        self.assertEqual(usuario["status_cadastro"], "pendente")
+        self.assertEqual(len(envios), 2)
+        primeiro_token = parse_qs(urlparse(envios[0][1]).query)["token"][0]
+        segundo_token = parse_qs(urlparse(envios[1][1]).query)["token"][0]
+        self.assertNotEqual(primeiro_token, segundo_token)
+        self.assertEqual(
+            self.signup_tokens.validar_token_confirmacao(segundo_token),
+            (usuario["id"], "67999999999"),
+        )
+        self.assertEqual(
+            [evento["acao"] for evento in self.eventos_cadastro()],
+            ["cadastro", "confirmacao_reenviada"],
+        )
+
+    def test_cadastro_ativo_repetido_nao_reenvia_confirmacao(self):
+        self.cadastrar_usuario()
+        envios = []
+        self.public_module.enviar_link_confirmacao_whatsapp = (
+            lambda numero, link: envios.append((numero, link))
+        )
+
+        resposta = self.client.post(
+            "/",
+            data={
+                "nome": "Nome Alterado",
+                "telefone": "(67) 99999-9999",
+                "endereco": "Endereço Alterado",
+                "whatsapp": "1",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Se o número estiver".encode("utf-8"), resposta.data)
+        self.assertEqual(envios, [])
+        self.assertEqual(self.total_usuarios(), 1)
+        usuario = self.usuario_por_telefone("67999999999")
+        self.assertEqual(usuario["nome"], "Maria")
+        self.assertEqual(usuario["endereco"], "Linha 1")
+        self.assertEqual(usuario["receber_whatsapp"], 1)
+        self.assertEqual(usuario["status_cadastro"], "ativo")
+        self.assertEqual(
+            [evento["acao"] for evento in self.eventos_cadastro()],
+            ["cadastro_duplicado"],
+        )
+
+    def test_falha_no_reenvio_mantem_pendente_e_resposta_generica(self):
+        conn = self.abrir_banco()
+        conn.execute(
+            """
+            INSERT INTO usuarios (
+                nome, telefone, endereco, receber_whatsapp, ativo, status_cadastro
+            ) VALUES ('Ana', '67977776666', 'Linha 3', 0, 1, 'pendente')
+            """
+        )
+        conn.commit()
+        conn.close()
+        self.public_module.enviar_link_confirmacao_whatsapp = (
+            lambda *_args: (_ for _ in ()).throw(RuntimeError("indisponível"))
+        )
+
+        resposta = self.client.post(
+            "/",
+            data={
+                "nome": "Ana Alterada",
+                "telefone": "(67) 97777-6666",
+                "endereco": "Outra linha",
+                "whatsapp": "1",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Se o número estiver".encode("utf-8"), resposta.data)
+        self.assertEqual(self.total_usuarios(), 1)
+        usuario = self.usuario_por_telefone("67977776666")
+        self.assertEqual(usuario["nome"], "Ana")
+        self.assertEqual(usuario["receber_whatsapp"], 0)
+        self.assertEqual(usuario["status_cadastro"], "pendente")
+        self.assertEqual(
+            [evento["acao"] for evento in self.eventos_cadastro()],
+            ["confirmacao_reenvio_falhou"],
+        )
+
+    def test_limite_de_reenvio_tem_padrao_conservador(self):
+        self.assertEqual(self.public_module.SIGNUP_RESEND_RATE_LIMIT, "5 per hour")
+
+    def test_limite_de_reenvio_bloqueia_sexta_tentativa_do_ip(self):
+        conn = self.abrir_banco()
+        conn.execute(
+            """
+            INSERT INTO usuarios (
+                nome, telefone, endereco, receber_whatsapp, ativo, status_cadastro
+            ) VALUES ('Bia', '67966665555', 'Linha 4', 0, 1, 'pendente')
+            """
+        )
+        conn.commit()
+        conn.close()
+        envios = []
+        self.public_module.enviar_link_confirmacao_whatsapp = (
+            lambda numero, link: envios.append((numero, link))
+        )
+
+        app_limitado = Flask(
+            __name__,
+            template_folder=str(ESTACAO_DIR / "templates"),
+            static_folder=str(ESTACAO_DIR / "static"),
+        )
+        app_limitado.config.update(
+            SECRET_KEY="segredo-teste",
+            SERVER_NAME="meteo.test",
+            TESTING=True,
+            RATELIMIT_ENABLED=True,
+            RATELIMIT_STORAGE_URI="memory://",
+            RATELIMIT_KEY_PREFIX=f"reenvio-{self.tmp.name}",
+        )
+        self.extensions.limiter.init_app(app_limitado)
+        app_limitado.register_blueprint(self.public_module.public_routes)
+        client = app_limitado.test_client()
+        dados = {
+            "nome": "Bia",
+            "telefone": "(67) 96666-5555",
+            "endereco": "Linha 4",
+            "whatsapp": "1",
+        }
+
+        respostas = [client.post("/", data=dados) for _ in range(6)]
+
+        self.assertEqual([resposta.status_code for resposta in respostas[:5]], [200] * 5)
+        self.assertEqual(respostas[5].status_code, 429)
+        self.assertEqual(len(envios), 5)
+        self.assertEqual(self.total_usuarios(), 1)
 
     def test_confirmacao_valida_e_idempotente_ativa_whatsapp(self):
         conn = self.abrir_banco()

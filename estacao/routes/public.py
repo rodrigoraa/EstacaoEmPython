@@ -2,7 +2,7 @@ import os
 import logging
 import sqlite3
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, g, render_template, request
 
 import database
 from extensions import limiter
@@ -26,7 +26,12 @@ from unsubscribe_tokens import (
 
 public_routes = Blueprint("public", __name__)
 PUBLIC_CADASTRO_RATE_LIMIT = os.environ.get("PUBLIC_CADASTRO_RATE_LIMIT", "60 per hour")
+SIGNUP_RESEND_RATE_LIMIT = os.environ.get("SIGNUP_RESEND_RATE_LIMIT", "5 per hour")
 logger = logging.getLogger(__name__)
+
+
+def deduzir_rate_limit_reenvio(_response):
+    return bool(getattr(g, "signup_confirmation_resent", False))
 
 
 def corrigir_texto_env(texto):
@@ -63,7 +68,8 @@ def buscar_usuario_por_telefone(conn, telefone):
     telefone_sem_55, telefone_com_55 = variantes_telefone(telefone)
     usuario = conn.execute(
         """
-        SELECT id, nome, telefone, endereco, receber_whatsapp
+        SELECT id, nome, telefone, endereco, receber_whatsapp,
+               ativo, status_cadastro
         FROM usuarios
         WHERE telefone = ? OR telefone = ?
         LIMIT 1
@@ -96,6 +102,12 @@ def enviar_link_confirmacao_whatsapp(numero, link_confirmacao):
     enviar_whatsapp(numero, mensagem)
 
 
+def enviar_confirmacao_cadastro(usuario_id, telefone):
+    token = gerar_token_confirmacao(usuario_id, telefone)
+    link = public_url(f"signup/confirm?token={token}")
+    enviar_link_confirmacao_whatsapp(telefone_com_codigo_pais(telefone), link)
+
+
 def obter_ultima_leitura_persistida():
     conn = database.get_db()
     try:
@@ -122,6 +134,11 @@ def obter_ultima_leitura_persistida():
 
 @public_routes.route("/", methods=["GET", "POST"])
 @limiter.limit(PUBLIC_CADASTRO_RATE_LIMIT, methods=["POST"])
+@limiter.limit(
+    SIGNUP_RESEND_RATE_LIMIT,
+    methods=["POST"],
+    deduct_when=deduzir_rate_limit_reenvio,
+)
 def index():
     mensagem = ""
 
@@ -164,12 +181,8 @@ def index():
                 )
                 conn.commit()
                 if receber_whatsapp:
-                    token = gerar_token_confirmacao(usuario_id, telefone)
-                    link = public_url(f"signup/confirm?token={token}")
                     try:
-                        enviar_link_confirmacao_whatsapp(
-                            telefone_com_codigo_pais(telefone), link
-                        )
+                        enviar_confirmacao_cadastro(usuario_id, telefone)
                         mensagem = "✅ Cadastro pendente. Confira seu WhatsApp para confirmar."
                     except Exception as erro:
                         logger.error(
@@ -184,17 +197,49 @@ def index():
                 else:
                     mensagem = "✅ Cadastro realizado com sucesso!"
             except sqlite3.IntegrityError:
+                conn.rollback()
+                usuario, _, _ = buscar_usuario_por_telefone(conn, telefone)
+                cadastro_pendente = bool(
+                    usuario
+                    and usuario["status_cadastro"] == "pendente"
+                    and receber_whatsapp
+                )
+
+                if cadastro_pendente:
+                    g.signup_confirmation_resent = True
+                    try:
+                        enviar_confirmacao_cadastro(usuario["id"], usuario["telefone"])
+                        acao = "confirmacao_reenviada"
+                        detalhe = "Novo link de confirmacao solicitado pelo site"
+                    except Exception as erro:
+                        logger.error(
+                            "Falha ao reenviar confirmacao para %s: %s",
+                            mascarar_telefone(usuario["telefone"]),
+                            erro_externo_seguro(erro),
+                        )
+                        acao = "confirmacao_reenvio_falhou"
+                        detalhe = "Reenvio solicitado, mas o provedor estava indisponivel"
+                else:
+                    acao = "cadastro_duplicado"
+                    detalhe = "Numero ja cadastrado; nenhum token enviado"
+
                 database.registrar_cadastro_evento(
                     conn,
-                    "cadastro_duplicado",
-                    nome=nome,
-                    telefone=telefone,
-                    endereco=endereco,
-                    receber_whatsapp=receber_whatsapp,
-                    detalhe="Numero ja cadastrado",
+                    acao,
+                    usuario_id=usuario["id"] if usuario else None,
+                    nome=usuario["nome"] if usuario else nome,
+                    telefone=usuario["telefone"] if usuario else telefone,
+                    endereco=usuario["endereco"] if usuario else endereco,
+                    receber_whatsapp=(
+                        usuario["receber_whatsapp"] if usuario else receber_whatsapp
+                    ),
+                    detalhe=detalhe,
                 )
                 conn.commit()
-                mensagem = "⚠️ Número já cadastrado!"
+                mensagem = (
+                    "ℹ️ Se o número estiver com confirmação pendente, enviaremos um "
+                    "novo link. Se já estiver ativo, nenhuma ação é necessária."
+                )
             finally:
                 conn.close()
 

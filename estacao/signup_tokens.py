@@ -1,3 +1,5 @@
+import secrets
+
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from config import env_int, env_str
@@ -22,7 +24,13 @@ def _serializer():
 
 
 def gerar_token_confirmacao(usuario_id, telefone):
-    return _serializer().dumps({"usuario_id": int(usuario_id), "telefone": str(telefone)})
+    return _serializer().dumps(
+        {
+            "usuario_id": int(usuario_id),
+            "telefone": str(telefone),
+            "nonce": secrets.token_urlsafe(8),
+        }
+    )
 
 
 def validar_token_confirmacao(token):

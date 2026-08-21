@@ -1,5 +1,6 @@
 import argparse
 import os
+import logging
 import sqlite3
 import sys
 import time
@@ -11,19 +12,21 @@ sys.path.insert(0, BASE_DIR)
 import database
 from services.whatsapp_service import enviar_whatsapp
 from time_utils import agora_local
+from config import env_int
+from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
 
 
-INTERVALO_ENVIO_USUARIOS = int(os.environ.get("INTERVALO_ENVIO_USUARIOS", "20"))
-INTERVALO_SEM_FILA = int(os.environ.get("INTERVALO_WHATSAPP_SEM_FILA", "5"))
-ENVIANDO_EXPIRADO_MINUTOS = int(os.environ.get("WHATSAPP_ENVIANDO_EXPIRADO_MINUTOS", "10"))
-WHATSAPP_WORKERS = max(1, int(os.environ.get("WHATSAPP_WORKERS", "3")))
-MAX_TENTATIVAS = max(1, int(os.environ.get("WHATSAPP_MAX_TENTATIVAS", "4")))
+INTERVALO_ENVIO_USUARIOS = env_int("INTERVALO_ENVIO_USUARIOS", 20)
+INTERVALO_SEM_FILA = env_int("INTERVALO_WHATSAPP_SEM_FILA", 5)
+ENVIANDO_EXPIRADO_MINUTOS = env_int("WHATSAPP_ENVIANDO_EXPIRADO_MINUTOS", 10)
+WHATSAPP_WORKERS = max(1, env_int("WHATSAPP_WORKERS", 3))
+MAX_TENTATIVAS = max(1, env_int("WHATSAPP_MAX_TENTATIVAS", 4))
 ATRASOS_RETRY = (60, 300, 900, 1800)
+logger = logging.getLogger(__name__)
 
 
 def log(mensagem):
-    agora = agora_local().strftime("%d/%m %H:%M:%S")
-    print(f"[{agora}] {mensagem}", flush=True)
+    logger.info(mensagem)
 
 
 def garantir_estruturas(conn):
@@ -216,7 +219,10 @@ def processar_um_envio(retry_failed=False):
             marcar_falhou(conn, item, str(erro))
         finally:
             conn.close()
-        log(f"❌ Falha ao enviar alerta para {item['nome']} ({item['telefone']}): {erro}")
+        log(
+            "❌ Falha ao enviar alerta para "
+            f"{mascarar_nome(item['nome'])} ({mascarar_telefone(item['telefone'])}): {erro}"
+        )
         return "falhou"
 
     conn = database.get_db()
@@ -224,7 +230,10 @@ def processar_um_envio(retry_failed=False):
         marcar_enviado(conn, item)
     finally:
         conn.close()
-    log(f"✅ Alerta enviado para {item['nome']} ({item['telefone']})")
+    log(
+        "✅ Alerta enviado para "
+        f"{mascarar_nome(item['nome'])} ({mascarar_telefone(item['telefone'])})"
+    )
     return "enviado"
 
 
@@ -312,6 +321,7 @@ def main():
 
 
 if __name__ == "__main__":
+    configurar_logging()
     try:
         main()
     except sqlite3.Error as erro:

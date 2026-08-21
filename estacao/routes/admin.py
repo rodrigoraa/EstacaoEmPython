@@ -23,15 +23,9 @@ from extensions import limiter
 from time_utils import agora_local as agora_local
 from time_utils import formatar_local, minutos_desde
 from unsubscribe_tokens import normalizar_telefone
+from config import env_str
 
 admin_routes = Blueprint("admin", __name__)
-
-SENHA_ADMIN = os.environ.get("ADMIN_PASSWORD")
-SENHA_ADMIN_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
-
-if not SENHA_ADMIN and not SENHA_ADMIN_HASH:
-    raise RuntimeError("ADMIN_PASSWORD ou ADMIN_PASSWORD_HASH não configurado")
-
 
 def gerar_csrf_token():
     token = session.get("csrf_token")
@@ -59,17 +53,19 @@ def validar_csrf():
 
 def senha_admin_valida(senha):
     senha = senha or ""
+    senha_admin = env_str("ADMIN_PASSWORD")
+    senha_admin_hash = env_str("ADMIN_PASSWORD_HASH")
 
-    if SENHA_ADMIN_HASH:
+    if senha_admin_hash:
         try:
-            return bcrypt.checkpw(senha.encode("utf-8"), SENHA_ADMIN_HASH.encode("utf-8"))
+            return bcrypt.checkpw(senha.encode("utf-8"), senha_admin_hash.encode("utf-8"))
         except ValueError:
             return False
 
-    if not SENHA_ADMIN:
+    if not senha_admin:
         return False
 
-    return hmac.compare_digest(senha, SENHA_ADMIN)
+    return hmac.compare_digest(senha, senha_admin)
 
 
 def admin_autenticado():
@@ -209,6 +205,7 @@ def resumo_usuarios_admin(conn):
             FROM usuarios
             WHERE (ativo = 1 OR ativo IS NULL)
             AND receber_whatsapp = 1
+            AND (status_cadastro = 'ativo' OR status_cadastro IS NULL)
             """
         ).fetchone()[0],
         "usuarios_pausados": conn.execute(

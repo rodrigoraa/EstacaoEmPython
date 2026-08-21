@@ -5,9 +5,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from flask import Flask
+from itsdangerous import SignatureExpired
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,11 +25,13 @@ class CancelamentoAlertasTest(unittest.TestCase):
 
         import database
         import extensions
+        import signup_tokens
         import routes.public as public_module
         import unsubscribe_tokens
 
         self.database = importlib.reload(database)
         self.extensions = importlib.reload(extensions)
+        self.signup_tokens = importlib.reload(signup_tokens)
         self.public_module = importlib.reload(public_module)
         self.unsubscribe_tokens = importlib.reload(unsubscribe_tokens)
         self.database.init_db()
@@ -92,7 +96,11 @@ class CancelamentoAlertasTest(unittest.TestCase):
         self.assertIn("Confirmação necessária".encode("utf-8"), resposta.data)
         self.assertEqual(self.total_usuarios(), 1)
 
-    def test_cadastro_com_whatsapp_nao_envia_confirmacao(self):
+    def test_cadastro_com_whatsapp_fica_pendente_e_envia_confirmacao(self):
+        envios = []
+        self.public_module.enviar_link_confirmacao_whatsapp = (
+            lambda numero, link: envios.append((numero, link))
+        )
         resposta = self.client.post(
             "/",
             data={
@@ -104,17 +112,24 @@ class CancelamentoAlertasTest(unittest.TestCase):
         )
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
+        self.assertIn("Cadastro pendente".encode("utf-8"), resposta.data)
 
         conn = self.abrir_banco()
         usuario = conn.execute(
-            "SELECT nome, telefone, receber_whatsapp FROM usuarios"
+            "SELECT id, nome, telefone, receber_whatsapp, status_cadastro FROM usuarios"
         ).fetchone()
         conn.close()
 
         self.assertEqual(usuario["nome"], "Maria")
         self.assertEqual(usuario["telefone"], "67999999999")
-        self.assertEqual(usuario["receber_whatsapp"], 1)
+        self.assertEqual(usuario["receber_whatsapp"], 0)
+        self.assertEqual(usuario["status_cadastro"], "pendente")
+        self.assertEqual(envios[0][0], "5567999999999")
+        token = parse_qs(urlparse(envios[0][1]).query)["token"][0]
+        self.assertEqual(
+            self.signup_tokens.validar_token_confirmacao(token),
+            (usuario["id"], "67999999999"),
+        )
         self.assertEqual(
             [evento["acao"] for evento in self.eventos_cadastro()],
             ["cadastro"],
@@ -137,7 +152,16 @@ class CancelamentoAlertasTest(unittest.TestCase):
             ["cadastro"],
         )
 
-    def test_cadastro_com_whatsapp_nao_depende_da_evolution(self):
+    def test_cadastro_rejeita_telefone_invalido(self):
+        resposta = self.client.post(
+            "/",
+            data={"nome": "Joao", "telefone": "123", "endereco": "Linha 2"},
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("Preencha todos os campos".encode("utf-8"), resposta.data)
+        self.assertEqual(self.total_usuarios(), 0)
+
+    def test_falha_da_evolution_preserva_cadastro_pendente(self):
         resposta = self.client.post(
             "/",
             data={
@@ -149,12 +173,66 @@ class CancelamentoAlertasTest(unittest.TestCase):
         )
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertIn("Cadastro realizado com sucesso".encode("utf-8"), resposta.data)
+        self.assertIn("Cadastro salvo como pendente".encode("utf-8"), resposta.data)
         self.assertEqual(self.total_usuarios(), 1)
         self.assertEqual(
             [evento["acao"] for evento in self.eventos_cadastro()],
             ["cadastro"],
         )
+
+    def test_confirmacao_valida_e_idempotente_ativa_whatsapp(self):
+        conn = self.abrir_banco()
+        cursor = conn.execute(
+            """
+            INSERT INTO usuarios (
+                nome, telefone, endereco, receber_whatsapp, ativo, status_cadastro
+            ) VALUES ('Maria', '67999999999', 'Linha 1', 0, 1, 'pendente')
+            """
+        )
+        usuario_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        token = self.signup_tokens.gerar_token_confirmacao(usuario_id, "67999999999")
+
+        primeira = self.client.get(f"/signup/confirm?token={token}")
+        segunda = self.client.get(f"/signup/confirm?token={token}")
+
+        self.assertEqual(primeira.status_code, 200)
+        self.assertEqual(segunda.status_code, 200)
+        conn = self.abrir_banco()
+        usuario = conn.execute(
+            "SELECT receber_whatsapp, status_cadastro, confirmado_em FROM usuarios WHERE id = ?",
+            (usuario_id,),
+        ).fetchone()
+        eventos = conn.execute(
+            "SELECT COUNT(*) FROM cadastro_eventos WHERE acao = 'cadastro_confirmado'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(usuario["receber_whatsapp"], 1)
+        self.assertEqual(usuario["status_cadastro"], "ativo")
+        self.assertIsNotNone(usuario["confirmado_em"])
+        self.assertEqual(eventos, 1)
+
+    def test_confirmacao_invalida_e_usuario_inexistente(self):
+        invalida = self.client.get("/signup/confirm?token=invalido")
+        token = self.signup_tokens.gerar_token_confirmacao(999, "67999999999")
+        inexistente = self.client.get(f"/signup/confirm?token={token}")
+
+        self.assertEqual(invalida.status_code, 400)
+        self.assertEqual(inexistente.status_code, 404)
+
+    def test_confirmacao_expirada(self):
+        class SerializerExpirado:
+            def loads(self, *args, **kwargs):
+                raise SignatureExpired("expirado")
+
+        with patch.object(
+            self.signup_tokens, "_serializer", return_value=SerializerExpirado()
+        ):
+            resposta = self.client.get("/signup/confirm?token=token-expirado")
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertIn("Link expirado".encode("utf-8"), resposta.data)
 
     def test_token_get_confirma_e_post_remove_usuario(self):
         self.cadastrar_usuario()

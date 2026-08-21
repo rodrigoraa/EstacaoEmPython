@@ -1,8 +1,10 @@
 import json
+import logging
 import sqlite3
 import time
 
 import database
+from logging_utils import erro_externo_seguro
 from time_utils import (
     de_timestamp_ms_utc,
     iso_local,
@@ -12,6 +14,7 @@ from time_utils import (
 
 
 _SCHEMA_GARANTIDO = False
+logger = logging.getLogger(__name__)
 
 
 def garantir_schema():
@@ -95,10 +98,15 @@ def registrar_log_persistencia(nivel, origem, mensagem, detalhe=None):
         finally:
             conn.close()
     except Exception as erro:
-        print(f"[persistencia] falha ao registrar log: {erro}", flush=True)
+        logger.error("Falha ao registrar log de persistencia: %s", erro_externo_seguro(erro))
 
 
-def salvar_leitura_bruta(raw, dados_convertidos=None, origem="ambientweather"):
+def salvar_leitura_bruta(
+    raw,
+    dados_convertidos=None,
+    origem="ambientweather",
+    retornar_status=False,
+):
     garantir_schema()
 
     recebido_em = agora_iso()
@@ -120,6 +128,22 @@ def salvar_leitura_bruta(raw, dados_convertidos=None, origem="ambientweather"):
     def operacao():
         conn = database.get_db()
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            if station_timestamp_ms is not None:
+                existente = conn.execute(
+                    """
+                    SELECT id
+                    FROM leituras_brutas
+                    WHERE origem = ? AND station_timestamp_ms = ?
+                    LIMIT 1
+                    """,
+                    (origem, station_timestamp_ms),
+                ).fetchone()
+                if existente:
+                    conn.commit()
+                    resultado = (existente["id"], False)
+                    return resultado if retornar_status else existente["id"]
+
             # Persistencia critica: todo dado recebido da estacao entra no banco
             # antes de qualquer alerta, cache, resumo diario ou processamento lento.
             cursor = conn.execute(
@@ -159,7 +183,8 @@ def salvar_leitura_bruta(raw, dados_convertidos=None, origem="ambientweather"):
                 ),
             )
             conn.commit()
-            return cursor.lastrowid
+            resultado = (cursor.lastrowid, True)
+            return resultado if retornar_status else cursor.lastrowid
         except Exception:
             conn.rollback()
             raise

@@ -1,5 +1,6 @@
 import argparse
 import os
+import logging
 import sys
 import time
 
@@ -9,11 +10,14 @@ sys.path.insert(0, BASE_DIR)
 import database
 from services.whatsapp_service import enviar_whatsapp
 from unsubscribe_tokens import telefone_com_codigo_pais
+from config import env_int, public_base_url
+from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
 
 
-PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br").rstrip("/")
+PUBLIC_BASE_URL = public_base_url()
 DEFAULT_CAMPAIGN_ID = "adicionar_contato_whatsapp_2026_06"
-DEFAULT_INTERVALO = int(os.environ.get("INTERVALO_CAMPANHA_WHATSAPP", "10"))
+DEFAULT_INTERVALO = env_int("INTERVALO_CAMPANHA_WHATSAPP", 10)
+logger = logging.getLogger(__name__)
 
 DEFAULT_MESSAGE = """Olá, {nome}!
 
@@ -29,7 +33,7 @@ Os alertas são enviados somente para quem solicitou receber. Para cancelar, ace
 
 
 def log(mensagem):
-    print(mensagem, flush=True)
+    logger.info(mensagem)
 
 
 def garantir_estruturas(conn):
@@ -58,6 +62,7 @@ def listar_destinatarios(conn):
         FROM usuarios
         WHERE (ativo = 1 OR ativo IS NULL)
         AND receber_whatsapp = 1
+        AND (status_cadastro = 'ativo' OR status_cadastro IS NULL)
         ORDER BY id
         """
     ).fetchall()
@@ -162,22 +167,34 @@ def enviar_campanha(campanha_id, template, intervalo, confirmar=False, limite=No
 
         if deve_pular_envio(registro, retry_failed=retry_failed):
             pulados += 1
-            log(f"Pulando {usuario['nome']} ({telefone}): campanha ja registrada.")
+            log(
+                f"Pulando {mascarar_nome(usuario['nome'])} "
+                f"({mascarar_telefone(telefone)}): campanha ja registrada."
+            )
             continue
 
         if not confirmar:
-            log(f"[SIMULACAO] Enviaria para {usuario['nome']} ({telefone})")
+            log(
+                f"[SIMULACAO] Enviaria para {mascarar_nome(usuario['nome'])} "
+                f"({mascarar_telefone(telefone)})"
+            )
             continue
 
         try:
             enviar_whatsapp(telefone, mensagem)
             salvar_envio(conn, campanha_id, usuario, telefone, "enviado", mensagem)
             enviados += 1
-            log(f"Enviado para {usuario['nome']} ({telefone})")
+            log(
+                f"Enviado para {mascarar_nome(usuario['nome'])} "
+                f"({mascarar_telefone(telefone)})"
+            )
         except Exception as erro:
             salvar_envio(conn, campanha_id, usuario, telefone, "falhou", mensagem, str(erro))
             falhas += 1
-            log(f"Falha para {usuario['nome']} ({telefone}): {erro}")
+            log(
+                f"Falha para {mascarar_nome(usuario['nome'])} "
+                f"({mascarar_telefone(telefone)}): {erro}"
+            )
 
         if indice < total - 1:
             time.sleep(intervalo)
@@ -229,4 +246,5 @@ def main():
 
 
 if __name__ == "__main__":
+    configurar_logging()
     main()

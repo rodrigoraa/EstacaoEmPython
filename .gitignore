@@ -1,4 +1,6 @@
 *.db
+*.db-*
+*.sqlite
 *.sqlite3
 
 alert_state.json
@@ -18,3 +20,4 @@ __pycache__/
 *.so
 
 *.log
+node_modules/

@@ -1,11 +1,20 @@
 import os
+import logging
 import sqlite3
 
-from flask import Blueprint, render_template, request, url_for
+from flask import Blueprint, render_template, request
 
 import database
 from extensions import limiter
-from services.weather_service import obter_dados, obter_previsao
+from config import env_str, public_url
+from logging_utils import erro_externo_seguro, mascarar_telefone
+from services.weather_service import obter_previsao
+from signup_tokens import (
+    TokenConfirmacaoExpirado,
+    TokenConfirmacaoInvalido,
+    gerar_token_confirmacao,
+    validar_token_confirmacao,
+)
 from unsubscribe_tokens import (
     TokenCancelamentoExpirado,
     TokenCancelamentoInvalido,
@@ -17,6 +26,7 @@ from unsubscribe_tokens import (
 
 public_routes = Blueprint("public", __name__)
 PUBLIC_CADASTRO_RATE_LIMIT = os.environ.get("PUBLIC_CADASTRO_RATE_LIMIT", "60 per hour")
+logger = logging.getLogger(__name__)
 
 
 def corrigir_texto_env(texto):
@@ -75,6 +85,41 @@ def enviar_link_cancelamento_whatsapp(numero, link_cancelamento):
     enviar_whatsapp(numero, mensagem)
 
 
+def enviar_link_confirmacao_whatsapp(numero, link_confirmacao):
+    from services.whatsapp_service import enviar_whatsapp
+
+    mensagem = (
+        "Confirme seu cadastro nos alertas meteorológicos da EE São José.\n\n"
+        f"Acesse: {link_confirmacao}\n\n"
+        "Se você não solicitou, ignore esta mensagem."
+    )
+    enviar_whatsapp(numero, mensagem)
+
+
+def obter_ultima_leitura_persistida():
+    conn = database.get_db()
+    try:
+        row = conn.execute(
+            """
+            SELECT temp, sensacao, umidade, pressao, uv, radiacao,
+                   vento_vel, vento_rajada, vento_dir,
+                   chuva_rate, chuva_evento, chuva_hoje,
+                   station_timestamp_ms, station_data_hora_local
+            FROM historico_clima
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if not row:
+            return None
+        dados = dict(row)
+        dados["vento"] = dados.pop("vento_vel")
+        dados["rajada"] = dados.pop("vento_rajada")
+        return dados
+    finally:
+        conn.close()
+
+
 @public_routes.route("/", methods=["GET", "POST"])
 @limiter.limit(PUBLIC_CADASTRO_RATE_LIMIT, methods=["POST"])
 def index():
@@ -89,16 +134,22 @@ def index():
 
         telefone = normalizar_telefone(telefone)
 
-        if not nome or not telefone or not endereco:
+        if not nome or not endereco or not 10 <= len(telefone) <= 13:
             mensagem = "❌ Preencha todos os campos!"
         else:
             conn = database.get_db()
             cursor = conn.cursor()
 
             try:
+                status_cadastro = "pendente" if receber_whatsapp else "ativo"
+                receber_inicial = 0
                 cursor.execute(
-                    "INSERT INTO usuarios (nome, telefone, endereco, receber_whatsapp) VALUES (?, ?, ?, ?)",
-                    (nome, telefone, endereco, receber_whatsapp),
+                    """
+                    INSERT INTO usuarios (
+                        nome, telefone, endereco, receber_whatsapp, status_cadastro
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (nome, telefone, endereco, receber_inicial, status_cadastro),
                 )
                 usuario_id = cursor.lastrowid
                 database.registrar_cadastro_evento(
@@ -108,11 +159,30 @@ def index():
                     nome=nome,
                     telefone=telefone,
                     endereco=endereco,
-                    receber_whatsapp=receber_whatsapp,
-                    detalhe="Cadastro realizado pelo site",
+                    receber_whatsapp=receber_inicial,
+                    detalhe=f"Cadastro realizado pelo site; status={status_cadastro}",
                 )
                 conn.commit()
-                mensagem = "✅ Cadastro realizado com sucesso!"
+                if receber_whatsapp:
+                    token = gerar_token_confirmacao(usuario_id, telefone)
+                    link = public_url(f"signup/confirm?token={token}")
+                    try:
+                        enviar_link_confirmacao_whatsapp(
+                            telefone_com_codigo_pais(telefone), link
+                        )
+                        mensagem = "✅ Cadastro pendente. Confira seu WhatsApp para confirmar."
+                    except Exception as erro:
+                        logger.error(
+                            "Falha ao enviar confirmacao para %s: %s",
+                            mascarar_telefone(telefone),
+                            erro_externo_seguro(erro),
+                        )
+                        mensagem = (
+                            "⚠️ Cadastro salvo como pendente, mas não foi possível enviar "
+                            "a confirmação agora. Tente novamente mais tarde."
+                        )
+                else:
+                    mensagem = "✅ Cadastro realizado com sucesso!"
             except sqlite3.IntegrityError:
                 database.registrar_cadastro_evento(
                     conn,
@@ -152,7 +222,7 @@ def solicitar_cancelamento():
 
         if usuario:
             token = gerar_token_cancelamento(usuario["telefone"])
-            link_cancelamento = url_for("public.unsubscribe", token=token, _external=True)
+            link_cancelamento = public_url(f"unsubscribe?token={token}")
             enviar_link_cancelamento_whatsapp(telefone_com_55, link_cancelamento)
             database.registrar_cadastro_evento(
                 conn,
@@ -182,7 +252,7 @@ def solicitar_cancelamento():
             "#ef4444",
             "<i class='fa-solid fa-circle-xmark'></i>",
         )
-        print(f"Erro ao solicitar cancelamento: {e}")
+        logger.error("Erro ao solicitar cancelamento: %s", erro_externo_seguro(e))
         return render_template("unsubscribe.html", estado=estado), 500
     finally:
         if conn:
@@ -290,11 +360,80 @@ def unsubscribe():
             "#ef4444",
             "<i class='fa-solid fa-circle-xmark'></i>",
         )
-        print(f"Erro ao cancelar: {e}")
+        logger.error("Erro ao cancelar: %s", erro_externo_seguro(e))
         return render_template("unsubscribe.html", estado=estado), 500
     finally:
         if conn:
             conn.close()
+
+
+@public_routes.route("/signup/confirm")
+@limiter.limit("30 per hour")
+def confirmar_cadastro():
+    token = request.args.get("token", "")
+    try:
+        usuario_id, telefone = validar_token_confirmacao(token)
+    except TokenConfirmacaoExpirado:
+        estado = estado_cancelamento(
+            "Link expirado",
+            "O link de confirmação expirou. Faça um novo cadastro ou contate a escola.",
+            "#f59e0b",
+            "<i class='fa-solid fa-clock'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado), 400
+    except (TokenConfirmacaoInvalido, RuntimeError):
+        estado = estado_cancelamento(
+            "Link inválido",
+            "Não foi possível validar esta confirmação.",
+            "#f59e0b",
+            "<i class='fa-solid fa-triangle-exclamation'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado), 400
+
+    conn = database.get_db()
+    try:
+        usuario = conn.execute(
+            "SELECT id, telefone, status_cadastro FROM usuarios WHERE id = ?",
+            (usuario_id,),
+        ).fetchone()
+        if not usuario or normalizar_telefone(usuario["telefone"]) != normalizar_telefone(telefone):
+            estado = estado_cancelamento(
+                "Cadastro não encontrado",
+                "Este cadastro não existe mais.",
+                "#f59e0b",
+                "<i class='fa-solid fa-triangle-exclamation'></i>",
+            )
+            return render_template("unsubscribe.html", estado=estado), 404
+
+        if usuario["status_cadastro"] == "pendente":
+            conn.execute(
+                """
+                UPDATE usuarios
+                SET status_cadastro = 'ativo', receber_whatsapp = 1,
+                    confirmado_em = CURRENT_TIMESTAMP
+                WHERE id = ? AND status_cadastro = 'pendente'
+                """,
+                (usuario_id,),
+            )
+            database.registrar_cadastro_evento(
+                conn,
+                "cadastro_confirmado",
+                usuario_id=usuario_id,
+                telefone=usuario["telefone"],
+                receber_whatsapp=1,
+                detalhe="Double opt-in confirmado por token assinado",
+            )
+            conn.commit()
+
+        estado = estado_cancelamento(
+            "Cadastro confirmado!",
+            "Seu número está ativo para receber alertas meteorológicos.",
+            "#10b981",
+            "<i class='fa-solid fa-check'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado)
+    finally:
+        conn.close()
 
 
 @public_routes.route("/sobre")
@@ -309,15 +448,15 @@ def historico():
 
 @public_routes.route("/previsao")
 def previsao():
-    cidade = os.environ.get("FORECAST_CITY", "Vicentina")
-    estado = os.environ.get("FORECAST_STATE", "Mato Grosso do Sul")
-    pais = os.environ.get("FORECAST_COUNTRY", "Brasil")
+    cidade = env_str("FORECAST_CITY", "Vicentina")
+    estado = env_str("FORECAST_STATE", "Mato Grosso do Sul")
+    pais = env_str("FORECAST_COUNTRY", "Brasil")
     nome_exibicao = corrigir_texto_env(
-        os.environ.get("FORECAST_LABEL", "Distrito de São José, Vicentina/MS")
+        env_str("FORECAST_LABEL", "Distrito de São José, Vicentina/MS")
     )
     latitude = os.environ.get("FORECAST_LAT")
     longitude = os.environ.get("FORECAST_LON")
-    dados_estacao = obter_dados()
+    dados_estacao = obter_ultima_leitura_persistida()
 
     if latitude and longitude:
         try:

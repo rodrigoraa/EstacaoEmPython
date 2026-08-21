@@ -4,9 +4,70 @@ import database
 import calendar
 import os
 import json
-from time_utils import data_local
+import logging
+from config import env_float, env_int
+from time_utils import agora_local, data_local, parse_datetime
 
 api_routes = Blueprint("api", __name__)
+logger = logging.getLogger(__name__)
+
+
+@api_routes.route("/health")
+def health():
+    conn = None
+    try:
+        conn = database.get_db()
+        conn.execute("SELECT 1").fetchone()
+        leitura = conn.execute(
+            """
+            SELECT data_hora, data_hora_local
+            FROM historico_clima
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        fila = conn.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   MIN(CASE WHEN status IN ('pendente', 'enviando') THEN criado_em END)
+                       AS mais_antigo
+            FROM alertas_fila
+            WHERE status IN ('pendente', 'enviando')
+            """
+        ).fetchone()
+
+        idade = None
+        if leitura:
+            momento = parse_datetime(
+                leitura["data_hora_local"] or leitura["data_hora"],
+                assume_utc=False,
+            )
+            if momento:
+                idade = max(0, int((agora_local() - momento).total_seconds()))
+
+        limite = max(1, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300))
+        leitura_ok = idade is not None and idade <= limite
+        status = "ok" if leitura_ok else "degraded"
+        payload = {
+            "status": status,
+            "database": "ok",
+            "last_reading_age_seconds": idade,
+            "queue": "ok" if not fila["total"] else "pending",
+        }
+        return jsonify(payload), 200 if leitura_ok else 503
+    except Exception as erro:
+        logger.error("Health check HTTP falhou: %s", erro)
+        return jsonify(
+            {
+                "status": "critical",
+                "database": "error",
+                "last_reading_age_seconds": None,
+                "queue": "unknown",
+            }
+        ), 503
+    finally:
+        if conn:
+            conn.close()
 
 
 def maior_float(*valores):
@@ -37,7 +98,7 @@ def rajada_maxima_estado_alertas():
         if rajada is not None:
             return rajada
     except Exception as e:
-        print(f"Erro ao ler rajada corrigida no banco: {e}", flush=True)
+        logger.warning("Erro ao ler rajada corrigida no banco: %s", e)
 
     try:
         estado = database.obter_estado_alertas()
@@ -45,7 +106,7 @@ def rajada_maxima_estado_alertas():
         if rajada is not None:
             return rajada
     except Exception as e:
-        print(f"Erro ao ler rajada no banco: {e}", flush=True)
+        logger.warning("Erro ao ler rajada no banco: %s", e)
 
     try:
         caminho_api = os.path.abspath(__file__)
@@ -68,16 +129,53 @@ def rajada_maxima_estado_alertas():
                         return rajada
                 break
     except Exception as e:
-        print(f"Erro ao ler rajada em arquivo: {e}", flush=True)
+        logger.warning("Erro ao ler rajada em arquivo: %s", e)
 
     return None
+
+
+def possivel_tempestade(leitura_atual, leituras_recentes):
+    chuva_min = env_float("TEMPESTADE_CHUVA_RATE_MIN", 10.0)
+    rajada_min = env_float("TEMPESTADE_RAJADA_MIN", 60.0)
+    janela_minutos = max(1, env_int("TEMPESTADE_JANELA_MINUTOS", 10))
+
+    try:
+        chuva_rate = float(leitura_atual["chuva_rate"])
+    except (TypeError, ValueError):
+        return False
+    if chuva_rate < chuva_min:
+        return False
+
+    referencia = parse_datetime(
+        leitura_atual["data_hora_local"] or leitura_atual["data_hora"],
+        assume_utc=False,
+    )
+    for leitura in leituras_recentes:
+        try:
+            rajada = float(leitura["vento_rajada"])
+        except (TypeError, ValueError):
+            continue
+        if rajada < rajada_min:
+            continue
+        momento = parse_datetime(
+            leitura["data_hora_local"] or leitura["data_hora"],
+            assume_utc=False,
+        )
+        if referencia is None or momento is None:
+            if leitura is leitura_atual:
+                return True
+            continue
+        diferenca = (referencia - momento).total_seconds()
+        if 0 <= diferenca <= janela_minutos * 60:
+            return True
+    return False
 
 
 @api_routes.route("/api/clima")
 def api_clima():
     conn = database.get_db()
 
-    row = conn.execute(
+    rows = conn.execute(
         """
         SELECT
             data_hora,
@@ -96,14 +194,15 @@ def api_clima():
             chuva_hoje
         FROM historico_clima
         ORDER BY id DESC
-        LIMIT 1
+        LIMIT 50
         """
-    ).fetchone()
+    ).fetchall()
 
     conn.close()
 
-    if not row:
+    if not rows:
         return jsonify({"erro": "Sem dados"})
+    row = rows[0]
 
     acumulado = acumulados.obter_acumulado_diario(data_local())
     chuva_corrigida = acumulado.get("chuva_total_corrigida", 0) if acumulado else 0
@@ -131,6 +230,7 @@ def api_clima():
             "chuva_rate": row["chuva_rate"],
             "chuva_evento": row["chuva_evento"],
             "chuva_hoje": maior_float(row["chuva_hoje"], chuva_corrigida),
+            "possivel_tempestade": possivel_tempestade(row, rows),
             "hora_leitura": hora,
         }
     )
@@ -360,7 +460,7 @@ def api_historico_consulta():
 
     total_chuva = 0.0
     max_temp = 0.0
-    min_temp = 99.0
+    min_temp = None
     max_vento = 0.0
 
     conn = database.get_db()
@@ -381,16 +481,16 @@ def api_historico_consulta():
     for row in linhas:
         dia_idx = int(row["dia"]) - 1
 
-        chuva_dia = row["chuva_total"] or 0.0
-        t_max = row["temp_max"] or 0.0
-        t_min = row["temp_min"] or 0.0
-        t_med = row["temp_media"] or 0.0
-        u_min = row["umidade_min"] or 0.0
-        u_max = row["umidade_max"] or 0.0
-        vento_dia = row["vento_rajada_max"] or 0.0
-        uv_dia = row["uv_max"] or 0.0
-        p_min = row["pressao_min"] or 0.0
-        p_max = row["pressao_max"] or 0.0
+        chuva_dia = 0.0 if row["chuva_total"] is None else row["chuva_total"]
+        t_max = 0.0 if row["temp_max"] is None else row["temp_max"]
+        t_min = 0.0 if row["temp_min"] is None else row["temp_min"]
+        t_med = 0.0 if row["temp_media"] is None else row["temp_media"]
+        u_min = 0.0 if row["umidade_min"] is None else row["umidade_min"]
+        u_max = 0.0 if row["umidade_max"] is None else row["umidade_max"]
+        vento_dia = 0.0 if row["vento_rajada_max"] is None else row["vento_rajada_max"]
+        uv_dia = 0.0 if row["uv_max"] is None else row["uv_max"]
+        p_min = 0.0 if row["pressao_min"] is None else row["pressao_min"]
+        p_max = 0.0 if row["pressao_max"] is None else row["pressao_max"]
 
         chuva_lista[dia_idx] = chuva_dia
         temp_max_lista[dia_idx] = t_max
@@ -406,12 +506,12 @@ def api_historico_consulta():
         total_chuva += chuva_dia
         if t_max > max_temp:
             max_temp = t_max
-        if t_min > 0 and t_min < min_temp:
+        if row["temp_min"] is not None and (min_temp is None or t_min < min_temp):
             min_temp = t_min
         if vento_dia > max_vento:
             max_vento = vento_dia
 
-    if min_temp == 99.0:
+    if min_temp is None:
         min_temp = 0.0
 
     return jsonify(

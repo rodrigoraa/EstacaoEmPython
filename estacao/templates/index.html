@@ -392,6 +392,10 @@
             document.getElementById("val-uv").innerText = data.uv;
             document.getElementById("val-radiacao").innerText = data.radiacao;
 
+            document
+              .getElementById("alerta-tempestade")
+              .classList.toggle("hidden", !data.possivel_tempestade);
+
             document.getElementById("tubo-rate").style.height =
               Math.min((data.chuva_rate / 50) * 100, 100) + "%";
             document.getElementById("tubo-evento").style.height =
@@ -466,16 +470,6 @@
             options: { responsive: true, maintainAspectRatio: false },
           });
 
-          // ALERTA DE TEMPESTADE
-          const ventoAtual = ventos[ventos.length - 1];
-          const chuvaAtual = chuvas[chuvas.length - 1];
-          if (ventoAtual > 40 && chuvaAtual > 5) {
-            document
-              .getElementById("alerta-tempestade")
-              .classList.remove("hidden");
-          } else {
-            document.getElementById("alerta-tempestade").classList.add("hidden");
-          }
         });
     }
 

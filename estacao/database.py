@@ -1,10 +1,15 @@
 import os
 import json
+import logging
 import sqlite3
+
+from config import env_str
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
+SCHEMA_VERSION = 2
+logger = logging.getLogger(__name__)
 
 
 def configurar_conexao(conn):
@@ -32,6 +37,38 @@ def coluna_existe(conn, tabela, coluna):
 def garantir_coluna(conn, tabela, coluna, definicao):
     if not coluna_existe(conn, tabela, coluna):
         conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}")
+
+
+def tabela_existe(conn, tabela):
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (tabela,),
+    ).fetchone() is not None
+
+
+def garantir_schema_version(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_version (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            versao INTEGER NOT NULL,
+            atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO schema_version (id, versao)
+        VALUES (1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            versao = CASE WHEN versao < excluded.versao THEN excluded.versao ELSE versao END,
+            atualizado_em = CASE
+                WHEN versao < excluded.versao THEN CURRENT_TIMESTAMP
+                ELSE atualizado_em
+            END
+        """,
+        (SCHEMA_VERSION,),
+    )
 
 
 def garantir_tabela_estado_alertas(conn):
@@ -74,6 +111,10 @@ def garantir_tabela_usuarios(conn):
     garantir_coluna(conn, "usuarios", "ativo", "INTEGER DEFAULT 1")
     garantir_coluna(conn, "usuarios", "receber_whatsapp", "INTEGER DEFAULT 0")
     garantir_coluna(conn, "usuarios", "criado_em", "TEXT")
+    # DEFAULT ativo preserva todos os cadastros legados. Apenas novos opt-ins
+    # solicitados pelo site são gravados explicitamente como pendentes.
+    garantir_coluna(conn, "usuarios", "status_cadastro", "TEXT DEFAULT 'ativo'")
+    garantir_coluna(conn, "usuarios", "confirmado_em", "TEXT")
 
 
 def garantir_tabela_alertas_envios(conn):
@@ -95,6 +136,7 @@ def garantir_tabela_alertas_envios(conn):
 
 
 def garantir_tabela_alertas_fila(conn):
+    tabela_nova = not tabela_existe(conn, "alertas_fila")
     conn.execute("""
     CREATE TABLE IF NOT EXISTS alertas_fila (
 
@@ -127,21 +169,23 @@ def garantir_tabela_alertas_fila(conn):
     garantir_coluna(conn, "alertas_fila", "proxima_tentativa_em", "TEXT")
     garantir_coluna(conn, "alertas_fila", "max_tentativas", "INTEGER DEFAULT 4")
     garantir_coluna(conn, "alertas_fila", "erro_permanente", "INTEGER DEFAULT 0")
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_alertas_fila_status_id ON alertas_fila(status, id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_alertas_fila_prioridade "
-        "ON alertas_fila(status, prioridade DESC, id)"
-    )
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_alertas_fila_evento_usuario "
-        "ON alertas_fila(evento_id, usuario_id) "
-        "WHERE evento_id IS NOT NULL AND usuario_id IS NOT NULL"
-    )
+    if tabela_nova:
+        conn.execute(
+            "CREATE INDEX idx_alertas_fila_status_id ON alertas_fila(status, id)"
+        )
+        conn.execute(
+            "CREATE INDEX idx_alertas_fila_prioridade "
+            "ON alertas_fila(status, prioridade DESC, id)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX idx_alertas_fila_evento_usuario "
+            "ON alertas_fila(evento_id, usuario_id) "
+            "WHERE evento_id IS NOT NULL AND usuario_id IS NOT NULL"
+        )
 
 
 def garantir_tabela_alertas_eventos(conn):
+    tabela_nova = not tabela_existe(conn, "alertas_eventos")
     conn.execute("""
     CREATE TABLE IF NOT EXISTS alertas_eventos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,10 +208,11 @@ def garantir_tabela_alertas_eventos(conn):
         atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_alertas_eventos_data_tipo "
-        "ON alertas_eventos(data_referencia DESC, tipo, nivel)"
-    )
+    if tabela_nova:
+        conn.execute(
+            "CREATE INDEX idx_alertas_eventos_data_tipo "
+            "ON alertas_eventos(data_referencia DESC, tipo, nivel)"
+        )
 
 
 def garantir_tabela_logs_persistencia(conn):
@@ -314,6 +359,9 @@ def init_db():
 
     cursor = conn.cursor()
 
+    historico_novo = not tabela_existe(conn, "historico_clima")
+    leituras_nova = not tabela_existe(conn, "leituras_brutas")
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS historico_clima (
 
@@ -410,21 +458,27 @@ def init_db():
     garantir_tabela_estado_alertas(conn)
     garantir_tabela_acumulados_diarios(conn)
 
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_leituras_brutas_recebido_em ON leituras_brutas(recebido_em)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_leituras_brutas_station_ts ON leituras_brutas(station_timestamp_ms)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora ON historico_clima(data_hora)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora_utc ON historico_clima(data_hora_utc)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_historico_clima_data_hora_local ON historico_clima(data_hora_local)"
-    )
+    # Índices de tabelas potencialmente grandes só são automáticos em bancos
+    # recém-criados. Em bancos existentes, maintenance --create-indexes faz a
+    # criação explícita em janela operacional.
+    if leituras_nova:
+        cursor.execute(
+            "CREATE INDEX idx_leituras_brutas_recebido_em ON leituras_brutas(recebido_em)"
+        )
+        cursor.execute(
+            "CREATE INDEX idx_leituras_brutas_origem_station_ts "
+            "ON leituras_brutas(origem, station_timestamp_ms)"
+        )
+    if historico_novo:
+        cursor.execute(
+            "CREATE INDEX idx_historico_clima_data_hora ON historico_clima(data_hora)"
+        )
+        cursor.execute(
+            "CREATE INDEX idx_historico_clima_data_hora_utc ON historico_clima(data_hora_utc)"
+        )
+        cursor.execute(
+            "CREATE INDEX idx_historico_clima_data_hora_local ON historico_clima(data_hora_local)"
+        )
 
     garantir_tabela_usuarios(conn)
     garantir_tabela_alertas_envios(conn)
@@ -433,9 +487,10 @@ def init_db():
     garantir_tabela_health_check_estado(conn)
     garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)
+    garantir_schema_version(conn)
 
     conn.commit()
 
     conn.close()
 
-    print("Banco pronto")
+    logger.info("Banco pronto; schema version %s", SCHEMA_VERSION)

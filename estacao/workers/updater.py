@@ -1,6 +1,7 @@
 import sys
 import os
 import sqlite3
+import logging
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,26 +15,15 @@ from persistence import salvar_historico_clima
 from time_utils import agora_local, data_local, parse_datetime
 from services.weather_service import obter_dados
 from unsubscribe_tokens import telefone_com_codigo_pais
+from config import env_float, env_int, public_base_url
+from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
 
 
 STATE_FILE = os.path.join(BASE_DIR, "alert_state.json")
-PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://meteo.eesjv.com.br").rstrip("/")
+PUBLIC_BASE_URL = public_base_url()
+logger = logging.getLogger(__name__)
 
 INTERVALO = 15
-
-
-def env_float(nome, padrao):
-    try:
-        return float(os.environ.get(nome, padrao))
-    except (TypeError, ValueError):
-        return float(padrao)
-
-
-def env_int(nome, padrao):
-    try:
-        return int(os.environ.get(nome, padrao))
-    except (TypeError, ValueError):
-        return int(padrao)
 
 
 def configuracao_alertas():
@@ -63,8 +53,7 @@ def configuracao_alertas():
 
 
 def log(msg):
-    agora = agora_local().strftime("%d/%m %H:%M:%S")
-    print(f"[{agora}] {msg}", flush=True)
+    logger.info(msg)
 
 
 def estado_alertas_padrao(data=""):
@@ -241,6 +230,7 @@ def enviar_alerta(mensagem, evento=None):
             FROM usuarios
             WHERE (ativo = 1 OR ativo IS NULL)
             AND receber_whatsapp = 1
+            AND (status_cadastro = 'ativo' OR status_cadastro IS NULL)
             ORDER BY id
             """
         ).fetchall()
@@ -259,10 +249,14 @@ def enviar_alerta(mensagem, evento=None):
                     prioridade=evento.get("prioridade", 50) if evento else 50,
                 )
                 enfileirados += 1
-                log(f"✅ Alerta enfileirado para {usuario['nome']}")
+                log(f"✅ Alerta enfileirado para {mascarar_nome(usuario['nome'])}")
             except Exception as e:
                 falhas += 1
-                log(f"❌ Erro ao enfileirar {usuario['nome']} ({telefone}) {e}")
+                log(
+                    "❌ Erro ao enfileirar "
+                    f"{mascarar_nome(usuario['nome'])} "
+                    f"({mascarar_telefone(telefone)}): {e}"
+                )
 
         if evento:
             status = "enfileirado" if enfileirados else "sem_destinatarios"
@@ -759,6 +753,13 @@ def executar():
             log("⚠️ Sem dados")
             return
 
+        if dados.get("leitura_repetida"):
+            log(
+                "Leitura da estacao ja persistida; processamento duplicado ignorado "
+                f"(id={dados.get('leitura_bruta_id')})"
+            )
+            return
+
         leitura_bruta_id = dados.get("leitura_bruta_id")
         dados, data_leitura = preparar_dados_novo_dia(dados)
 
@@ -881,6 +882,7 @@ def salvar_resumo_diario_banco(data_ontem_str):
 
 
 if __name__ == "__main__":
+    configurar_logging()
     log("🚀 Updater iniciado")
     while True:
         executar()

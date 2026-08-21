@@ -1,4 +1,5 @@
 import os
+import logging
 
 import requests
 from datetime import datetime
@@ -9,6 +10,10 @@ from persistence import (
     extrair_sinal,
     salvar_leitura_bruta,
 )
+from logging_utils import erro_externo_seguro
+
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PUBLIC_SLUG = "a535a0b6ff603c1d2376abc99e689f2f"
 PUBLIC_SLUG = os.environ.get("AMBIENT_PUBLIC_SLUG", DEFAULT_PUBLIC_SLUG).strip()
@@ -58,10 +63,25 @@ def obter_dados(persistir_bruto=True):
     try:
         resposta = requests.get(URL, headers=HEADERS, timeout=20)
         resposta.raise_for_status()
-    except Exception:
+    except requests.Timeout as erro:
+        logger.warning("Timeout ao consultar Ambient Weather: %s", erro_externo_seguro(erro))
+        return None
+    except requests.ConnectionError as erro:
+        logger.warning("Falha de conexao/DNS com Ambient Weather: %s", erro_externo_seguro(erro))
+        return None
+    except requests.HTTPError as erro:
+        status = erro.response.status_code if erro.response is not None else "desconhecido"
+        logger.warning("Ambient Weather respondeu HTTP %s", status)
+        return None
+    except requests.RequestException as erro:
+        logger.warning("Falha HTTP ao consultar Ambient Weather: %s", erro_externo_seguro(erro))
         return None
 
-    dados = resposta.json()
+    try:
+        dados = resposta.json()
+    except ValueError:
+        logger.warning("Ambient Weather retornou JSON invalido")
+        return None
 
     if not dados.get("data"):
         return None
@@ -76,6 +96,7 @@ def obter_dados(persistir_bruto=True):
         agora = int(time.time() * 1000)
 
         if agora - timestamp > 600000:
+            logger.warning("Ambient Weather retornou leitura com mais de 10 minutos")
             return None
 
     temp_f = valor_numerico(raw, "tempf", 32)
@@ -133,9 +154,11 @@ def obter_dados(persistir_bruto=True):
     }
 
     if persistir_bruto:
-        dados_convertidos["leitura_bruta_id"] = salvar_leitura_bruta(
-            raw, dados_convertidos
+        leitura_bruta_id, inserida = salvar_leitura_bruta(
+            raw, dados_convertidos, retornar_status=True
         )
+        dados_convertidos["leitura_bruta_id"] = leitura_bruta_id
+        dados_convertidos["leitura_repetida"] = not inserida
 
     return dados_convertidos
 
@@ -300,5 +323,19 @@ def obter_previsao(
             },
             "dias": dias,
         }
-    except Exception:
+    except requests.Timeout as erro:
+        logger.warning("Timeout ao consultar Open-Meteo: %s", erro_externo_seguro(erro))
+        return None
+    except requests.ConnectionError as erro:
+        logger.warning("Falha de conexao/DNS com Open-Meteo: %s", erro_externo_seguro(erro))
+        return None
+    except requests.HTTPError as erro:
+        status = erro.response.status_code if erro.response is not None else "desconhecido"
+        logger.warning("Open-Meteo respondeu HTTP %s", status)
+        return None
+    except (ValueError, KeyError, IndexError, TypeError) as erro:
+        logger.warning("Payload inesperado do Open-Meteo: %s", erro_externo_seguro(erro))
+        return None
+    except requests.RequestException as erro:
+        logger.warning("Falha HTTP ao consultar Open-Meteo: %s", erro_externo_seguro(erro))
         return None

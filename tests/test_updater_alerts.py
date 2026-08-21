@@ -392,7 +392,7 @@ class AlertasWorkerTest(unittest.TestCase):
         self.updater.atualizar_rearme_condicoes_instantaneas(estado, 32.9, 50)
         self.assertEqual(estado["nivel_calor"], 0)
 
-    def test_alerta_frio_rearmado_informa_temperatura_maxima(self):
+    def test_alerta_frio_rearmado_usa_mesma_mensagem_do_alerta_normal(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
         self.updater.log = lambda mensagem: None
         self.updater.data_local = lambda: "2026-06-25"
@@ -408,12 +408,11 @@ class AlertasWorkerTest(unittest.TestCase):
         self.updater.verificar_alertas(12.0, 12.0, 0, 0, 50, 0)
 
         self.assertEqual(len(mensagens), 2)
-        self.assertIn("Temperatura Baixa!*", mensagens[0])
-        self.assertNotIn("caiu novamente", mensagens[0])
-        self.assertIn("Temperatura Baixa novamente!*", mensagens[1])
-        self.assertIn("subiu até *25°C*", mensagens[1])
-        self.assertIn("caiu novamente para *12°C*", mensagens[1])
-        self.assertNotIn(".0°C", mensagens[1])
+        self.assertEqual(mensagens[0], mensagens[1])
+        self.assertIn("Temperatura Abaixou!*", mensagens[0])
+        self.assertIn("Registrados *12°C*", mensagens[0])
+        self.assertNotIn("novamente", mensagens[1])
+        self.assertNotIn("subiu até", mensagens[1])
 
     def test_alerta_formata_temperatura_sem_casas_decimais(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")

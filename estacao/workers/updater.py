@@ -368,16 +368,6 @@ def formatar_temperatura_alerta(valor):
 
 
 def mensagem_frio(titulo, texto_base, temp, sensacao, estado):
-    temp_max = estado.get("temp_max_apos_alerta_frio")
-    if estado.get("frio_rearmado") and temp_max is not None and temp_max > temp:
-        return (
-            f"{titulo} novamente!*\n"
-            f"A temperatura subiu até *{formatar_temperatura_alerta(temp_max)}* "
-            f"e caiu novamente para *{formatar_temperatura_alerta(temp)}*.\n"
-            f"Sensação térmica de *{formatar_temperatura_alerta(sensacao)}*.\n"
-            f"{texto_base}"
-        )
-
     return (
         f"{titulo}!*\n"
         f"Registrados *{formatar_temperatura_alerta(temp)}*\n"
@@ -719,7 +709,7 @@ def verificar_alertas(
 
     elif frio_confirmado and estado["nivel_frio"] < 1:
         msg = mensagem_frio(
-            "❄️ *ALERTA: Temperatura Baixa",
+            "❄️ *ALERTA: Temperatura Abaixou",
             "Cuide-se e agasalhe-se.",
             temp,
             sensacao,

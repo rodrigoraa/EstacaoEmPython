@@ -27,6 +27,92 @@ from config import env_str
 
 admin_routes = Blueprint("admin", __name__)
 
+ADMIN_ABAS = {
+    "visao-geral",
+    "usuarios",
+    "cadastros",
+    "eventos",
+    "envios",
+    "historico",
+}
+ADMIN_ITENS_POR_PAGINA = (10, 25, 50)
+
+
+def obter_inteiro_query(nome, padrao=1):
+    try:
+        return max(1, int(request.args.get(nome, padrao)))
+    except (TypeError, ValueError):
+        return padrao
+
+
+def obter_itens_por_pagina():
+    valor = obter_inteiro_query("por_pagina", ADMIN_ITENS_POR_PAGINA[0])
+    if valor not in ADMIN_ITENS_POR_PAGINA:
+        return ADMIN_ITENS_POR_PAGINA[0]
+    return valor
+
+
+def termo_like(valor):
+    escapado = valor.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escapado}%"
+
+
+def consultar_paginado(
+    conn,
+    tabela,
+    pagina,
+    por_pagina,
+    where_sql="",
+    parametros=(),
+    order_by="id DESC",
+):
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM {tabela} {where_sql}", parametros
+    ).fetchone()[0]
+    total_paginas = max(1, (total + por_pagina - 1) // por_pagina)
+    pagina = min(max(1, pagina), total_paginas)
+    offset = (pagina - 1) * por_pagina
+    linhas = conn.execute(
+        f"SELECT * FROM {tabela} {where_sql} ORDER BY {order_by} LIMIT ? OFFSET ?",
+        (*parametros, por_pagina, offset),
+    ).fetchall()
+
+    numeros = {1, total_paginas}
+    numeros.update(range(max(1, pagina - 2), min(total_paginas, pagina + 2) + 1))
+    itens = []
+    anterior = None
+    for numero in sorted(numeros):
+        if anterior is not None and numero - anterior > 1:
+            itens.append(None)
+        itens.append(numero)
+        anterior = numero
+
+    return linhas, {
+        "pagina": pagina,
+        "por_pagina": por_pagina,
+        "total": total,
+        "total_paginas": total_paginas,
+        "inicio": 0 if total == 0 else offset + 1,
+        "fim": min(offset + por_pagina, total),
+        "tem_anterior": pagina > 1,
+        "tem_proxima": pagina < total_paginas,
+        "itens": itens,
+    }
+
+
+def parametros_retorno_usuarios():
+    parametros = {"aba": "usuarios"}
+    for nome in ("pagina", "por_pagina", "busca", "filtro"):
+        valor = request.form.get(f"retorno_{nome}", "").strip()
+        if valor:
+            parametros[nome] = valor
+    return parametros
+
+
+def redirecionar_usuarios():
+    return redirect(url_for("admin.admin", **parametros_retorno_usuarios()))
+
+
 def gerar_csrf_token():
     token = session.get("csrf_token")
     if not token:
@@ -359,7 +445,7 @@ def deletar_usuario(id):
     conn.close()
 
     flash("Usuário removido com sucesso.")
-    return redirect(url_for("admin.admin", _anchor="usuarios"))
+    return redirecionar_usuarios()
 
 
 @admin_routes.route("/admin/usuarios/<int:id>/editar", methods=["POST"])
@@ -378,7 +464,7 @@ def editar_usuario(id):
 
     if not nome or not telefone or not endereco:
         flash("Preencha nome, telefone e endereço antes de salvar.")
-        return redirect(url_for("admin.admin", _anchor="usuarios"))
+        return redirecionar_usuarios()
 
     conn = database.get_db()
     garantir_estruturas_admin(conn)
@@ -387,7 +473,7 @@ def editar_usuario(id):
     if not usuario:
         conn.close()
         flash("Usuário não encontrado.")
-        return redirect(url_for("admin.admin", _anchor="usuarios"))
+        return redirecionar_usuarios()
 
     try:
         conn.execute(
@@ -420,7 +506,7 @@ def editar_usuario(id):
     finally:
         conn.close()
 
-    return redirect(url_for("admin.admin", _anchor="usuarios"))
+    return redirecionar_usuarios()
 
 
 @admin_routes.route("/admin/logout", methods=["POST"])
@@ -455,27 +541,168 @@ def admin():
     conn = database.get_db()
     garantir_estruturas_admin(conn)
     conn.commit()
-    usuarios = conn.execute("SELECT * FROM usuarios ORDER BY id DESC").fetchall()
+
+    aba_ativa = request.args.get("aba", "visao-geral").strip().lower()
+    if aba_ativa not in ADMIN_ABAS:
+        aba_ativa = "visao-geral"
+
+    pagina = obter_inteiro_query("pagina")
+    por_pagina = obter_itens_por_pagina()
+    busca = request.args.get("busca", "").strip()[:100]
+    filtro = request.args.get("filtro", "todos").strip().lower()
+
     resumo_usuarios = resumo_usuarios_admin(conn)
-    saude_sistema = obter_saude_sistema_admin(conn)
-    historico = conn.execute(
-        "SELECT * FROM historico_clima ORDER BY id DESC LIMIT 5"
-    ).fetchall()
-    alertas = conn.execute(
-        "SELECT * FROM alertas_envios ORDER BY id DESC LIMIT 30"
-    ).fetchall()
-    eventos_alertas = conn.execute(
-        "SELECT * FROM alertas_eventos ORDER BY id DESC LIMIT 30"
-    ).fetchall()
-    eventos_cadastro = conn.execute(
-        "SELECT * FROM cadastro_eventos ORDER BY id DESC LIMIT 30"
-    ).fetchall()
+    contagens = {
+        "usuarios": resumo_usuarios["total_usuarios"],
+        "cadastros": conn.execute("SELECT COUNT(*) FROM cadastro_eventos").fetchone()[0],
+        "eventos": conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0],
+        "envios": conn.execute("SELECT COUNT(*) FROM alertas_envios").fetchone()[0],
+        "historico": conn.execute("SELECT COUNT(*) FROM historico_clima").fetchone()[0],
+    }
+
+    usuarios = []
+    historico = []
+    alertas = []
+    eventos_alertas = []
+    eventos_cadastro = []
+    paginacao = None
+    filtros = {"busca": busca, "filtro": filtro}
+    saude_sistema = None
+
+    if aba_ativa == "visao-geral":
+        saude_sistema = obter_saude_sistema_admin(conn)
+    elif aba_ativa == "usuarios":
+        if filtro not in {"todos", "ativos", "pausados", "whatsapp", "pendentes"}:
+            filtro = "todos"
+        filtros["filtro"] = filtro
+        condicoes = []
+        parametros = []
+        if busca:
+            valor = termo_like(busca)
+            condicoes.append(
+                "(nome LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR telefone LIKE ? ESCAPE '\\' "
+                "OR endereco LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            )
+            parametros.extend((valor, valor, valor))
+        if filtro == "ativos":
+            condicoes.append("(ativo = 1 OR ativo IS NULL)")
+        elif filtro == "pausados":
+            condicoes.append("ativo = 0")
+        elif filtro == "whatsapp":
+            condicoes.append(
+                "(ativo = 1 OR ativo IS NULL) AND receber_whatsapp = 1 "
+                "AND (status_cadastro = 'ativo' OR status_cadastro IS NULL)"
+            )
+        elif filtro == "pendentes":
+            condicoes.append("status_cadastro = 'pendente'")
+        where_sql = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+        usuarios, paginacao = consultar_paginado(
+            conn, "usuarios", pagina, por_pagina, where_sql, tuple(parametros)
+        )
+    elif aba_ativa == "cadastros":
+        if filtro not in {
+            "todos",
+            "cadastro",
+            "cancelamento",
+            "edicao_admin",
+            "exclusao_admin",
+        }:
+            filtro = "todos"
+        filtros["filtro"] = filtro
+        condicoes = []
+        parametros = []
+        if busca:
+            valor = termo_like(busca)
+            condicoes.append(
+                "(nome LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR telefone LIKE ? ESCAPE '\\' "
+                "OR endereco LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR detalhe LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            )
+            parametros.extend((valor, valor, valor, valor))
+        if filtro != "todos":
+            condicoes.append("acao = ?")
+            parametros.append(filtro)
+        where_sql = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+        eventos_cadastro, paginacao = consultar_paginado(
+            conn, "cadastro_eventos", pagina, por_pagina, where_sql, tuple(parametros)
+        )
+    elif aba_ativa == "eventos":
+        if filtro not in {
+            "todos",
+            "detectado",
+            "enfileirado",
+            "sem_destinatarios",
+            "concluido",
+            "concluido_com_falhas",
+        }:
+            filtro = "todos"
+        filtros["filtro"] = filtro
+        condicoes = []
+        parametros = []
+        if busca:
+            valor = termo_like(busca)
+            condicoes.append(
+                "(tipo LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR fonte LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR mensagem LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR detalhe LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            )
+            parametros.extend((valor, valor, valor, valor))
+        if filtro != "todos":
+            condicoes.append("status = ?")
+            parametros.append(filtro)
+        where_sql = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+        eventos_alertas, paginacao = consultar_paginado(
+            conn, "alertas_eventos", pagina, por_pagina, where_sql, tuple(parametros)
+        )
+    elif aba_ativa == "envios":
+        if filtro not in {"todos", "enviado", "falhou"}:
+            filtro = "todos"
+        filtros["filtro"] = filtro
+        condicoes = []
+        parametros = []
+        if busca:
+            valor = termo_like(busca)
+            condicoes.append(
+                "(nome LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR telefone LIKE ? ESCAPE '\\' "
+                "OR mensagem LIKE ? ESCAPE '\\' COLLATE NOCASE "
+                "OR erro LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            )
+            parametros.extend((valor, valor, valor, valor))
+        if filtro != "todos":
+            condicoes.append("status = ?")
+            parametros.append(filtro)
+        where_sql = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+        alertas, paginacao = consultar_paginado(
+            conn, "alertas_envios", pagina, por_pagina, where_sql, tuple(parametros)
+        )
+    elif aba_ativa == "historico":
+        data_inicio = request.args.get("data_inicio", "").strip()[:10]
+        data_fim = request.args.get("data_fim", "").strip()[:10]
+        filtros.update({"data_inicio": data_inicio, "data_fim": data_fim})
+        condicoes = []
+        parametros = []
+        if data_inicio:
+            condicoes.append("COALESCE(data_hora_local, data_hora, '') >= ?")
+            parametros.append(data_inicio)
+        if data_fim:
+            condicoes.append("COALESCE(data_hora_local, data_hora, '') < date(?, '+1 day')")
+            parametros.append(data_fim)
+        where_sql = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+        historico, paginacao = consultar_paginado(
+            conn, "historico_clima", pagina, por_pagina, where_sql, tuple(parametros)
+        )
+
     conn.close()
 
-    evolution_status = obter_status_evolution()
+    evolution_status = obter_status_evolution() if aba_ativa == "visao-geral" else None
 
     return render_template(
         "admin_painel.html",
+        aba_ativa=aba_ativa,
         usuarios=preparar_usuarios_admin(usuarios),
         resumo_usuarios=resumo_usuarios,
         saude_sistema=saude_sistema,
@@ -484,4 +711,8 @@ def admin():
         eventos_alertas=preparar_eventos_admin(eventos_alertas, assume_utc=True),
         eventos_cadastro=preparar_eventos_admin(eventos_cadastro, assume_utc=True),
         evolution_status=evolution_status,
+        contagens=contagens,
+        paginacao=paginacao,
+        filtros=filtros,
+        opcoes_por_pagina=ADMIN_ITENS_POR_PAGINA,
     )

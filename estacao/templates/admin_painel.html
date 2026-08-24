@@ -1,575 +1,101 @@
+{% macro paginador(paginacao) %}
+{% if paginacao %}
+<div class="border-t border-slate-100 px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <p class="text-sm text-slate-500">
+        {% if paginacao.total %}
+        Exibindo <strong class="text-slate-700">{{ paginacao.inicio }}–{{ paginacao.fim }}</strong>
+        de <strong class="text-slate-700">{{ paginacao.total }}</strong> registros
+        {% else %}Nenhum registro encontrado{% endif %}
+    </p>
+    {% if paginacao.total_paginas > 1 %}
+    <nav class="flex flex-wrap items-center gap-1" aria-label="Paginação">
+        <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=paginacao.pagina - 1, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if not paginacao.tem_anterior %}admin-page-link-disabled{% endif %}" {% if not paginacao.tem_anterior %}aria-disabled="true" tabindex="-1"{% endif %}><i class="fa-solid fa-chevron-left"></i><span class="sr-only">Página anterior</span></a>
+        {% for numero in paginacao.itens %}
+            {% if numero %}
+            <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=numero, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if numero == paginacao.pagina %}admin-page-link-active{% endif %}" {% if numero == paginacao.pagina %}aria-current="page"{% endif %}>{{ numero }}</a>
+            {% else %}<span class="px-2 text-slate-400">…</span>{% endif %}
+        {% endfor %}
+        <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=paginacao.pagina + 1, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if not paginacao.tem_proxima %}admin-page-link-disabled{% endif %}" {% if not paginacao.tem_proxima %}aria-disabled="true" tabindex="-1"{% endif %}><i class="fa-solid fa-chevron-right"></i><span class="sr-only">Próxima página</span></a>
+    </nav>
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel Admin | EESJ</title>
-
     {% include "includes/common_head_assets.html" %}
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 </head>
-
 <body class="bg-slate-50 font-sans text-slate-800 pb-12">
-
-    <nav
-        class="bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
-        <div class="flex items-center gap-3 min-w-0">
-            <i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i>
-            <div class="min-w-0">
-                <h1 class="text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1>
-                <p class="text-xs font-medium text-slate-400 uppercase">Estação Meteorológica</p>
-            </div>
-        </div>
-        <form action="{{ url_for('admin.admin_logout') }}" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit"
-                class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
-                title="Sair">
-                <i class="fa-solid fa-right-from-bracket"></i>
-                <span class="hidden sm:inline">Sair</span>
-            </button>
-        </form>
+    <nav class="bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+        <div class="flex items-center gap-3 min-w-0"><i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i><div class="min-w-0"><h1 class="text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1><p class="text-xs font-medium text-slate-400 uppercase">Estação Meteorológica</p></div></div>
+        <form action="{{ url_for('admin.admin_logout') }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Sair"><i class="fa-solid fa-right-from-bracket"></i><span class="hidden sm:inline">Sair</span></button></form>
     </nav>
 
+    <div class="admin-tabs-shell bg-white border-b border-slate-200 shadow-sm">
+        <nav class="max-w-7xl mx-auto px-4 flex overflow-x-auto" aria-label="Seções do painel">
+            {% set abas = [('visao-geral', 'fa-chart-pie', 'Visão geral', none), ('usuarios', 'fa-users', 'Usuários', contagens.usuarios), ('cadastros', 'fa-address-book', 'Cadastros', contagens.cadastros), ('eventos', 'fa-cloud-bolt', 'Eventos', contagens.eventos), ('envios', 'fa-paper-plane', 'Envios', contagens.envios), ('historico', 'fa-server', 'Histórico', contagens.historico)] %}
+            {% for chave, icone, rotulo, total in abas %}<a href="{{ url_for('admin.admin', aba=chave) }}" class="admin-tab {% if aba_ativa == chave %}admin-tab-active{% endif %}" {% if aba_ativa == chave %}aria-current="page"{% endif %}><i class="fa-solid {{ icone }}"></i><span>{{ rotulo }}</span>{% if total is not none %}<span class="admin-tab-count">{{ total }}</span>{% endif %}</a>{% endfor %}
+        </nav>
+    </div>
+
     <main class="max-w-7xl mx-auto px-4 mt-6 md:mt-8 space-y-6">
+        {% with messages = get_flashed_messages() %}{% if messages %}<div class="bg-blue-50 border border-blue-100 text-blue-800 px-4 py-3 rounded-lg text-sm flex items-center gap-3 shadow-sm" role="alert"><i class="fa-solid fa-circle-info text-blue-500"></i><span class="font-medium">{{ messages[0] }}</span></div>{% endif %}{% endwith %}
 
-        {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <div class="bg-blue-50 border border-blue-100 text-blue-800 px-4 py-3 rounded-lg text-sm flex items-center gap-3 shadow-sm"
-            role="alert">
-            <i class="fa-solid fa-circle-info text-blue-500"></i>
-            <span class="font-medium">{{ messages[0] }}</span>
-        </div>
-        {% endif %}
-        {% endwith %}
-
-        <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-                <div class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-500">Usuários cadastrados</span>
-                    <i class="fa-solid fa-users text-slate-400"></i>
-                </div>
-                <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.total_usuarios }}</p>
-            </div>
-
-            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-                <div class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-500">Ativos</span>
-                    <i class="fa-solid fa-circle-check text-emerald-500"></i>
-                </div>
-                <p class="mt-3 text-3xl font-extrabold text-emerald-700">{{ resumo_usuarios.usuarios_ativos }}</p>
-            </div>
-
-            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-                <div class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-500">Recebem WhatsApp</span>
-                    <i class="fa-brands fa-whatsapp text-emerald-500"></i>
-                </div>
-                <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.usuarios_whatsapp }}</p>
-            </div>
-
-            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-                <div class="flex items-center justify-between gap-3">
-                    <span class="text-sm font-semibold text-slate-500">Pausados</span>
-                    <i class="fa-solid fa-pause text-amber-500"></i>
-                </div>
-                <p class="mt-3 text-3xl font-extrabold text-amber-700">{{ resumo_usuarios.usuarios_pausados }}</p>
-            </div>
+        {% if aba_ativa == 'visao-geral' %}
+        <div><h2 class="text-2xl font-extrabold text-slate-900">Visão geral</h2><p class="text-sm text-slate-500 mt-1">Situação atual dos usuários, integrações e processos da estação.</p></div>
+        <section class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Usuários</span><i class="fa-solid fa-users text-slate-400"></i></div><p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.total_usuarios }}</p></a>
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='ativos') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Ativos</span><i class="fa-solid fa-circle-check text-emerald-500"></i></div><p class="mt-3 text-3xl font-extrabold text-emerald-700">{{ resumo_usuarios.usuarios_ativos }}</p></a>
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='whatsapp') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Com WhatsApp</span><i class="fa-brands fa-whatsapp text-emerald-500"></i></div><p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.usuarios_whatsapp }}</p></a>
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='pausados') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Pausados</span><i class="fa-solid fa-pause text-amber-500"></i></div><p class="mt-3 text-3xl font-extrabold text-amber-700">{{ resumo_usuarios.usuarios_pausados }}</p></a>
         </section>
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><i class="fa-brands fa-whatsapp text-xl"></i></div><div><h3 class="font-bold text-slate-800">Evolution API</h3><p class="text-sm text-slate-500">{{ evolution_status.estado }}</p></div></div><div class="text-left sm:text-right"><span class="inline-flex items-center gap-2 {% if evolution_status.ok %}bg-emerald-50 text-emerald-700 border-emerald-100{% else %}bg-rose-50 text-rose-700 border-rose-100{% endif %} text-sm font-bold px-3 py-2 rounded-lg border"><i class="fa-solid {% if evolution_status.ok %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>{{ 'Conectada' if evolution_status.ok else 'Atenção' }}</span><p class="text-xs font-mono text-slate-500 mt-2">{{ evolution_status.detalhe }}</p></div></div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-50 text-rose-500"><i class="fa-solid fa-heart-pulse text-xl"></i></div><div><h3 class="font-bold text-slate-800">Saúde do sistema</h3><p class="text-sm text-slate-500">Coleta, fila e entregas</p></div></div><span class="w-fit inline-flex items-center gap-2 {% if saude_sistema.status_geral == 'ok' %}bg-emerald-50 text-emerald-700 border-emerald-100{% else %}bg-amber-50 text-amber-700 border-amber-100{% endif %} text-sm font-bold px-3 py-2 rounded-lg border"><i class="fa-solid {% if saude_sistema.status_geral == 'ok' %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>{{ saude_sistema.status_texto }}</span></div>
+        </section>
+        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70"><h2 class="text-base font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-gauge-high text-blue-500"></i>Detalhes operacionais</h2></div><div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-5">
+            <div class="admin-metric"><span>Última coleta</span><strong>{{ saude_sistema.ultima_leitura_tempo }}</strong><small>{{ saude_sistema.ultima_leitura }}</small></div><div class="admin-metric"><span>Fila pendente</span><strong>{{ saude_sistema.fila_pendentes }}</strong><small>{{ saude_sistema.fila_enviando }} enviando</small></div><div class="admin-metric"><span>Falhas na fila</span><strong>{{ saude_sistema.fila_falhou }}</strong><small>{{ saude_sistema.falhas_24h }} nas últimas 24h</small></div><div class="admin-metric"><span>Último envio</span><strong>{{ saude_sistema.ultimo_envio_status }}</strong><small>{{ saude_sistema.ultimo_envio }}</small></div><div class="admin-metric admin-metric-muted"><span>Item mais antigo</span><strong>{{ saude_sistema.fila_mais_antiga }}</strong></div><div class="admin-metric admin-metric-muted"><span>Entrega média</span><strong>{{ saude_sistema.media_entrega_segundos }} s</strong></div><div class="admin-metric admin-metric-muted"><span>Reset de vento</span><strong>{{ 'Aguardando' if saude_sistema.aguardando_reset_vento else 'Sincronizado' }}</strong></div><div class="admin-metric admin-metric-muted"><span>Reset de chuva</span><strong>{{ 'Aguardando' if saude_sistema.aguardando_reset_chuva else 'Sincronizado' }}</strong></div>
+        </div></section>
 
+        {% elif aba_ativa == 'usuarios' %}
         <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-            <div class="px-5 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div class="flex items-start gap-3">
-                    <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                        <i class="fa-brands fa-whatsapp text-xl"></i>
-                    </div>
-                    <div>
-                        <h2 class="text-base font-bold text-slate-800">Evolution API</h2>
-                        <p class="text-sm text-slate-500">Status: {{ evolution_status.estado }}</p>
-                    </div>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-3">
-                    {% if evolution_status.ok %}
-                    <span
-                        class="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 text-sm font-bold px-3 py-2 rounded-lg border border-emerald-100">
-                        <i class="fa-solid fa-circle-check"></i> Conectada
-                    </span>
-                    {% else %}
-                    <span
-                        class="inline-flex items-center gap-2 bg-rose-50 text-rose-700 text-sm font-bold px-3 py-2 rounded-lg border border-rose-100">
-                        <i class="fa-solid fa-triangle-exclamation"></i> Atenção
-                    </span>
-                    {% endif %}
-                    <span class="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                        {{ evolution_status.detalhe }}
-                    </span>
-                </div>
-            </div>
+            <div class="admin-section-heading"><div><h2><i class="fa-solid fa-users text-indigo-500"></i> Usuários cadastrados</h2><p>Edite os dados e consulte todos os cadastros.</p></div><span class="admin-total-badge">{{ paginacao.total }} encontrado(s)</span></div>
+            <form method="GET" action="{{ url_for('admin.admin') }}" class="admin-filter-bar"><input type="hidden" name="aba" value="usuarios"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone ou endereço"></label><label><span>Situação</span><select name="filtro"><option value="todos">Todos</option><option value="ativos" {% if filtros.filtro == 'ativos' %}selected{% endif %}>Ativos</option><option value="pausados" {% if filtros.filtro == 'pausados' %}selected{% endif %}>Pausados</option><option value="whatsapp" {% if filtros.filtro == 'whatsapp' %}selected{% endif %}>Com WhatsApp</option><option value="pendentes" {% if filtros.filtro == 'pendentes' %}selected{% endif %}>Pendentes</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button type="submit" class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='usuarios') }}" class="admin-clear-button">Limpar</a></form>
+            <div class="overflow-x-auto"><table class="w-full min-w-[1080px] text-left border-collapse admin-data-table"><thead><tr><th class="w-40">Cadastro</th><th class="w-56">Nome</th><th class="w-44">Telefone</th><th>Endereço</th><th class="w-52">Status</th><th class="w-28 text-right">Ações</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">
+            {% for row in usuarios %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 text-slate-600"><form id="editar-usuario-{{ row.id }}" action="{{ url_for('admin.editar_usuario', id=row.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}"><input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}"><input type="hidden" name="retorno_busca" value="{{ filtros.busca }}"><input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}"></form><span class="inline-block bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">#{{ row.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ row.criado_em_exibicao }}</span></td><td class="px-4 py-3"><label class="sr-only" for="nome-{{ row.id }}">Nome</label><input id="nome-{{ row.id }}" name="nome" value="{{ row.nome or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input"></td><td class="px-4 py-3"><label class="sr-only" for="telefone-{{ row.id }}">Telefone</label><input id="telefone-{{ row.id }}" name="telefone" value="{{ row.telefone or '' }}" form="editar-usuario-{{ row.id }}" required inputmode="numeric" class="admin-table-input font-mono"></td><td class="px-4 py-3"><label class="sr-only" for="endereco-{{ row.id }}">Endereço</label><input id="endereco-{{ row.id }}" name="endereco" value="{{ row.endereco or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input"></td><td class="px-4 py-3"><div class="flex gap-4"><label class="admin-check"><input type="checkbox" name="ativo" value="1" form="editar-usuario-{{ row.id }}" {% if row.ativo == 1 %}checked{% endif %}>Ativo</label><label class="admin-check"><input type="checkbox" name="receber_whatsapp" value="1" form="editar-usuario-{{ row.id }}" {% if row.receber_whatsapp == 1 %}checked{% endif %}>WhatsApp</label></div></td><td class="px-4 py-3"><div class="flex justify-end gap-2"><button type="submit" form="editar-usuario-{{ row.id }}" class="admin-icon-button bg-indigo-600 hover:bg-indigo-500" title="Salvar alterações"><i class="fa-solid fa-floppy-disk"></i></button><form action="{{ url_for('admin.deletar_usuario', id=row.id) }}" method="POST" onsubmit="return confirm('Apagar este usuário?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}"><input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}"><input type="hidden" name="retorno_busca" value="{{ filtros.busca }}"><input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}"><button type="submit" class="admin-icon-button bg-rose-600 hover:bg-rose-500" title="Apagar usuário"><i class="fa-solid fa-trash"></i></button></form></div></td></tr>{% else %}<tr><td colspan="6" class="admin-empty-state"><i class="fa-regular fa-folder-open"></i>Nenhum usuário encontrado.</td></tr>{% endfor %}
+            </tbody></table></div>{{ paginador(paginacao) }}
         </section>
 
-        <section id="sistema" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
-            <div
-                class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                        <i class="fa-solid fa-heart-pulse text-rose-500 text-xl"></i>
-                        Saúde do sistema
-                    </h2>
-                    <p class="text-sm text-slate-500 mt-1">Coleta, fila de alertas e último envio pelo WhatsApp.</p>
-                </div>
-
-                {% if saude_sistema.status_geral == 'ok' %}
-                <span
-                    class="w-fit inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 text-sm font-bold px-3 py-2 rounded-lg border border-emerald-100">
-                    <i class="fa-solid fa-circle-check"></i> {{ saude_sistema.status_texto }}
-                </span>
-                {% else %}
-                <span
-                    class="w-fit inline-flex items-center gap-2 bg-amber-50 text-amber-700 text-sm font-bold px-3 py-2 rounded-lg border border-amber-100">
-                    <i class="fa-solid fa-triangle-exclamation"></i> {{ saude_sistema.status_texto }}
-                </span>
-                {% endif %}
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 p-5">
-                <div class="border border-slate-200 rounded-lg p-4 bg-white">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="text-sm font-bold text-slate-700">Última coleta</span>
-                        {% if saude_sistema.coleta_ok %}
-                        <i class="fa-solid fa-circle-check text-emerald-500"></i>
-                        {% else %}
-                        <i class="fa-solid fa-triangle-exclamation text-amber-500"></i>
-                        {% endif %}
-                    </div>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.ultima_leitura_tempo }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ saude_sistema.ultima_leitura }}</p>
-                </div>
-
-                <div class="border border-slate-200 rounded-lg p-4 bg-white">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="text-sm font-bold text-slate-700">Fila pendente</span>
-                        <i class="fa-solid fa-list-check text-blue-500"></i>
-                    </div>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.fila_pendentes }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ saude_sistema.fila_enviando }} enviando agora</p>
-                </div>
-
-                <div class="border border-slate-200 rounded-lg p-4 bg-white">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="text-sm font-bold text-slate-700">Falhas na fila</span>
-                        {% if saude_sistema.fila_falhou == 0 %}
-                        <i class="fa-solid fa-circle-check text-emerald-500"></i>
-                        {% else %}
-                        <i class="fa-solid fa-triangle-exclamation text-rose-500"></i>
-                        {% endif %}
-                    </div>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.fila_falhou }}</p>
-                    <p class="mt-1 text-xs text-slate-500">Itens aguardando revisão</p>
-                </div>
-
-                <div class="border border-slate-200 rounded-lg p-4 bg-white">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="text-sm font-bold text-slate-700">Último envio</span>
-                        <i class="fa-brands fa-whatsapp text-emerald-500"></i>
-                    </div>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.ultimo_envio_status }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ saude_sistema.ultimo_envio }}</p>
-                </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 px-5 pb-5">
-                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <span class="text-sm font-bold text-slate-700">Item mais antigo</span>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.fila_mais_antiga }}</p>
-                </div>
-                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <span class="text-sm font-bold text-slate-700">Falhas em 24h</span>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.falhas_24h }}</p>
-                </div>
-                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <span class="text-sm font-bold text-slate-700">Entrega média</span>
-                    <p class="mt-2 text-lg font-extrabold text-slate-900">{{ saude_sistema.media_entrega_segundos }} s</p>
-                </div>
-                <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                    <span class="text-sm font-bold text-slate-700">Virada diária</span>
-                    <p class="mt-2 text-sm font-semibold text-slate-700">
-                        Vento: {{ 'aguardando reset' if saude_sistema.aguardando_reset_vento else 'sincronizado' }}<br>
-                        Chuva: {{ 'aguardando reset' if saude_sistema.aguardando_reset_chuva else 'sincronizada' }}
-                    </p>
-                </div>
-            </div>
+        {% elif aba_ativa == 'cadastros' %}
+        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-user-clock text-indigo-500"></i> Histórico de cadastros</h2><p>Cadastros, cancelamentos e alterações administrativas.</p></div><span class="admin-total-badge">{{ paginacao.total }} evento(s)</span></div>
+            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="cadastros"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone, endereço ou detalhe"></label><label><span>Evento</span><select name="filtro"><option value="todos">Todos</option><option value="cadastro" {% if filtros.filtro == 'cadastro' %}selected{% endif %}>Cadastro</option><option value="cancelamento" {% if filtros.filtro == 'cancelamento' %}selected{% endif %}>Cancelamento</option><option value="edicao_admin" {% if filtros.filtro == 'edicao_admin' %}selected{% endif %}>Edição admin</option><option value="exclusao_admin" {% if filtros.filtro == 'exclusao_admin' %}selected{% endif %}>Exclusão admin</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='cadastros') }}" class="admin-clear-button">Limpar</a></form>
+            <div class="overflow-x-auto"><table class="w-full min-w-[1080px] text-left border-collapse admin-data-table"><thead><tr><th>ID / data</th><th>Evento</th><th>Usuário</th><th>Contato</th><th>Endereço</th><th>WhatsApp</th><th>Detalhe</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for evento in eventos_cadastro %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ evento.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ evento.data_hora_exibicao }}</span></td><td class="px-4 py-3"><span class="admin-status-badge">{{ evento.acao|replace('_', ' ') }}</span></td><td class="px-4 py-3"><strong>{{ evento.nome or '-' }}</strong><span class="block text-xs text-slate-500 mt-1">ID {{ evento.usuario_id or '-' }}</span></td><td class="px-4 py-3 font-mono">{{ evento.telefone or '-' }}</td><td class="px-4 py-3">{{ evento.endereco or '-' }}</td><td class="px-4 py-3">{% if evento.receber_whatsapp == 1 %}<span class="text-emerald-700 font-semibold">Sim</span>{% elif evento.receber_whatsapp == 0 %}Não{% else %}-{% endif %}</td><td class="px-4 py-3 max-w-md">{{ evento.detalhe or '-' }}</td></tr>{% else %}<tr><td colspan="7" class="admin-empty-state"><i class="fa-regular fa-address-book"></i>Nenhum evento encontrado.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
         </section>
 
-        <div class="flex flex-wrap gap-2 text-sm">
-            <a href="#sistema"
-                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
-                <i class="fa-solid fa-heart-pulse"></i> Sistema
-            </a>
-            <a href="#usuarios"
-                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
-                <i class="fa-solid fa-users"></i> Usuários
-            </a>
-            <a href="#cadastros"
-                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
-                <i class="fa-solid fa-address-book"></i> Cadastros
-            </a>
-            <a href="#alertas"
-                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
-                <i class="fa-solid fa-bell"></i> Alertas
-            </a>
-            <a href="#historico"
-                class="inline-flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 rounded-lg font-semibold shadow-sm">
-                <i class="fa-solid fa-server"></i> Histórico
-            </a>
-        </div>
-
-        <section id="usuarios" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
-            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                        <i class="fa-solid fa-users text-indigo-500 text-xl"></i>
-                        Usuários cadastrados
-                    </h2>
-                    <p class="text-sm text-slate-500 mt-1">Todos os registros ativos, pausados e com WhatsApp desmarcado.</p>
-                </div>
-                <span
-                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    {{ resumo_usuarios.total_usuarios }} no total
-                </span>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full min-w-[1080px] text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-40">Cadastro</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-56">Nome</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-44">Telefone</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Endereço</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-52">Status</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200 w-28 text-right">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 text-sm">
-                        {% for row in usuarios %}
-                        <tr class="hover:bg-slate-50/80 transition-colors align-top">
-                            <td class="px-4 py-4 text-slate-600">
-                                <form id="editar-usuario-{{ row['id'] }}"
-                                    action="{{ url_for('admin.editar_usuario', id=row['id']) }}" method="POST">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                </form>
-                                <div class="flex flex-col gap-1">
-                                    <span
-                                        class="w-fit bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
-                                        #{{ row['id'] }}
-                                    </span>
-                                    <span class="font-mono text-xs text-slate-500">{{ row['criado_em_exibicao'] }}</span>
-                                </div>
-                            </td>
-                            <td class="px-4 py-4">
-                                <label class="sr-only" for="nome-{{ row['id'] }}">Nome</label>
-                                <input id="nome-{{ row['id'] }}" name="nome" value="{{ row['nome'] or '' }}"
-                                    form="editar-usuario-{{ row['id'] }}" required
-                                    class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
-                            </td>
-                            <td class="px-4 py-4">
-                                <label class="sr-only" for="telefone-{{ row['id'] }}">Telefone</label>
-                                <input id="telefone-{{ row['id'] }}" name="telefone" value="{{ row['telefone'] or '' }}"
-                                    form="editar-usuario-{{ row['id'] }}" required inputmode="numeric"
-                                    class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-mono text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
-                            </td>
-                            <td class="px-4 py-4">
-                                <label class="sr-only" for="endereco-{{ row['id'] }}">Endereço</label>
-                                <input id="endereco-{{ row['id'] }}" name="endereco" value="{{ row['endereco'] or '' }}"
-                                    form="editar-usuario-{{ row['id'] }}" required
-                                    class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
-                            </td>
-                            <td class="px-4 py-4">
-                                <div class="flex flex-col gap-2">
-                                    <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                                        <input type="checkbox" name="ativo" value="1"
-                                            form="editar-usuario-{{ row['id'] }}" {% if row['ativo'] == 1 %}checked{% endif %}
-                                            class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                        Ativo
-                                    </label>
-                                    <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                                        <input type="checkbox" name="receber_whatsapp" value="1"
-                                            form="editar-usuario-{{ row['id'] }}" {% if row['receber_whatsapp'] == 1 %}checked{% endif %}
-                                            class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-                                        WhatsApp
-                                    </label>
-                                </div>
-                            </td>
-                            <td class="px-4 py-4">
-                                <div class="flex justify-end gap-2">
-                                    <button type="submit" form="editar-usuario-{{ row['id'] }}"
-                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition hover:bg-indigo-500"
-                                        title="Salvar alterações">
-                                        <i class="fa-solid fa-floppy-disk"></i>
-                                    </button>
-
-                                    <form action="{{ url_for('admin.deletar_usuario', id=row['id']) }}" method="POST"
-                                        onsubmit="return confirm('Apagar este usuário?')">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit"
-                                            class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-600 text-white shadow-sm transition hover:bg-rose-500"
-                                            title="Apagar usuário">
-                                            <i class="fa-solid fa-trash"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="6" class="px-6 py-12 text-center text-slate-500">
-                                <i class="fa-regular fa-folder-open text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum usuário cadastrado ainda.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        {% elif aba_ativa == 'eventos' %}
+        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-cloud-bolt text-amber-500"></i> Eventos meteorológicos</h2><p>Detecção, enfileiramento e resultado de cada evento.</p></div><span class="admin-total-badge">{{ paginacao.total }} evento(s)</span></div>
+            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="eventos"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Tipo, fonte, mensagem ou detalhe"></label><label><span>Status</span><select name="filtro"><option value="todos">Todos</option><option value="detectado" {% if filtros.filtro == 'detectado' %}selected{% endif %}>Detectado</option><option value="enfileirado" {% if filtros.filtro == 'enfileirado' %}selected{% endif %}>Enfileirado</option><option value="sem_destinatarios" {% if filtros.filtro == 'sem_destinatarios' %}selected{% endif %}>Sem destinatários</option><option value="concluido" {% if filtros.filtro == 'concluido' %}selected{% endif %}>Concluído</option><option value="concluido_com_falhas" {% if filtros.filtro == 'concluido_com_falhas' %}selected{% endif %}>Com falhas</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='eventos') }}" class="admin-clear-button">Limpar</a></form>
+            <div class="overflow-x-auto"><table class="w-full min-w-[1080px] text-left border-collapse admin-data-table"><thead><tr><th>ID / horário</th><th>Tipo</th><th>Valor</th><th>Status / entregas</th><th>Referência</th><th>Mensagem / detalhe</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for evento in eventos_alertas %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ evento.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ evento.data_hora_exibicao }}</span></td><td class="px-4 py-3"><strong>{{ evento.tipo }}</strong><span class="block text-xs text-slate-500 mt-1">Nível {{ evento.nivel }}</span></td><td class="px-4 py-3"><strong>{{ evento.valor if evento.valor is not none else '-' }} {{ evento.unidade or '' }}</strong></td><td class="px-4 py-3"><span class="admin-status-badge">{{ evento.status|replace('_', ' ') }}</span><span class="block text-xs text-slate-500 mt-2">{{ evento.enviados }}/{{ evento.destinatarios }} enviados · {{ evento.falhas }} falhas</span></td><td class="px-4 py-3"><span class="font-mono text-xs">{{ evento.data_referencia }}</span><span class="block text-xs text-slate-500 mt-1">{{ evento.fonte or '-' }}</span><span class="block text-xs text-slate-500 mt-1">{{ evento.evento_id }}</span></td><td class="px-4 py-3 max-w-md"><p class="whitespace-pre-line">{{ evento.mensagem or '-' }}</p>{% if evento.detalhe %}<p class="text-xs text-slate-500 mt-2">{{ evento.detalhe }}</p>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="admin-empty-state"><i class="fa-solid fa-cloud-bolt"></i>Nenhum evento meteorológico encontrado.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
         </section>
 
-        <section id="cadastros" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
-            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-user-clock text-indigo-500 text-xl"></i>
-                    Histórico de cadastros
-                </h2>
-                <span
-                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    Últimos 30 eventos
-                </span>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full min-w-[900px] text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Data e hora</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Evento</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Nome</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Telefone</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Endereço</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Alertas</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Detalhe</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 text-sm">
-                        {% for evento in eventos_cadastro %}
-                        <tr class="hover:bg-slate-50/80 transition-colors align-top">
-                            <td class="px-4 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
-                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ evento['data_hora_exibicao'] }}
-                            </td>
-                            <td class="px-4 py-4">
-                                {% if evento['acao'] == 'cadastro' %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-1 rounded border border-emerald-100">
-                                    <i class="fa-solid fa-user-plus"></i> Cadastro
-                                </span>
-                                {% elif evento['acao'] == 'cancelamento' %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs font-bold px-2 py-1 rounded border border-rose-100">
-                                    <i class="fa-solid fa-user-minus"></i> Cancelamento
-                                </span>
-                                {% elif evento['acao'] == 'edicao_admin' %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-1 rounded border border-indigo-100">
-                                    <i class="fa-solid fa-pen"></i> Edição admin
-                                </span>
-                                {% elif evento['acao'] == 'exclusao_admin' %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs font-bold px-2 py-1 rounded border border-rose-100">
-                                    <i class="fa-solid fa-trash"></i> Exclusão admin
-                                </span>
-                                {% else %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs font-bold px-2 py-1 rounded border border-amber-100">
-                                    <i class="fa-solid fa-circle-info"></i> {{ evento['acao'] }}
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-4 font-medium text-slate-800">{{ evento['nome'] or '-' }}</td>
-                            <td class="px-4 py-4 text-slate-600 font-mono">{{ evento['telefone'] or '-' }}</td>
-                            <td class="px-4 py-4 text-slate-600">{{ evento['endereco'] or '-' }}</td>
-                            <td class="px-4 py-4">
-                                {% if evento['receber_whatsapp'] == 1 %}
-                                <span class="text-emerald-700 font-semibold">Sim</span>
-                                {% elif evento['receber_whatsapp'] == 0 %}
-                                <span class="text-slate-500">Não</span>
-                                {% else %}
-                                <span class="text-slate-400">-</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-4 text-slate-600">{{ evento['detalhe'] or '-' }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="7" class="px-6 py-12 text-center text-slate-500">
-                                <i class="fa-regular fa-address-book text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum evento de cadastro registrado ainda.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        {% elif aba_ativa == 'envios' %}
+        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-paper-plane text-emerald-500"></i> Envios de alertas</h2><p>Histórico completo das mensagens enviadas e das falhas.</p></div><span class="admin-total-badge">{{ paginacao.total }} envio(s)</span></div>
+            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="envios"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone, mensagem ou erro"></label><label><span>Status</span><select name="filtro"><option value="todos">Todos</option><option value="enviado" {% if filtros.filtro == 'enviado' %}selected{% endif %}>Enviado</option><option value="falhou" {% if filtros.filtro == 'falhou' %}selected{% endif %}>Falhou</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='envios') }}" class="admin-clear-button">Limpar</a></form>
+            <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left border-collapse admin-data-table"><thead><tr><th>ID / data</th><th>Status</th><th>Contato</th><th>Telefone</th><th>Mensagem</th><th>Erro</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for alerta in alertas %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ alerta.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ alerta.data_hora_exibicao }}</span></td><td class="px-4 py-3"><span class="admin-status-badge {% if alerta.status == 'enviado' %}admin-status-success{% else %}admin-status-error{% endif %}">{{ alerta.status }}</span></td><td class="px-4 py-3"><strong>{{ alerta.nome or '-' }}</strong><span class="block text-xs text-slate-500 mt-1">Usuário {{ alerta.usuario_id or '-' }}</span></td><td class="px-4 py-3 font-mono">{{ alerta.telefone or '-' }}</td><td class="px-4 py-3 max-w-md whitespace-pre-line">{{ alerta.mensagem or '-' }}</td><td class="px-4 py-3 max-w-xs text-rose-700">{{ alerta.erro or '-' }}</td></tr>{% else %}<tr><td colspan="6" class="admin-empty-state"><i class="fa-regular fa-bell"></i>Nenhum envio encontrado.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
         </section>
 
-        <section id="alertas" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
-            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-bell text-amber-500 text-xl"></i>
-                    Envios de alertas
-                </h2>
-                <span
-                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    Últimos 30 envios
-                </span>
-            </div>
-
-            <div class="px-5 py-4 border-b border-slate-100">
-                <h3 class="text-sm font-bold text-slate-800 mb-3">Eventos meteorológicos</h3>
-                <div class="overflow-x-auto">
-                    <table class="w-full min-w-[900px] text-left border-collapse">
-                        <thead><tr class="bg-slate-50 text-slate-500 text-xs uppercase">
-                            <th class="px-3 py-2">Horário</th><th class="px-3 py-2">Tipo</th>
-                            <th class="px-3 py-2">Nível</th><th class="px-3 py-2">Valor</th>
-                            <th class="px-3 py-2">Status</th><th class="px-3 py-2">Entregas</th>
-                        </tr></thead>
-                        <tbody class="divide-y divide-slate-100 text-sm">
-                        {% for evento in eventos_alertas %}
-                            <tr>
-                                <td class="px-3 py-3 font-mono text-xs">{{ evento['data_hora_exibicao'] }}</td>
-                                <td class="px-3 py-3 font-semibold">{{ evento['tipo'] }}</td>
-                                <td class="px-3 py-3">{{ evento['nivel'] }}</td>
-                                <td class="px-3 py-3">{{ evento['valor'] if evento['valor'] is not none else '-' }} {{ evento['unidade'] or '' }}</td>
-                                <td class="px-3 py-3">{{ evento['status'] }}</td>
-                                <td class="px-3 py-3">{{ evento['enviados'] }}/{{ evento['destinatarios'] }}{% if evento['falhas'] %} · {{ evento['falhas'] }} falha(s){% endif %}</td>
-                            </tr>
-                        {% else %}
-                            <tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">Nenhum evento meteorológico registrado.</td></tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full min-w-[900px] text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Data e hora</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Status</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Contato</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Telefone</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Mensagem</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Erro</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 text-sm">
-                        {% for alerta in alertas %}
-                        <tr class="hover:bg-slate-50/80 transition-colors align-top">
-                            <td class="px-4 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
-                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ alerta['data_hora_exibicao'] }}
-                            </td>
-                            <td class="px-4 py-4">
-                                {% if alerta['status'] == 'enviado' %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-1 rounded border border-emerald-100">
-                                    <i class="fa-solid fa-check"></i> Enviado
-                                </span>
-                                {% else %}
-                                <span
-                                    class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 text-xs font-bold px-2 py-1 rounded border border-rose-100">
-                                    <i class="fa-solid fa-xmark"></i> Falhou
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-4 font-medium text-slate-800">{{ alerta['nome'] or '-' }}</td>
-                            <td class="px-4 py-4 text-slate-600 font-mono">{{ alerta['telefone'] or '-' }}</td>
-                            <td class="px-4 py-4 text-slate-600 max-w-md">
-                                <div class="line-clamp-3 whitespace-pre-line">{{ alerta['mensagem'] }}</div>
-                            </td>
-                            <td class="px-4 py-4 text-rose-700 max-w-xs">{{ alerta['erro'] or '-' }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="6" class="px-6 py-12 text-center text-slate-500">
-                                <i class="fa-regular fa-bell text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum envio de alerta registrado ainda.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+        {% elif aba_ativa == 'historico' %}
+        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-server text-blue-500"></i> Histórico da estação</h2><p>Todas as leituras e métricas armazenadas pela estação.</p></div><span class="admin-total-badge">{{ paginacao.total }} leitura(s)</span></div>
+            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="historico"><label><span>Data inicial</span><input type="date" name="data_inicio" value="{{ filtros.data_inicio }}"></label><label><span>Data final</span><input type="date" name="data_fim" value="{{ filtros.data_fim }}"></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-filter"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='historico') }}" class="admin-clear-button">Limpar</a></form>
+            <div class="overflow-x-auto"><table class="w-full text-left border-collapse admin-data-table admin-history-table"><thead><tr><th>ID / data</th><th>Temperatura</th><th>Umidade / pressão</th><th>UV / radiação</th><th>Vento</th><th>Chuva</th><th>Estação</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for row in historico %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ row.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ row.data_hora_exibicao }}</span><span class="block text-xs text-slate-400 mt-1">Bruta #{{ row.leitura_bruta_id or '-' }}</span></td><td class="px-4 py-3"><strong class="text-orange-600">{{ row.temp if row.temp is not none else '-' }} °C</strong><span class="block text-xs text-slate-500 mt-1">Sensação: {{ row.sensacao if row.sensacao is not none else '-' }} °C</span></td><td class="px-4 py-3"><strong class="text-blue-600">{{ row.umidade if row.umidade is not none else '-' }}%</strong><span class="block text-xs text-slate-500 mt-1">{{ row.pressao if row.pressao is not none else '-' }} hPa</span></td><td class="px-4 py-3"><strong>UV {{ row.uv if row.uv is not none else '-' }}</strong><span class="block text-xs text-slate-500 mt-1">{{ row.radiacao if row.radiacao is not none else '-' }} W/m²</span></td><td class="px-4 py-3"><strong>{{ row.vento_vel if row.vento_vel is not none else '-' }} km/h</strong><span class="block text-xs text-slate-500 mt-1">Rajada: {{ row.vento_rajada if row.vento_rajada is not none else '-' }} km/h</span><span class="block text-xs text-slate-500 mt-1">Direção: {{ row.vento_dir if row.vento_dir is not none else '-' }}°</span></td><td class="px-4 py-3"><strong>{{ row.chuva_hoje if row.chuva_hoje is not none else '-' }} mm hoje</strong><span class="block text-xs text-slate-500 mt-1">Taxa: {{ row.chuva_rate if row.chuva_rate is not none else '-' }} mm/h</span><span class="block text-xs text-slate-500 mt-1">Evento: {{ row.chuva_evento if row.chuva_evento is not none else '-' }} mm</span></td><td class="px-4 py-3"><strong>Bateria: {{ row.bateria or '-' }}</strong><span class="block text-xs text-slate-500 mt-1">Sinal: {{ row.sinal or '-' }}</span><span class="block text-xs font-mono text-slate-400 mt-1">{{ row.station_data_hora_local or row.station_data_hora_utc or '-' }}</span></td></tr>{% else %}<tr><td colspan="7" class="admin-empty-state"><i class="fa-solid fa-database"></i>Nenhuma leitura encontrada.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
         </section>
-
-        <section id="historico" class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden scroll-mt-24">
-            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <i class="fa-solid fa-server text-blue-500 text-xl"></i>
-                    Histórico da estação
-                </h2>
-                <span
-                    class="w-fit bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full border border-slate-200">
-                    Últimos 5 registros
-                </span>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full min-w-[700px] text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase">
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Data e hora</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Temperatura</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Umidade</th>
-                            <th class="px-4 py-3 font-semibold border-b border-slate-200">Precipitação</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100 text-sm">
-                        {% for row in historico %}
-                        <tr class="hover:bg-slate-50/80 transition-colors">
-                            <td class="px-4 py-4 text-slate-600 font-mono text-xs">
-                                <i class="fa-regular fa-clock text-slate-400 mr-1"></i> {{ row['data_hora_exibicao'] }}
-                            </td>
-                            <td class="px-4 py-4">
-                                <span
-                                    class="font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100">
-                                    {{ row['temp'] }}°C
-                                </span>
-                            </td>
-                            <td class="px-4 py-4 text-blue-600 font-medium">
-                                <i class="fa-solid fa-droplet text-blue-300 mr-1"></i> {{ row['umidade'] }}%
-                            </td>
-                            <td class="px-4 py-4 text-slate-700 font-medium">
-                                {% if row['chuva_hoje'] > 0 %}
-                                <span class="text-blue-600">{{ row['chuva_hoje'] }} mm</span>
-                                {% else %}
-                                <span class="text-slate-400">{{ row['chuva_hoje'] }} mm</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="4" class="px-6 py-12 text-center text-slate-500">
-                                <i class="fa-solid fa-database text-3xl text-slate-300 mb-3 block"></i>
-                                Nenhum registro de clima salvo na base de dados.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
+        {% endif %}
     </main>
-
 </body>
-
 </html>

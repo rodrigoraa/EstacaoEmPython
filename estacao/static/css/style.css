@@ -682,3 +682,339 @@ body.modal-open {
     border-color: rgba(148, 163, 184, 0.22) !important;
     color: #e2e8f0 !important;
 }
+
+/* Painel administrativo */
+.admin-tabs-shell {
+    position: sticky;
+    top: 73px;
+    z-index: 40;
+}
+
+.admin-tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: .5rem;
+    padding: .9rem 1rem .75rem;
+    border-bottom: 3px solid transparent;
+    color: #64748b;
+    font-size: .875rem;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.admin-tab:hover {
+    color: #334155;
+    background: #f8fafc;
+}
+
+.admin-tab-active {
+    color: #4f46e5;
+    border-bottom-color: #4f46e5;
+}
+
+.admin-tab-count {
+    min-width: 1.5rem;
+    padding: .1rem .4rem;
+    border-radius: 9999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: .6875rem;
+    text-align: center;
+}
+
+.admin-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #f1f5f9;
+    background: rgba(248, 250, 252, .7);
+}
+
+.admin-section-heading h2 {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    color: #1e293b;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.admin-section-heading p {
+    margin-top: .25rem;
+    color: #64748b;
+    font-size: .875rem;
+}
+
+.admin-total-badge {
+    flex: 0 0 auto;
+    padding: .3rem .75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 9999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.admin-filter-bar {
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: .75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.admin-filter-bar label {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    min-width: 8rem;
+    color: #475569;
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.admin-filter-bar .admin-filter-grow {
+    flex: 1 1 18rem;
+}
+
+.admin-filter-bar input,
+.admin-filter-bar select,
+.admin-table-input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: .5rem;
+    background: #fff;
+    color: #1e293b;
+    font-size: .875rem;
+    outline: none;
+}
+
+.admin-filter-bar input,
+.admin-filter-bar select {
+    min-height: 2.5rem;
+    padding: .5rem .75rem;
+}
+
+.admin-table-input {
+    padding: .5rem .75rem;
+}
+
+.admin-filter-bar input:focus,
+.admin-filter-bar select:focus,
+.admin-table-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px #e0e7ff;
+}
+
+.admin-filter-button,
+.admin-clear-button {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    padding: .5rem .9rem;
+    border-radius: .5rem;
+    font-size: .875rem;
+    font-weight: 700;
+}
+
+.admin-filter-button {
+    background: #4f46e5;
+    color: #fff;
+}
+
+.admin-filter-button:hover {
+    background: #6366f1;
+}
+
+.admin-clear-button {
+    border: 1px solid #cbd5e1;
+    color: #475569;
+}
+
+.admin-clear-button:hover {
+    background: #f8fafc;
+}
+
+.admin-data-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: .75rem;
+    text-transform: uppercase;
+}
+
+.admin-data-table th {
+    padding: .75rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    font-weight: 600;
+}
+
+.admin-history-table {
+    min-width: 1280px;
+}
+
+.admin-check {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    color: #334155;
+    font-size: .8125rem;
+    font-weight: 600;
+}
+
+.admin-check input {
+    width: 1rem;
+    height: 1rem;
+    accent-color: #4f46e5;
+}
+
+.admin-icon-button {
+    display: inline-flex;
+    width: 2.25rem;
+    height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: .5rem;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .08);
+}
+
+.admin-status-badge {
+    display: inline-flex;
+    padding: .25rem .5rem;
+    border: 1px solid #e0e7ff;
+    border-radius: .375rem;
+    background: #eef2ff;
+    color: #4338ca;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.admin-status-success {
+    border-color: #d1fae5;
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.admin-status-error {
+    border-color: #ffe4e6;
+    background: #fff1f2;
+    color: #be123c;
+}
+
+.admin-empty-state {
+    padding: 3rem 1.5rem;
+    color: #64748b;
+    text-align: center;
+}
+
+.admin-empty-state i {
+    display: block;
+    margin-bottom: .75rem;
+    color: #cbd5e1;
+    font-size: 1.875rem;
+}
+
+.admin-page-link {
+    display: inline-flex;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0 .6rem;
+    border: 1px solid #e2e8f0;
+    border-radius: .5rem;
+    background: #fff;
+    color: #475569;
+    font-size: .875rem;
+    font-weight: 700;
+}
+
+.admin-page-link:hover {
+    background: #f8fafc;
+}
+
+.admin-page-link-active {
+    border-color: #4f46e5;
+    background: #4f46e5;
+    color: #fff;
+}
+
+.admin-page-link-disabled {
+    pointer-events: none;
+    opacity: .35;
+}
+
+.admin-metric {
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: .5rem;
+}
+
+.admin-metric-muted {
+    background: #f8fafc;
+}
+
+.admin-metric span,
+.admin-metric strong,
+.admin-metric small {
+    display: block;
+}
+
+.admin-metric span {
+    color: #334155;
+    font-size: .875rem;
+    font-weight: 700;
+}
+
+.admin-metric strong {
+    margin-top: .5rem;
+    color: #0f172a;
+    font-size: 1.125rem;
+    font-weight: 800;
+}
+
+.admin-metric small {
+    margin-top: .25rem;
+    color: #64748b;
+    font-size: .75rem;
+}
+
+@media (max-width: 639px) {
+    .admin-tabs-shell {
+        top: 72px;
+    }
+
+    .admin-tab {
+        padding-right: .75rem;
+        padding-left: .75rem;
+    }
+
+    .admin-tab-count {
+        display: none;
+    }
+
+    .admin-section-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .admin-filter-bar > label,
+    .admin-filter-bar .admin-filter-grow,
+    .admin-filter-button,
+    .admin-clear-button {
+        width: 100%;
+        flex-basis: 100%;
+    }
+}

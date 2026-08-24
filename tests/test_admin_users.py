@@ -92,7 +92,7 @@ class AdminUsuariosTest(unittest.TestCase):
         )
 
         self.assertEqual(resposta.status_code, 302)
-        self.assertIn("/admin#usuarios", resposta.headers["Location"])
+        self.assertIn("/admin?aba=usuarios", resposta.headers["Location"])
 
         conn = self.abrir_banco()
         usuario = conn.execute(
@@ -124,14 +124,102 @@ class AdminUsuariosTest(unittest.TestCase):
         }
         self.autenticar_admin()
 
-        resposta = self.client.get("/admin")
+        resposta = self.client.get("/admin?aba=usuarios")
 
         self.assertEqual(resposta.status_code, 200)
         self.assertIn("Usuários cadastrados".encode("utf-8"), resposta.data)
-        self.assertIn("Saúde do sistema".encode("utf-8"), resposta.data)
-        self.assertIn("Eventos meteorológicos".encode("utf-8"), resposta.data)
-        self.assertIn("Entrega média".encode("utf-8"), resposta.data)
         self.assertIn(f"editar-usuario-{usuario_id}".encode("utf-8"), resposta.data)
+
+        resumo = self.client.get("/admin")
+        self.assertIn("Saúde do sistema".encode("utf-8"), resumo.data)
+        self.assertIn("Entrega média".encode("utf-8"), resumo.data)
+
+        eventos = self.client.get("/admin?aba=eventos")
+        self.assertIn("Eventos meteorológicos".encode("utf-8"), eventos.data)
+
+    def test_admin_pagina_e_filtra_usuarios(self):
+        for indice in range(1, 26):
+            self.cadastrar_usuario(
+                nome=f"Pessoa {indice:02d}", telefone=f"67{indice:09d}"
+            )
+        self.admin_module.obter_status_evolution = lambda: {
+            "ok": True,
+            "estado": "connected",
+            "detalhe": "HTTP 200",
+        }
+        self.autenticar_admin()
+
+        pagina = self.client.get("/admin?aba=usuarios&pagina=2&por_pagina=10")
+        self.assertEqual(pagina.status_code, 200)
+        self.assertEqual(pagina.data.count(b'id="editar-usuario-'), 10)
+        self.assertIn("Exibindo".encode("utf-8"), pagina.data)
+        self.assertIn(b"11\xe2\x80\x9320", pagina.data)
+        self.assertIn(b"de <strong", pagina.data)
+        self.assertIn(b">25</strong> registros", pagina.data)
+
+        filtrada = self.client.get(
+            "/admin?aba=usuarios&busca=Pessoa+07&filtro=ativos"
+        )
+        self.assertEqual(filtrada.status_code, 200)
+        self.assertIn(b' value="Pessoa 07"', filtrada.data)
+        self.assertNotIn(b' value="Pessoa 08"', filtrada.data)
+
+    def test_admin_pagina_todos_os_historicos(self):
+        conn = self.abrir_banco()
+        for indice in range(1, 13):
+            conn.execute(
+                """
+                INSERT INTO cadastro_eventos (acao, nome, telefone, detalhe)
+                VALUES ('cadastro', ?, ?, ?)
+                """,
+                (f"Cadastro {indice}", f"67{indice:09d}", f"Detalhe {indice}"),
+            )
+            conn.execute(
+                """
+                INSERT INTO alertas_eventos (
+                    evento_id, data_referencia, tipo, nivel, status, mensagem
+                ) VALUES (?, '2026-08-24', 'chuva', 1, 'concluido', ?)
+                """,
+                (f"evento-{indice}", f"Mensagem evento {indice}"),
+            )
+            conn.execute(
+                """
+                INSERT INTO alertas_envios (nome, telefone, status, mensagem)
+                VALUES (?, ?, 'enviado', ?)
+                """,
+                (f"Envio {indice}", f"67{indice:09d}", f"Mensagem envio {indice}"),
+            )
+            conn.execute(
+                """
+                INSERT INTO historico_clima (
+                    temp, umidade, data_hora_local, data_hora
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    20 + indice,
+                    60 + indice,
+                    f"2026-08-{indice:02d}T12:00:00",
+                    f"2026-08-{indice:02d}T16:00:00",
+                ),
+            )
+        conn.commit()
+        conn.close()
+        self.autenticar_admin()
+
+        casos = (
+            ("cadastros", "Cadastro 2"),
+            ("eventos", "evento-2"),
+            ("envios", "Envio 2"),
+            ("historico", "02/08/2026"),
+        )
+        for aba, marcador in casos:
+            with self.subTest(aba=aba):
+                resposta = self.client.get(
+                    f"/admin?aba={aba}&pagina=2&por_pagina=10"
+                )
+                self.assertEqual(resposta.status_code, 200)
+                self.assertIn("11–12".encode("utf-8"), resposta.data)
+                self.assertIn(marcador.encode("utf-8"), resposta.data)
 
     def test_admin_calcula_saude_do_sistema(self):
         conn = self.abrir_banco()

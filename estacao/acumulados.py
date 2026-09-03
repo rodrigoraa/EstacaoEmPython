@@ -142,16 +142,60 @@ def salvar_acumulado(conn, acumulado):
     )
 
 
+def aplicar_leitura_incremental(
+    acumulado,
+    chuva_leitura,
+    rajada_atual=0.0,
+    rajada_max_nuvem=0.0,
+):
+    """Aplica uma leitura ao estado diário sem consultar tabelas históricas."""
+    chuva_leitura = max(valor_float(chuva_leitura), 0.0)
+    total_anterior = max(valor_float(acumulado["chuva_total_corrigida"]), 0.0)
+    ultima_leitura = acumulado.get("chuva_ultima_leitura")
+    resets = int(acumulado.get("chuva_reset_count") or 0)
+
+    if ultima_leitura is None:
+        total_atualizado = max(total_anterior, chuva_leitura)
+    else:
+        ultima_leitura = max(valor_float(ultima_leitura), 0.0)
+        if chuva_leitura >= ultima_leitura:
+            total_atualizado = total_anterior + (chuva_leitura - ultima_leitura)
+        else:
+            total_atualizado = total_anterior + chuva_leitura
+            resets += 1
+
+    return {
+        "data": acumulado["data"],
+        "chuva_total_corrigida": round(
+            max(total_anterior, total_atualizado),
+            1,
+        ),
+        "chuva_ultima_leitura": round(chuva_leitura, 1),
+        "chuva_reset_count": resets,
+        "rajada_max_corrigida": round(
+            max(
+                valor_float(acumulado.get("rajada_max_corrigida")),
+                valor_float(rajada_atual),
+                valor_float(rajada_max_nuvem),
+            ),
+            1,
+        ),
+    }
+
+
 def atualizar_acumulado_diario(dados, data=None):
     data = data or data_local()
-    chuva_leitura = valor_float(dados.get("chuva_hoje")) if dados else 0.0
+    chuva_leitura = (
+        max(valor_float(dados.get("chuva_hoje")), 0.0)
+        if dados
+        else 0.0
+    )
     rajada_atual = valor_float(dados.get("rajada")) if dados else 0.0
     rajada_max_nuvem = valor_float(dados.get("rajada_max")) if dados else 0.0
 
     conn = database.get_db()
     try:
         database.garantir_tabela_acumulados_diarios(conn)
-        calculado = calcular_acumulado_pelo_historico(conn, data)
         existente = linha_para_dict(
             conn.execute(
                 "SELECT * FROM acumulados_diarios WHERE data = ?",
@@ -159,40 +203,16 @@ def atualizar_acumulado_diario(dados, data=None):
             ).fetchone()
         )
 
-        acumulado = {
-            "data": data,
-            "chuva_total_corrigida": calculado["chuva_total_corrigida"],
-            "chuva_ultima_leitura": chuva_leitura,
-            "chuva_reset_count": calculado["chuva_reset_count"],
-            "rajada_max_corrigida": max(
-                calculado["rajada_max_corrigida"],
-                rajada_atual,
-                rajada_max_nuvem,
-            ),
-        }
-
-        if existente:
-            acumulado["chuva_total_corrigida"] = max(
-                acumulado["chuva_total_corrigida"],
-                existente["chuva_total_corrigida"],
-            )
-            acumulado["chuva_reset_count"] = max(
-                acumulado["chuva_reset_count"],
-                existente["chuva_reset_count"],
-            )
-            acumulado["rajada_max_corrigida"] = max(
-                acumulado["rajada_max_corrigida"],
-                existente["rajada_max_corrigida"],
-            )
-
-        acumulado["chuva_total_corrigida"] = round(
-            acumulado["chuva_total_corrigida"], 1
-        )
-        acumulado["rajada_max_corrigida"] = round(
-            acumulado["rajada_max_corrigida"], 1
-        )
-        acumulado["chuva_ultima_leitura"] = round(
-            acumulado["chuva_ultima_leitura"], 1
+        # Bancos legados podem ainda não ter a linha do dia. Nesse caso, o
+        # histórico é lido uma única vez para reconstruir o estado persistido.
+        # Quando o updater já salvou a leitura atual no histórico, aplicar a
+        # mesma leitura abaixo produz delta zero e não duplica a chuva.
+        base = existente or calcular_acumulado_pelo_historico(conn, data)
+        acumulado = aplicar_leitura_incremental(
+            base,
+            chuva_leitura,
+            rajada_atual,
+            rajada_max_nuvem,
         )
 
         salvar_acumulado(conn, acumulado)

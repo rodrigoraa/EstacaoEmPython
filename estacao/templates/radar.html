@@ -44,7 +44,7 @@
     </div>
 
     {% if cluster and cluster.suspeito_clutter %}
-    <div class="radar-clutter-note"><i class="fa-solid fa-circle-info"></i> Possível eco fixo/clutter próximo ao radar. O eco permanece visível para avaliação temporal.</div>
+    <div class="radar-clutter-note"><i class="fa-solid fa-circle-info"></i> Possível eco fixo/clutter próximo ao radar. O eco permanece visível para avaliação temporal.{% if cluster.indice_persistencia_clutter is not none %} Índice diagnóstico de persistência: {{ '%.2f'|format(cluster.indice_persistencia_clutter) }} ({{ cluster.clutter_amostras }} amostras).{% else %} Histórico ainda insuficiente para índice de persistência.{% endif %}</div>
     {% endif %}
     {% if track and not track.trajetoria_compativel and track.quantidade_frames >= radar_track_min_frames %}
     <div class="radar-trajectory-note">Trajetória atual não indica passagem pela região da escola.</div>

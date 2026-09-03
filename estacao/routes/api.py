@@ -5,7 +5,13 @@ import calendar
 import os
 import json
 import logging
-from config import env_float, env_int, radar_config, regional_stations_config
+from config import (
+    env_float,
+    env_int,
+    nowcasting_config,
+    radar_config,
+    regional_stations_config,
+)
 from time_utils import agora_local, data_local, parse_datetime
 
 api_routes = Blueprint("api", __name__)
@@ -77,6 +83,15 @@ def health():
         except Exception:
             payload["regional_stations"] = (
                 "warning" if regional_cfg["enabled"] else "disabled"
+            )
+        nowcasting_cfg = nowcasting_config()
+        try:
+            from services.nowcasting_repository import status_health_nowcasting
+
+            payload["nowcasting"] = status_health_nowcasting(nowcasting_cfg)
+        except Exception:
+            payload["nowcasting"] = (
+                "warning" if nowcasting_cfg["enabled"] else "disabled"
             )
         return jsonify(payload), 200 if leitura_ok else 503
     except Exception as erro:

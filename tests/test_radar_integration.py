@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -62,10 +62,10 @@ class RadarIntegrationTest(unittest.TestCase):
             -58.226281, -50.543479, 400, 1000,
         )
 
-    def cluster(self, numero=1, lat=-22.0, lon=-54.46, clutter=False):
+    def cluster(self, numero=1, lat=-22.0, lon=-54.46, clutter=False, pixels=200):
         distancia = haversine_km(lat, lon, -22.4925326, -54.4610352)
         return RadarCluster(
-            numero, 200, 300, 400, lat, lon, 290, 390, 20, 20,
+            numero, pixels, 300, 400, lat, lon, 290, 390, 20, 20,
             distancia, max(0, distancia - 10),
             haversine_km(lat, lon, -20.27855, -54.47396), "N", clutter, "VERDE",
         )
@@ -138,6 +138,148 @@ class RadarIntegrationTest(unittest.TestCase):
 
         salvar_resultado_frame(self.frame("2000-01-01 00:00:00", "antigo"), None, None, 20, 20, [])
         self.assertTrue(obter_estado_radar(45)["stale"])
+
+    def test_frame_utc_recente_nao_fica_stale_por_confusao_de_fuso(self):
+        from services.radar_repository import obter_estado_radar, salvar_resultado_frame
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        salvar_resultado_frame(
+            self.frame(now.strftime("%Y-%m-%d %H:%M:%S"), "recente-utc"),
+            None, None, 20, 20, [],
+        )
+        state = obter_estado_radar(45)
+        self.assertFalse(state["stale"])
+        self.assertTrue(state["frame"]["data_frame_utc"].endswith("+00:00"))
+
+    def test_novo_frame_persiste_utc_local_sem_reescrever_legado(self):
+        from services.radar_repository import salvar_resultado_frame
+
+        frame_id, _ = salvar_resultado_frame(
+            self.frame("2026-09-03 00:30:00", "timezone"), None, None, 20, 20, []
+        )
+        conn = self.database.get_db()
+        row = conn.execute("SELECT * FROM radar_frames WHERE id=?", (frame_id,)).fetchone()
+        conn.execute(
+            """
+            INSERT INTO radar_frames (
+                radar_codigo, produto, data_frame, path_remoto, lat_center,
+                lon_center, lat_min, lat_max, lon_min, lon_max
+            ) VALUES ('jr','maxcappi','2020-01-01 00:00:00','https://example/legado.png',
+                      0,0,-1,1,-1,1)
+            """
+        )
+        legado = conn.execute(
+            "SELECT data_frame, data_frame_utc, timestamp_status FROM radar_frames WHERE path_remoto LIKE '%legado.png'"
+        ).fetchone()
+        conn.commit()
+        conn.close()
+        self.assertEqual(row["data_frame_utc"], "2026-09-03T00:30:00+00:00")
+        self.assertEqual(row["data_frame_local"], "2026-09-02T20:30:00-04:00")
+        self.assertEqual(row["timestamp_status"], "utc_explicit")
+        self.assertEqual(legado["data_frame"], "2020-01-01 00:00:00")
+        self.assertIsNone(legado["data_frame_utc"])
+        self.assertEqual(legado["timestamp_status"], "legacy_unverified")
+
+    def test_tracking_atravessa_meia_noite_utc(self):
+        from services.radar_repository import atualizar_tracking, obter_estado_radar, salvar_resultado_frame
+
+        for horario, lat, sufixo in (
+            ("2026-09-02 23:50:00", -21.9, "m1"),
+            ("2026-09-03 00:00:00", -22.0, "m2"),
+            ("2026-09-03 00:10:00", -22.1, "m3"),
+        ):
+            frame_id, _ = salvar_resultado_frame(
+                self.frame(horario, sufixo), None, None, 20, 20, [self.cluster(lat=lat)]
+            )
+            atualizar_tracking(frame_id, -22.4925326, -54.4610352, 3, 10, 150, 25)
+        track = obter_estado_radar(10**9)["tracking"]
+        self.assertEqual(track["quantidade_frames"], 3)
+        self.assertGreater(track["velocidade_kmh"], 0)
+
+    def test_multitrack_cruzamento_preserva_ids_por_posicao_prevista(self):
+        from services.radar_repository import atualizar_tracking, salvar_resultado_frame
+
+        frames = (
+            ("2026-09-03 00:00:00", -54.70, -54.20, 180, 260, "cross1"),
+            ("2026-09-03 00:10:00", -54.55, -54.35, 220, 220, "cross2"),
+            ("2026-09-03 00:30:00", -54.40, -54.50, 280, 170, "cross3"),
+        )
+        initial = None
+        final = None
+        for horario, lon_a, lon_b, size_a, size_b, suffix in frames:
+            frame_id, _ = salvar_resultado_frame(
+                self.frame(horario, suffix), None, None, 20, 20,
+                [
+                    self.cluster(1, -22.0, lon_a, pixels=size_a),
+                    self.cluster(2, -22.0, lon_b, pixels=size_b),
+                ],
+            )
+            atualizar_tracking(frame_id, -22.4925326, -54.4610352, 3, 10, 150, 25)
+            conn = self.database.get_db()
+            mapping = {
+                row["cluster_numero"]: row["track_id"]
+                for row in conn.execute(
+                    """
+                    SELECT c.cluster_numero, p.track_id
+                    FROM radar_clusters c JOIN radar_track_points p ON p.cluster_id=c.id
+                    WHERE c.frame_id=?
+                    """,
+                    (frame_id,),
+                )
+            }
+            conn.close()
+            initial = initial or mapping
+            final = mapping
+        self.assertEqual(final[1], initial[1])
+        self.assertEqual(final[2], initial[2])
+
+    def test_track_ausente_permanece_temporario_e_nova_celula_nasce(self):
+        from services.radar_repository import atualizar_tracking, salvar_resultado_frame
+
+        first_id, _ = salvar_resultado_frame(
+            self.frame("2026-09-03 01:00:00", "life1"), None, None, 20, 20,
+            [self.cluster(1, -22.0, -54.7), self.cluster(2, -22.0, -54.2)],
+        )
+        atualizar_tracking(first_id, -22.4925326, -54.4610352, 3, 10, 150, 25)
+        conn = self.database.get_db()
+        old_tracks = {row[0] for row in conn.execute("SELECT id FROM radar_tracks")}
+        conn.close()
+
+        second_id, _ = salvar_resultado_frame(
+            self.frame("2026-09-03 01:20:00", "life2"), None, None, 20, 20,
+            [self.cluster(1, -22.1, -54.7, pixels=260), self.cluster(2, -23.0, -56.0)],
+        )
+        atualizar_tracking(second_id, -22.4925326, -54.4610352, 3, 10, 150, 25)
+        conn = self.database.get_db()
+        active = {row[0] for row in conn.execute("SELECT id FROM radar_tracks WHERE ativo=1")}
+        total = conn.execute("SELECT COUNT(*) FROM radar_tracks").fetchone()[0]
+        conn.close()
+        self.assertTrue(old_tracks <= active)
+        self.assertEqual(total, 3)
+
+    def test_indice_clutter_exige_historico_e_nao_exclui_cluster(self):
+        from services.radar_repository import salvar_resultado_frame
+
+        last_id = None
+        for index in range(13):
+            minute = index * 10
+            horario = f"2026-09-03 {2 + minute // 60:02d}:{minute % 60:02d}:00"
+            last_id, _ = salvar_resultado_frame(
+                self.frame(horario, f"clutter-{index}"), None, None, 20, 20,
+                [self.cluster(1, -22.0, -54.46, clutter=True)],
+            )
+        conn = self.database.get_db()
+        row = conn.execute(
+            "SELECT indice_persistencia_clutter, clutter_amostras FROM radar_clusters WHERE frame_id=?",
+            (last_id,),
+        ).fetchone()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM radar_clusters WHERE frame_id=?", (last_id,)
+        ).fetchone()[0]
+        conn.close()
+        self.assertGreaterEqual(row["clutter_amostras"], 12)
+        self.assertGreaterEqual(row["indice_persistencia_clutter"], 0.75)
+        self.assertEqual(count, 1)
 
     def test_tracking_persistido_com_timestamps_irregulares(self):
         from services.radar_repository import atualizar_tracking, obter_estado_radar, salvar_resultado_frame

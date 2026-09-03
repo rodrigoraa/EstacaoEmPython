@@ -8,7 +8,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 logger = logging.getLogger(__name__)
 
 
@@ -251,6 +251,9 @@ def garantir_tabelas_radar(conn):
         radar_codigo TEXT NOT NULL,
         produto TEXT NOT NULL,
         data_frame TEXT NOT NULL,
+        data_frame_utc TEXT,
+        data_frame_local TEXT,
+        timestamp_status TEXT NOT NULL DEFAULT 'legacy_unverified',
         path_remoto TEXT NOT NULL UNIQUE,
         arquivo_local TEXT,
         arquivo_analisado TEXT,
@@ -290,6 +293,8 @@ def garantir_tabelas_radar(conn):
         distancia_radar_km REAL NOT NULL,
         direcao_relativa_escola TEXT NOT NULL,
         suspeito_clutter INTEGER NOT NULL DEFAULT 0,
+        indice_persistencia_clutter REAL,
+        clutter_amostras INTEGER NOT NULL DEFAULT 0,
         intensidade_codigo TEXT,
         criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(frame_id, cluster_numero),
@@ -302,6 +307,10 @@ def garantir_tabelas_radar(conn):
         track_codigo TEXT NOT NULL UNIQUE,
         primeiro_frame_em TEXT NOT NULL,
         ultimo_frame_em TEXT NOT NULL,
+        primeiro_frame_em_utc TEXT,
+        primeiro_frame_em_local TEXT,
+        ultimo_frame_em_utc TEXT,
+        ultimo_frame_em_local TEXT,
         quantidade_frames INTEGER NOT NULL DEFAULT 1,
         duracao_minutos REAL NOT NULL DEFAULT 0,
         deslocamento_total_km REAL NOT NULL DEFAULT 0,
@@ -318,6 +327,8 @@ def garantir_tabelas_radar(conn):
         menor_aproximacao_km REAL,
         eta_minutos REAL,
         suspeito_clutter INTEGER NOT NULL DEFAULT 0,
+        indice_persistencia_clutter REAL,
+        clutter_amostras INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'DADOS_INSUFICIENTES',
         ativo INTEGER NOT NULL DEFAULT 1,
         atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -330,6 +341,8 @@ def garantir_tabelas_radar(conn):
         frame_id INTEGER NOT NULL,
         cluster_id INTEGER NOT NULL UNIQUE,
         data_frame TEXT NOT NULL,
+        data_frame_utc TEXT,
+        data_frame_local TEXT,
         centro_lat REAL NOT NULL,
         centro_lon REAL NOT NULL,
         distancia_centro_escola_km REAL NOT NULL,
@@ -340,9 +353,35 @@ def garantir_tabelas_radar(conn):
         FOREIGN KEY(cluster_id) REFERENCES radar_clusters(id) ON DELETE CASCADE
     )
     """)
+    garantir_coluna(conn, "radar_frames", "data_frame_utc", "TEXT")
+    garantir_coluna(conn, "radar_frames", "data_frame_local", "TEXT")
+    garantir_coluna(
+        conn,
+        "radar_frames",
+        "timestamp_status",
+        "TEXT NOT NULL DEFAULT 'legacy_unverified'",
+    )
+    garantir_coluna(conn, "radar_clusters", "indice_persistencia_clutter", "REAL")
+    garantir_coluna(
+        conn, "radar_clusters", "clutter_amostras", "INTEGER NOT NULL DEFAULT 0"
+    )
+    garantir_coluna(conn, "radar_tracks", "primeiro_frame_em_utc", "TEXT")
+    garantir_coluna(conn, "radar_tracks", "primeiro_frame_em_local", "TEXT")
+    garantir_coluna(conn, "radar_tracks", "ultimo_frame_em_utc", "TEXT")
+    garantir_coluna(conn, "radar_tracks", "ultimo_frame_em_local", "TEXT")
+    garantir_coluna(conn, "radar_tracks", "indice_persistencia_clutter", "REAL")
+    garantir_coluna(
+        conn, "radar_tracks", "clutter_amostras", "INTEGER NOT NULL DEFAULT 0"
+    )
+    garantir_coluna(conn, "radar_track_points", "data_frame_utc", "TEXT")
+    garantir_coluna(conn, "radar_track_points", "data_frame_local", "TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_radar_frames_data "
         "ON radar_frames(data_frame DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_radar_frames_data_utc "
+        "ON radar_frames(data_frame_utc DESC)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_radar_clusters_frame_distancia "
@@ -355,6 +394,41 @@ def garantir_tabelas_radar(conn):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_radar_track_points_track_data "
         "ON radar_track_points(track_id, data_frame)"
+    )
+
+
+def garantir_tabela_nowcasting(conn):
+    """Historico de calibracao observacional; nao possui gatilho de alertas."""
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS nowcasting_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        calculado_em_utc TEXT NOT NULL,
+        calculado_em_local TEXT NOT NULL,
+        radar_frame_id INTEGER,
+        radar_track_id INTEGER,
+        status TEXT NOT NULL,
+        nivel_evidencia TEXT NOT NULL,
+        indice_evidencia INTEGER NOT NULL,
+        distancia_borda_km REAL,
+        velocidade_kmh REAL,
+        direcao_movimento TEXT,
+        aproximando INTEGER,
+        trajetoria_compativel INTEGER NOT NULL DEFAULT 0,
+        eta_minutos REAL,
+        estacoes_relevantes_json TEXT NOT NULL,
+        evidencias_json TEXT NOT NULL,
+        dados_escola_json TEXT NOT NULL,
+        estado_json TEXT NOT NULL,
+        input_fingerprint TEXT NOT NULL UNIQUE,
+        versao_algoritmo TEXT NOT NULL,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(radar_frame_id) REFERENCES radar_frames(id),
+        FOREIGN KEY(radar_track_id) REFERENCES radar_tracks(id)
+    )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_nowcasting_calculado "
+        "ON nowcasting_snapshots(calculado_em_utc DESC)"
     )
 
 
@@ -709,6 +783,7 @@ def init_db():
     garantir_tabela_health_check_estado(conn)
     garantir_tabelas_radar(conn)
     garantir_tabelas_estacoes_regionais(conn)
+    garantir_tabela_nowcasting(conn)
     garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)
     garantir_schema_version(conn)

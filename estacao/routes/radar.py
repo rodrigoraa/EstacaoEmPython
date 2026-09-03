@@ -34,7 +34,9 @@ def radar():
     estado = _estado_seguro()
     if estado.get("frame"):
         estado["frame"]["data_frame_formatada"] = formatar_local(
-            estado["frame"]["data_frame"], assume_utc=False
+            estado["frame"].get("data_frame_local")
+            or estado["frame"].get("data_frame_utc"),
+            assume_utc=not bool(estado["frame"].get("data_frame_local")),
         )
         estado["atualizado_em_formatada"] = formatar_local(
             estado.get("atualizado_em"), assume_utc=True

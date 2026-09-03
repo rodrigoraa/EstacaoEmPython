@@ -1,6 +1,6 @@
 import sys
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -16,6 +16,8 @@ from services.radar_analysis import (  # noqa: E402
     TrackPoint,
     analisar_track,
     abrir_imagem_png,
+    criar_mascaras_eco,
+    custo_associacao,
     detectar_clusters,
     direcao_cardinal,
     haversine_km,
@@ -66,6 +68,30 @@ class RadarAnalysisTest(unittest.TestCase):
         self.assertEqual(len(clusters), 1)
         self.assertGreaterEqual(clusters[0].pixels_eco, 100)
 
+    def test_dilatacao_nao_infla_manchinha_abaixo_do_limite(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        ImageDraw.Draw(imagem).rectangle((40, 40, 47, 47), fill=(0, 180, 0))
+        clusters = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)
+        self.assertEqual(clusters, [])
+
+    def test_cluster_real_de_cem_pixels_preserva_contagem(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        ImageDraw.Draw(imagem).rectangle((40, 40, 49, 49), fill=(0, 180, 0))
+        cluster = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)[0]
+        self.assertEqual(cluster.pixels_eco, 100)
+
+    def test_fragmentos_agrupados_contam_so_pixels_originais_e_intensidade(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        draw = ImageDraw.Draw(imagem)
+        draw.rectangle((40, 40, 45, 49), fill=(0, 180, 0))
+        draw.rectangle((47, 40, 52, 49), fill=(0, 180, 220))
+        rgb = __import__("numpy").asarray(imagem)
+        original, processada = criar_mascaras_eco(rgb, self.config)
+        self.assertGreater(processada.sum(), original.sum())
+        cluster = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)[0]
+        self.assertEqual(cluster.pixels_eco, 120)
+        self.assertEqual(cluster.intensidade_codigo, "MISTO")
+
     def test_distancia_da_borda_e_menor_que_do_centro(self):
         imagem = Image.new("RGB", (100, 100), "black")
         ImageDraw.Draw(imagem).rectangle((40, 40, 60, 60), fill=(0, 180, 0))
@@ -94,6 +120,20 @@ class RadarAnalysisTest(unittest.TestCase):
         impossivel, _ = pode_associar(self._ponto(0, 0.8), self._ponto(1, 0.1), 150)
         self.assertTrue(valido)
         self.assertFalse(impossivel)
+
+    def test_custo_prefere_posicao_prevista_e_rejeita_curva_incompativel(self):
+        historico = [self._ponto(0, 0.8), self._ponto(20, 0.6)]
+        esperado = self._ponto(40, 0.4)
+        desvio = self._ponto(40, 0.45, 0.05)
+        valido_esperado, custo_esperado, _ = custo_associacao(historico, esperado, 150)
+        valido_desvio, custo_desvio, _ = custo_associacao(historico, desvio, 150)
+        self.assertTrue(valido_esperado)
+        self.assertTrue(valido_desvio)
+        self.assertLess(custo_esperado, custo_desvio)
+
+    def test_trackpoint_normaliza_datetime_naive_para_utc(self):
+        ponto = self._ponto(0, 0.8)
+        self.assertEqual(ponto.data_frame.tzinfo, timezone.utc)
 
     def test_tracking_intervalos_irregulares_velocidade_e_direcao(self):
         pontos = [self._ponto(0, 0.8), self._ponto(20, 0.6), self._ponto(30, 0.4)]

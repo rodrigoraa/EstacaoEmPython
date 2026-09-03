@@ -65,12 +65,14 @@ def create_app(config_override=None):
     from routes.public import public_routes
     from routes.radar import radar_routes
     from routes.regional_stations import regional_stations_routes
+    from routes.nowcasting import nowcasting_routes
     from routes.webhook import webhook_routes
 
     aplicacao.register_blueprint(webhook_routes)
     aplicacao.register_blueprint(public_routes)
     aplicacao.register_blueprint(radar_routes)
     aplicacao.register_blueprint(regional_stations_routes)
+    aplicacao.register_blueprint(nowcasting_routes)
     aplicacao.register_blueprint(api_routes)
     aplicacao.register_blueprint(admin_routes)
 

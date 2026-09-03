@@ -106,6 +106,10 @@
                 class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/radar') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
                 <i class="fa-solid fa-satellite-dish w-5"></i> Radar
             </a>
+            <a href="/monitoramento"
+                class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/monitoramento') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
+                <i class="fa-solid fa-binoculars w-5"></i> Monitoramento Regional
+            </a>
             <a href="/estacoes-regionais"
                 class="flex items-center gap-2 p-3 rounded-lg transition-colors {% if request.path.startswith('/estacoes-regionais') %} bg-indigo-50 text-indigo-600 font-semibold {% else %} hover:bg-slate-100 text-slate-700 {% endif %}">
                 <i class="fa-solid fa-tower-broadcast w-5"></i> Estações regionais

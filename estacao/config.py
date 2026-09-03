@@ -60,6 +60,19 @@ def radar_config():
         "track_max_speed_kmh": max(
             1.0, env_float("RADAR_TRACK_MAX_SPEED_KMH", 150)
         ),
+        "track_max_size_ratio": max(
+            1.1, env_float("RADAR_TRACK_MAX_SIZE_RATIO", 4)
+        ),
+        "track_max_direction_change_deg": min(
+            180.0,
+            max(15.0, env_float("RADAR_TRACK_MAX_DIRECTION_CHANGE_DEG", 90)),
+        ),
+        "track_prediction_weight": min(
+            1.0, max(0.0, env_float("RADAR_TRACK_PREDICTION_WEIGHT", 0.65))
+        ),
+        "track_timeout_minutes": max(
+            30, env_int("RADAR_TRACK_TIMEOUT_MINUTES", 180)
+        ),
         "intercept_radius_km": max(
             1.0, env_float("RADAR_INTERCEPT_RADIUS_KM", 25)
         ),
@@ -102,6 +115,31 @@ def regional_stations_config():
         "retention_days": max(
             30, env_int("REGIONAL_STATIONS_RETENTION_DAYS", 730)
         ),
+    }
+
+
+def nowcasting_config():
+    """Fusao observacional, sempre separada dos coletores e alertas."""
+    return {
+        "enabled": env_bool("NOWCASTING_ENABLED", False),
+        "poll_seconds": max(60, env_int("NOWCASTING_POLL_SECONDS", 300)),
+        "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", False),
+        "upstream_corridor_km": max(
+            5.0, env_float("NOWCASTING_UPSTREAM_CORRIDOR_KM", 50)
+        ),
+        "radar_max_age_minutes": max(
+            5, env_int("NOWCASTING_RADAR_MAX_AGE_MINUTES", 45)
+        ),
+        "regional_max_age_minutes": max(
+            30, env_int("NOWCASTING_REGIONAL_MAX_AGE_MINUTES", 180)
+        ),
+        "local_max_age_minutes": max(
+            5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
+        ),
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.0") or "1.0",
+        "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
+        "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
+        "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),
     }
 
 

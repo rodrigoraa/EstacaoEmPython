@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+{% block conteudo %}
+<section class="monitor-page max-w-7xl mx-auto space-y-6">
+  <header class="flex items-start gap-3">
+    <span class="monitor-title-icon"><i class="fa-solid fa-binoculars"></i></span>
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Monitoramento Regional</h1>
+      <p class="text-slate-500 mt-1">Radar, estações meteorológicas e condições locais da EE São José</p>
+    </div>
+  </header>
+
+  {% if not estado %}
+  <article class="card text-center py-12">
+    <i class="fa-solid fa-chart-area text-4xl text-slate-400"></i>
+    <h2 class="font-bold text-xl text-slate-700 mt-4">Aguardando a primeira análise</h2>
+    <p class="text-slate-500 mt-2">O worker de nowcasting ainda não foi executado ou está desabilitado.</p>
+  </article>
+  {% else %}
+  <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
+    <p class="monitor-kicker">STATUS ATUAL</p>
+    <h2>{{ estado.status|replace('_', ' ') }}</h2>
+    <div class="monitor-evidence-level">
+      Evidência {{ estado.nivel_evidencia|replace('_', ' ') }}
+      <span>índice interno {{ estado.indice_evidencia }}/100</span>
+    </div>
+    <p class="text-sm text-slate-500">Última análise: {{ estado.gerado_em }}</p>
+    <ul class="monitor-evidence-list">
+      {% for evidencia in estado.evidencias %}<li>{{ evidencia }}</li>{% endfor %}
+    </ul>
+  </article>
+
+  {% set radar = estado.radar %}
+  <div class="monitor-grid">
+    <article class="card monitor-panel">
+      <div class="flex items-center justify-between gap-3">
+        <h2><i class="fa-solid fa-satellite-dish"></i> Radar</h2>
+        <span class="regional-status">{{ 'DESATUALIZADO' if radar.stale else ('DISPONÍVEL' if radar.disponivel else 'SEM DADOS') }}</span>
+      </div>
+      <dl class="regional-values">
+        <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(radar.distancia_borda_km) if radar.distancia_borda_km is not none else '—' }}</dd></div>
+        <div><dt>Faixa</dt><dd>{{ radar.faixa_distancia or '—' }}</dd></div>
+        <div><dt>Movimento</dt><dd>{{ radar.direcao or 'Dados insuficientes' }}</dd></div>
+        <div><dt>Velocidade</dt><dd>{{ '%.1f km/h'|format(radar.velocidade_kmh) if radar.velocidade_kmh is not none else '—' }}</dd></div>
+        <div><dt>ETA conservador</dt><dd>{{ '%.0f min'|format(radar.eta_minutos) if radar.eta_minutos is not none else '—' }}</dd></div>
+        <div><dt>Persistência de clutter</dt><dd>{{ '%.2f'|format(radar.indice_persistencia_clutter) if radar.indice_persistencia_clutter is not none else 'dados insuficientes' }}</dd></div>
+      </dl>
+      {% if radar.imagem_disponivel and radar.frame_id %}
+      <img src="{{ url_for('radar.imagem_radar', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image mt-4" loading="lazy">
+      {% endif %}
+    </article>
+
+    <article class="card monitor-panel">
+      <h2><i class="fa-solid fa-school"></i> EE São José</h2>
+      {% if estado.escola %}
+      <dl class="regional-values">
+        <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(estado.escola.temperature) if estado.escola.temperature is not none else '—' }}</dd></div>
+        <div><dt>Umidade</dt><dd>{{ '%.0f %%'|format(estado.escola.humidity) if estado.escola.humidity is not none else '—' }}</dd></div>
+        <div><dt>Pressão</dt><dd>{{ '%.1f hPa'|format(estado.escola.pressure) if estado.escola.pressure is not none else '—' }}</dd></div>
+        <div><dt>Vento</dt><dd>{{ '%.1f km/h'|format(estado.escola.wind_speed) if estado.escola.wind_speed is not none else '—' }}</dd></div>
+        <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(estado.escola.wind_gust) if estado.escola.wind_gust is not none else '—' }}</dd></div>
+        <div><dt>Chuva atual</dt><dd>{{ '%.1f mm/h'|format(estado.escola.rain_rate) if estado.escola.rain_rate is not none else '—' }}</dd></div>
+      </dl>
+      {% else %}<p class="text-slate-500 mt-4">Sem leitura local persistida.</p>{% endif %}
+    </article>
+  </div>
+
+  <article class="card monitor-panel">
+    <h2><i class="fa-solid fa-route"></i> Estações relevantes para a trajetória atual</h2>
+    {% if estado.estacoes_relevantes %}
+    <div class="monitor-stations">
+      {% for station in estado.estacoes_relevantes %}
+      <section>
+        <div class="flex justify-between gap-3"><strong>{{ station.name }} · {{ station.code }}</strong><span>{{ station.status }}</span></div>
+        <p>{{ '%.1f km da escola'|format(station.distance_km) if station.distance_km is not none else '' }} · {{ '%.1f km do eixo'|format(station.cross_track_km) }}</p>
+        {% if station.evidencias %}<ul>{% for item in station.evidencias %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p>Sem alteração meteorológica relevante.</p>{% endif %}
+      </section>
+      {% endfor %}
+    </div>
+    {% else %}<p class="text-slate-500 mt-4">Nenhuma estação fresca está no corredor da trajetória atual.</p>{% endif %}
+  </article>
+  {% endif %}
+
+  <p class="text-xs text-slate-500 text-center">Fusão observacional experimental. Não representa probabilidade, previsão numérica, severidade nem substitui avisos meteorológicos oficiais.</p>
+</section>
+{% endblock %}

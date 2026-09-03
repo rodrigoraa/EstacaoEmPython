@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import Sequence
 
@@ -60,6 +60,12 @@ class TrackPoint:
     distancia_centro_escola_km: float
     distancia_borda_escola_km: float
     pixels_eco: int
+
+    def __post_init__(self):
+        momento = self.data_frame
+        if momento.tzinfo is None:
+            momento = momento.replace(tzinfo=timezone.utc)
+        object.__setattr__(self, "data_frame", momento.astimezone(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -138,24 +144,34 @@ def _distancias_vetorizadas(
     return 2 * EARTH_RADIUS_KM * np.arcsin(np.minimum(1.0, np.sqrt(a)))
 
 
-def criar_mascara_eco(rgb: np.ndarray, config: DetectionConfig) -> np.ndarray:
+def criar_mascaras_eco(
+    rgb: np.ndarray, config: DetectionConfig
+) -> tuple[np.ndarray, np.ndarray]:
     r = rgb[:, :, 0].astype(np.int16)
     g = rgb[:, :, 1].astype(np.int16)
     b = rgb[:, :, 2].astype(np.int16)
     azul_ciano = (b >= 140) & (r <= 110) & ((b - r) >= 50)
     verde = (g >= 120) & (r <= 110) & (b <= 140) & ((g - r) >= 50)
-    mascara = ((azul_ciano | verde).astype(np.uint8)) * 255
+    original = ((azul_ciano | verde).astype(np.uint8)) * 255
+    processada = original.copy()
     kernel = np.ones((3, 3), np.uint8)
     if config.close_iterations:
-        mascara = cv2.morphologyEx(
-            mascara,
+        processada = cv2.morphologyEx(
+            processada,
             cv2.MORPH_CLOSE,
             kernel,
             iterations=config.close_iterations,
         )
     if config.dilate_iterations:
-        mascara = cv2.dilate(mascara, kernel, iterations=config.dilate_iterations)
-    return mascara
+        processada = cv2.dilate(
+            processada, kernel, iterations=config.dilate_iterations
+        )
+    return original, processada
+
+
+def criar_mascara_eco(rgb: np.ndarray, config: DetectionConfig) -> np.ndarray:
+    """Compatibilidade: retorna a mascara usada para conectar componentes."""
+    return criar_mascaras_eco(rgb, config)[1]
 
 
 def detectar_clusters(
@@ -171,23 +187,26 @@ def detectar_clusters(
     config = config or DetectionConfig()
     rgb = np.asarray(imagem.convert("RGB"))
     height, width = rgb.shape[:2]
-    mascara = criar_mascara_eco(rgb, config)
+    mascara_original, mascara_processada = criar_mascaras_eco(rgb, config)
     total, labels, stats, centroids = cv2.connectedComponentsWithStats(
-        mascara, connectivity=8
+        mascara_processada, connectivity=8
     )
     clusters: list[RadarCluster] = []
     for label in range(1, total):
-        pixels = int(stats[label, cv2.CC_STAT_AREA])
+        componente_processado = labels == label
+        componente_original = componente_processado & (mascara_original > 0)
+        pixels = int(np.count_nonzero(componente_original))
         if pixels < config.min_cluster_pixels:
             continue
         x = int(stats[label, cv2.CC_STAT_LEFT])
         y = int(stats[label, cv2.CC_STAT_TOP])
         w = int(stats[label, cv2.CC_STAT_WIDTH])
         h = int(stats[label, cv2.CC_STAT_HEIGHT])
-        cx, cy = (float(v) for v in centroids[label])
+        orig_y, orig_x = np.nonzero(componente_original)
+        cx, cy = float(np.mean(orig_x)), float(np.mean(orig_y))
         centro_lat, centro_lon = pixel_para_latlon(cx, cy, bounds, width, height)
 
-        componente = (labels == label).astype(np.uint8)
+        componente = componente_processado.astype(np.uint8)
         interior = cv2.erode(componente, np.ones((3, 3), np.uint8), iterations=1)
         borda_y, borda_x = np.nonzero(componente - interior)
         lons = bounds.lon_min + borda_x / (width - 1) * (bounds.lon_max - bounds.lon_min)
@@ -202,13 +221,17 @@ def detectar_clusters(
             centro_lat, centro_lon, radar_lat, radar_lon
         )
 
-        pixels_rgb = rgb[labels == label]
+        pixels_rgb = rgb[componente_original]
         verdes = np.count_nonzero(
             (pixels_rgb[:, 1] >= 120)
             & (pixels_rgb[:, 0] <= 110)
             & (pixels_rgb[:, 2] <= 140)
         )
-        azuis = max(0, len(pixels_rgb) - verdes)
+        azuis = np.count_nonzero(
+            (pixels_rgb[:, 2] >= 140)
+            & (pixels_rgb[:, 0] <= 110)
+            & ((pixels_rgb[:, 2].astype(np.int16) - pixels_rgb[:, 0]) >= 50)
+        )
         intensidade = "MISTO" if verdes and azuis else ("VERDE" if verdes else "AZUL_CIANO")
         clusters.append(
             RadarCluster(
@@ -236,7 +259,10 @@ def detectar_clusters(
 
 
 def pode_associar(
-    anterior: TrackPoint, atual: TrackPoint, max_speed_kmh: float
+    anterior: TrackPoint,
+    atual: TrackPoint,
+    max_speed_kmh: float,
+    max_size_ratio: float = 4.0,
 ) -> tuple[bool, float]:
     horas = (atual.data_frame - anterior.data_frame).total_seconds() / 3600
     if horas <= 0:
@@ -248,7 +274,119 @@ def pode_associar(
     razao_tamanho = max(anterior.pixels_eco, atual.pixels_eco) / max(
         1, min(anterior.pixels_eco, atual.pixels_eco)
     )
-    return velocidade <= max_speed_kmh and razao_tamanho <= 4.0, distancia
+    return velocidade <= max_speed_kmh and razao_tamanho <= max_size_ratio, distancia
+
+
+def diferenca_angular_graus(a: float, b: float) -> float:
+    return abs((float(a) - float(b) + 180) % 360 - 180)
+
+
+def _projetar_posicao(
+    penultimo: TrackPoint, ultimo: TrackPoint, momento: datetime
+) -> tuple[float, float] | None:
+    dt_historico = (ultimo.data_frame - penultimo.data_frame).total_seconds() / 3600
+    dt_futuro = (momento - ultimo.data_frame).total_seconds() / 3600
+    if dt_historico <= 0 or dt_futuro <= 0:
+        return None
+    x, y = _xy_local(
+        penultimo.centro_lat,
+        penultimo.centro_lon,
+        ultimo.centro_lat,
+        ultimo.centro_lon,
+    )
+    previsto_x = -x / dt_historico * dt_futuro
+    previsto_y = -y / dt_historico * dt_futuro
+    previsto_lat = ultimo.centro_lat + previsto_y / 111.195
+    escala_lon = 111.195 * math.cos(math.radians(ultimo.centro_lat))
+    if abs(escala_lon) < 1e-6:
+        return None
+    previsto_lon = ultimo.centro_lon + previsto_x / escala_lon
+    return previsto_lat, previsto_lon
+
+
+def custo_associacao(
+    historico: Sequence[TrackPoint],
+    atual: TrackPoint,
+    max_speed_kmh: float,
+    max_size_ratio: float = 4.0,
+    max_direction_change_deg: float = 90.0,
+    prediction_weight: float = 0.65,
+    max_gap_minutes: float = 180.0,
+) -> tuple[bool, float, dict]:
+    """Gating e custo deterministico; menor custo representa maior continuidade."""
+    if not historico:
+        return False, math.inf, {}
+    ultimo = historico[-1]
+    dt_horas = (atual.data_frame - ultimo.data_frame).total_seconds() / 3600
+    if dt_horas <= 0 or dt_horas * 60 > max_gap_minutes:
+        return False, math.inf, {"dt_horas": dt_horas}
+    valido, distancia_anterior = pode_associar(
+        ultimo, atual, max_speed_kmh, max_size_ratio
+    )
+    if not valido:
+        return False, math.inf, {"distancia_anterior_km": distancia_anterior}
+
+    tamanho_razao = max(ultimo.pixels_eco, atual.pixels_eco) / max(
+        1, min(ultimo.pixels_eco, atual.pixels_eco)
+    )
+    permitido_km = max(1.0, max_speed_kmh * dt_horas)
+    distancia_prevista = distancia_anterior
+    mudanca_direcao = None
+    previsto = None
+    if len(historico) >= 2:
+        penultimo = historico[-2]
+        previsto = _projetar_posicao(penultimo, ultimo, atual.data_frame)
+        if previsto:
+            distancia_prevista = haversine_km(
+                previsto[0], previsto[1], atual.centro_lat, atual.centro_lon
+            )
+            if distancia_prevista > max(10.0, permitido_km):
+                return False, math.inf, {"distancia_prevista_km": distancia_prevista}
+        deslocamento_historico = haversine_km(
+            penultimo.centro_lat,
+            penultimo.centro_lon,
+            ultimo.centro_lat,
+            ultimo.centro_lon,
+        )
+        if deslocamento_historico >= 0.5 and distancia_anterior >= 0.5:
+            direcao_historica = bearing_graus(
+                penultimo.centro_lat,
+                penultimo.centro_lon,
+                ultimo.centro_lat,
+                ultimo.centro_lon,
+            )
+            direcao_atual = bearing_graus(
+                ultimo.centro_lat,
+                ultimo.centro_lon,
+                atual.centro_lat,
+                atual.centro_lon,
+            )
+            mudanca_direcao = diferenca_angular_graus(
+                direcao_historica, direcao_atual
+            )
+            if mudanca_direcao > max_direction_change_deg:
+                return False, math.inf, {"mudanca_direcao": mudanca_direcao}
+
+    peso = min(1.0, max(0.0, prediction_weight)) if previsto else 0.0
+    custo_distancia = (
+        peso * distancia_prevista + (1.0 - peso) * distancia_anterior
+    ) / permitido_km
+    custo_tamanho = math.log(max(1.0, tamanho_razao)) / math.log(
+        max(1.0001, max_size_ratio)
+    )
+    custo_direcao = (
+        mudanca_direcao / max_direction_change_deg
+        if mudanca_direcao is not None and max_direction_change_deg > 0
+        else 0.0
+    )
+    custo = custo_distancia * 0.7 + custo_tamanho * 0.2 + custo_direcao * 0.1
+    return True, custo, {
+        "dt_horas": dt_horas,
+        "distancia_anterior_km": distancia_anterior,
+        "distancia_prevista_km": distancia_prevista,
+        "razao_tamanho": tamanho_razao,
+        "mudanca_direcao": mudanca_direcao,
+    }
 
 
 def _xy_local(lat: float, lon: float, ref_lat: float, ref_lon: float) -> tuple[float, float]:

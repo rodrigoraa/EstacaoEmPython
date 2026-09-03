@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 import database
@@ -11,10 +11,11 @@ from services.radar_analysis import (
     RadarCluster,
     TrackPoint,
     analisar_track,
-    pode_associar,
+    custo_associacao,
+    haversine_km,
 )
 from services.radar_service import RadarFrame
-from time_utils import minutos_desde
+from time_utils import LOCAL_TZ, iso_local, iso_utc, minutos_desde, parse_datetime
 
 
 def frame_existente(path_remoto: str):
@@ -60,7 +61,8 @@ def salvar_resultado_frame(
             conn.execute(
                 """
                 UPDATE radar_frames SET
-                    radar_codigo=?, produto=?, data_frame=?, arquivo_local=?,
+                    radar_codigo=?, produto=?, data_frame=?, data_frame_utc=?,
+                    data_frame_local=?, timestamp_status='utc_explicit', arquivo_local=?,
                     arquivo_analisado=?, largura=?, altura=?, lat_center=?, lon_center=?,
                     lat_min=?, lat_max=?, lon_min=?, lon_max=?, raio_km=?, tamanho=?,
                     baixado_em=CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE baixado_em END,
@@ -72,6 +74,8 @@ def salvar_resultado_frame(
                     frame.radar_codigo,
                     frame.produto,
                     frame.data_texto,
+                    frame.data_utc_texto,
+                    frame.data_local_texto,
                     arquivo_local,
                     arquivo_analisado,
                     largura,
@@ -95,13 +99,14 @@ def salvar_resultado_frame(
             cursor = conn.execute(
                 """
                 INSERT INTO radar_frames (
-                    radar_codigo, produto, data_frame, path_remoto,
+                    radar_codigo, produto, data_frame, data_frame_utc,
+                    data_frame_local, timestamp_status, path_remoto,
                     arquivo_local, arquivo_analisado, largura, altura,
                     lat_center, lon_center, lat_min, lat_max, lon_min, lon_max,
                     raio_km, tamanho, baixado_em, processado_em,
                     status_processamento, erro_processamento
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, 'utc_explicit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP END,
                     CASE WHEN ? = 'processado' THEN CURRENT_TIMESTAMP END, ?, ?
                 )
@@ -110,6 +115,8 @@ def salvar_resultado_frame(
                     frame.radar_codigo,
                     frame.produto,
                     frame.data_texto,
+                    frame.data_utc_texto,
+                    frame.data_local_texto,
                     frame.path_remoto,
                     arquivo_local,
                     arquivo_analisado,
@@ -162,6 +169,7 @@ def salvar_resultado_frame(
                     cluster.intensidade_codigo,
                 ),
             )
+        _atualizar_clutter_frame(conn, frame_id)
         conn.commit()
         return frame_id, True
     except sqlite3.IntegrityError:
@@ -180,8 +188,12 @@ def salvar_resultado_frame(
 
 
 def _point(row) -> TrackPoint:
+    momento = parse_datetime(
+        row["data_frame_utc"] if "data_frame_utc" in row.keys() else None,
+        assume_utc=True,
+    ) or parse_datetime(row["data_frame"], assume_utc=True)
     return TrackPoint(
-        data_frame=datetime.fromisoformat(row["data_frame"]),
+        data_frame=momento,
         centro_lat=row["centro_lat"],
         centro_lon=row["centro_lon"],
         distancia_centro_escola_km=row["distancia_centro_escola_km"],
@@ -193,13 +205,102 @@ def _point(row) -> TrackPoint:
 def _pontos_track(conn, track_id: int) -> list[TrackPoint]:
     rows = conn.execute(
         """
-        SELECT data_frame, centro_lat, centro_lon,
+        SELECT data_frame, data_frame_utc, centro_lat, centro_lon,
                distancia_centro_escola_km, distancia_borda_escola_km, pixels_eco
         FROM radar_track_points WHERE track_id=? ORDER BY data_frame
         """,
         (track_id,),
     ).fetchall()
     return [_point(row) for row in rows]
+
+
+def _atualizar_clutter_frame(conn, frame_id: int):
+    """Calcula indice diagnostico; nunca remove ou reclassifica um eco."""
+    frame = conn.execute(
+        "SELECT COALESCE(data_frame_utc, data_frame) AS momento FROM radar_frames WHERE id=?",
+        (frame_id,),
+    ).fetchone()
+    momento = parse_datetime(frame["momento"], assume_utc=True) if frame else None
+    if not momento:
+        return
+    limite = momento - timedelta(days=30)
+    frame_rows = conn.execute(
+        """
+        SELECT id, COALESCE(data_frame_utc, data_frame) AS momento
+        FROM radar_frames
+        WHERE id<>? AND status_processamento='processado'
+        ORDER BY id DESC LIMIT 4000
+        """,
+        (frame_id,),
+    ).fetchall()
+    frames_periodo = {
+        row["id"]
+        for row in frame_rows
+        if (
+            (dt := parse_datetime(row["momento"], assume_utc=True))
+            and limite <= dt < momento
+        )
+    }
+    rows = conn.execute(
+        """
+        SELECT c.frame_id, c.centro_lat, c.centro_lon,
+               COALESCE(f.data_frame_utc, f.data_frame) AS momento
+        FROM radar_clusters c
+        JOIN radar_frames f ON f.id=c.frame_id
+        WHERE c.frame_id<>?
+        ORDER BY f.id DESC LIMIT 4000
+        """,
+        (frame_id,),
+    ).fetchall()
+    historico = [row for row in rows if row["frame_id"] in frames_periodo]
+    total_frames = len(frames_periodo)
+    atuais = conn.execute(
+        "SELECT * FROM radar_clusters WHERE frame_id=?", (frame_id,)
+    ).fetchall()
+    for atual in atuais:
+        proximos = [
+            row
+            for row in historico
+            if haversine_km(
+                atual["centro_lat"], atual["centro_lon"],
+                row["centro_lat"], row["centro_lon"],
+            ) <= 12.0
+        ]
+        amostras = len({row["frame_id"] for row in proximos})
+        indice = None
+        if total_frames >= 12 and amostras >= 4:
+            frequencia = min(1.0, amostras / total_frames)
+            persistencia = min(1.0, amostras / 12.0)
+            deslocamentos = []
+            ordenados = sorted(
+                proximos,
+                key=lambda row: parse_datetime(row["momento"], assume_utc=True),
+            )
+            for a, b in zip(ordenados, ordenados[1:]):
+                if a["frame_id"] != b["frame_id"]:
+                    deslocamentos.append(
+                        haversine_km(
+                            a["centro_lat"], a["centro_lon"],
+                            b["centro_lat"], b["centro_lon"],
+                        )
+                    )
+            medio = sum(deslocamentos) / len(deslocamentos) if deslocamentos else 0.0
+            estacionario = max(0.0, 1.0 - medio / 12.0)
+            perto_centro = 1.0 if atual["distancia_radar_km"] <= 50 else 0.0
+            indice = round(
+                min(
+                    1.0,
+                    0.45 * frequencia
+                    + 0.25 * persistencia
+                    + 0.20 * estacionario
+                    + 0.10 * perto_centro,
+                ),
+                3,
+            )
+        conn.execute(
+            "UPDATE radar_clusters SET indice_persistencia_clutter=?, clutter_amostras=? WHERE id=?",
+            (indice, amostras, atual["id"]),
+        )
 
 
 def atualizar_tracking(
@@ -210,35 +311,46 @@ def atualizar_tracking(
     min_duration_minutes: float,
     max_speed_kmh: float,
     intercept_radius_km: float,
+    max_size_ratio: float = 4.0,
+    max_direction_change_deg: float = 90.0,
+    prediction_weight: float = 0.65,
+    track_timeout_minutes: float = 180.0,
 ) -> list[int]:
     conn = database.get_db()
     atualizados: list[int] = []
     try:
         conn.execute("BEGIN IMMEDIATE")
         frame = conn.execute(
-            "SELECT data_frame FROM radar_frames WHERE id=?", (frame_id,)
+            """
+            SELECT data_frame, data_frame_utc, data_frame_local
+            FROM radar_frames WHERE id=?
+            """,
+            (frame_id,),
         ).fetchone()
         if not frame:
             raise ValueError("Frame inexistente para tracking")
-        momento = datetime.fromisoformat(frame["data_frame"])
+        momento = parse_datetime(frame["data_frame_utc"], assume_utc=True) or parse_datetime(
+            frame["data_frame"], assume_utc=True
+        )
+        if not momento:
+            raise ValueError("Frame sem timestamp valido para tracking")
+        momento_utc = iso_utc(momento)
+        momento_local = iso_local(momento)
         clusters = conn.execute(
             "SELECT * FROM radar_clusters WHERE frame_id=? ORDER BY distancia_borda_escola_km",
             (frame_id,),
         ).fetchall()
-        tracks = conn.execute(
+        track_rows = conn.execute(
             """
-            SELECT t.id, p.data_frame, p.centro_lat, p.centro_lon,
-                   p.distancia_centro_escola_km, p.distancia_borda_escola_km,
-                   p.pixels_eco
-            FROM radar_tracks t
-            JOIN radar_track_points p ON p.track_id=t.id
-            WHERE t.ativo=1
-              AND p.id=(SELECT p2.id FROM radar_track_points p2
-                        WHERE p2.track_id=t.id ORDER BY p2.data_frame DESC LIMIT 1)
-              AND p.data_frame < ?
+            SELECT id FROM radar_tracks
+            WHERE ativo=1
             """,
-            (frame["data_frame"],),
         ).fetchall()
+        historicos = {}
+        for track in track_rows:
+            pontos = _pontos_track(conn, track["id"])
+            if pontos and pontos[-1].data_frame < momento:
+                historicos[track["id"]] = pontos
         pontos_atuais = {
             cluster["id"]: TrackPoint(
                 data_frame=momento,
@@ -252,16 +364,22 @@ def atualizar_tracking(
         }
         arestas = []
         for cluster in clusters:
-            for track in tracks:
-                valido, distancia = pode_associar(
-                    _point(track), pontos_atuais[cluster["id"]], max_speed_kmh
+            for track_id, pontos in historicos.items():
+                valido, custo, _detalhes = custo_associacao(
+                    pontos,
+                    pontos_atuais[cluster["id"]],
+                    max_speed_kmh,
+                    max_size_ratio=max_size_ratio,
+                    max_direction_change_deg=max_direction_change_deg,
+                    prediction_weight=prediction_weight,
+                    max_gap_minutes=track_timeout_minutes,
                 )
                 if valido:
-                    arestas.append((distancia, cluster["id"], track["id"]))
+                    arestas.append((custo, track_id, cluster["id"]))
         associacoes = {}
         clusters_usados: set[int] = set()
         tracks_usados: set[int] = set()
-        for _, cluster_id, track_id in sorted(arestas):
+        for _, track_id, cluster_id in sorted(arestas):
             if cluster_id in clusters_usados or track_id in tracks_usados:
                 continue
             associacoes[cluster_id] = track_id
@@ -276,35 +394,48 @@ def atualizar_tracking(
                     """
                     INSERT INTO radar_tracks (
                         track_codigo, primeiro_frame_em, ultimo_frame_em,
+                        primeiro_frame_em_utc, primeiro_frame_em_local,
+                        ultimo_frame_em_utc, ultimo_frame_em_local,
                         centro_lat_atual, centro_lon_atual,
                         distancia_centro_escola_km, distancia_borda_escola_km,
-                        suspeito_clutter, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DADOS_INSUFICIENTES')
+                        suspeito_clutter, indice_persistencia_clutter,
+                        clutter_amostras, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              'DADOS_INSUFICIENTES')
                     """,
                     (
                         codigo,
-                        frame["data_frame"],
-                        frame["data_frame"],
+                        momento.strftime("%Y-%m-%d %H:%M:%S"),
+                        momento.strftime("%Y-%m-%d %H:%M:%S"),
+                        momento_utc,
+                        momento_local,
+                        momento_utc,
+                        momento_local,
                         cluster["centro_lat"],
                         cluster["centro_lon"],
                         cluster["distancia_centro_escola_km"],
                         cluster["distancia_borda_escola_km"],
                         cluster["suspeito_clutter"],
+                        cluster["indice_persistencia_clutter"],
+                        cluster["clutter_amostras"],
                     ),
                 )
                 track_id = cursor.lastrowid
             conn.execute(
                 """
                 INSERT OR IGNORE INTO radar_track_points (
-                    track_id, frame_id, cluster_id, data_frame, centro_lat, centro_lon,
+                    track_id, frame_id, cluster_id, data_frame,
+                    data_frame_utc, data_frame_local, centro_lat, centro_lon,
                     distancia_centro_escola_km, distancia_borda_escola_km, pixels_eco
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     track_id,
                     frame_id,
                     cluster["id"],
-                    frame["data_frame"],
+                    momento.strftime("%Y-%m-%d %H:%M:%S"),
+                    momento_utc,
+                    momento_local,
                     cluster["centro_lat"],
                     cluster["centro_lon"],
                     cluster["distancia_centro_escola_km"],
@@ -325,18 +456,26 @@ def atualizar_tracking(
                 """
                 UPDATE radar_tracks SET
                     primeiro_frame_em=?, ultimo_frame_em=?, quantidade_frames=?,
+                    primeiro_frame_em_utc=?, primeiro_frame_em_local=?,
+                    ultimo_frame_em_utc=?, ultimo_frame_em_local=?,
                     duracao_minutos=?, deslocamento_total_km=?, velocidade_media_kmh=?,
                     bearing_movimento=?, direcao_movimento=?, centro_lat_atual=?,
                     centro_lon_atual=?, distancia_centro_escola_km=?,
                     distancia_borda_escola_km=?, aproximando=?, taxa_aproximacao_kmh=?,
                     trajetoria_compativel=?, menor_aproximacao_km=?, eta_minutos=?,
-                    suspeito_clutter=?, status=?, ativo=1, atualizado_em=CURRENT_TIMESTAMP
+                    suspeito_clutter=?, indice_persistencia_clutter=?,
+                    clutter_amostras=?, status=?, ativo=1,
+                    atualizado_em=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
                 (
                     analise.primeiro_frame_em.strftime("%Y-%m-%d %H:%M:%S"),
                     analise.ultimo_frame_em.strftime("%Y-%m-%d %H:%M:%S"),
                     analise.quantidade_frames,
+                    iso_utc(analise.primeiro_frame_em),
+                    iso_local(analise.primeiro_frame_em),
+                    iso_utc(analise.ultimo_frame_em),
+                    iso_local(analise.ultimo_frame_em),
                     analise.duracao_minutos,
                     analise.deslocamento_total_km,
                     analise.velocidade_media_kmh,
@@ -352,16 +491,26 @@ def atualizar_tracking(
                     analise.menor_aproximacao_km,
                     analise.eta_minutos,
                     cluster["suspeito_clutter"],
+                    cluster["indice_persistencia_clutter"],
+                    cluster["clutter_amostras"],
                     analise.status,
                     track_id,
                 ),
             )
             atualizados.append(track_id)
 
-        limite = (momento - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+        limite_dt = momento - timedelta(minutes=track_timeout_minutes)
+        limite = limite_dt.strftime("%Y-%m-%d %H:%M:%S")
+        limite_utc = iso_utc(limite_dt)
         conn.execute(
-            "UPDATE radar_tracks SET ativo=0 WHERE ativo=1 AND ultimo_frame_em < ?",
-            (limite,),
+            """
+            UPDATE radar_tracks SET ativo=0
+            WHERE ativo=1 AND (
+                (ultimo_frame_em_utc IS NOT NULL AND ultimo_frame_em_utc < ?)
+                OR (ultimo_frame_em_utc IS NULL AND ultimo_frame_em < ?)
+            )
+            """,
+            (limite_utc, limite),
         )
         conn.commit()
         return atualizados
@@ -408,9 +557,11 @@ def listar_frames_recentes(limite: int = 15) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT id, radar_codigo, produto, data_frame, largura, altura,
+            SELECT id, radar_codigo, produto, data_frame, data_frame_utc,
+                   data_frame_local, timestamp_status, largura, altura,
                    status_processamento, processado_em
-            FROM radar_frames ORDER BY data_frame DESC LIMIT ?
+            FROM radar_frames
+            ORDER BY COALESCE(data_frame_utc, data_frame) DESC LIMIT ?
             """,
             (limite,),
         ).fetchall()
@@ -427,6 +578,7 @@ def listar_clusters_frame(frame_id: int) -> list[dict]:
             SELECT id, frame_id, cluster_numero, pixels_eco, centro_lat, centro_lon,
                    distancia_centro_escola_km, distancia_borda_escola_km,
                    distancia_radar_km, direcao_relativa_escola, suspeito_clutter,
+                   indice_persistencia_clutter, clutter_amostras,
                    intensidade_codigo
             FROM radar_clusters WHERE frame_id=?
             ORDER BY distancia_borda_escola_km
@@ -445,9 +597,14 @@ def listar_tracks_ativos(limite: int = 50) -> list[dict]:
         rows = conn.execute(
             """
             SELECT id, track_codigo, primeiro_frame_em, ultimo_frame_em,
+                   primeiro_frame_em_utc, primeiro_frame_em_local,
+                   ultimo_frame_em_utc, ultimo_frame_em_local,
                    quantidade_frames, velocidade_media_kmh, direcao_movimento,
+                   bearing_movimento, centro_lat_atual, centro_lon_atual,
                    distancia_centro_escola_km, distancia_borda_escola_km,
-                   aproximando, trajetoria_compativel, eta_minutos, status
+                   aproximando, trajetoria_compativel, eta_minutos,
+                   suspeito_clutter, indice_persistencia_clutter,
+                   clutter_amostras, status
             FROM radar_tracks WHERE ativo=1
             ORDER BY distancia_borda_escola_km, ultimo_frame_em DESC LIMIT ?
             """,
@@ -465,7 +622,7 @@ def obter_estado_radar(stale_minutes: int) -> dict:
             """
             SELECT * FROM radar_frames
             WHERE status_processamento='processado'
-            ORDER BY data_frame DESC LIMIT 1
+            ORDER BY COALESCE(data_frame_utc, data_frame) DESC LIMIT 1
             """
         ).fetchone()
         if not frame:
@@ -491,12 +648,20 @@ def obter_estado_radar(stale_minutes: int) -> dict:
                 """,
                 (cluster["id"],),
             ).fetchone()
-        idade = minutos_desde(frame["data_frame"], assume_utc=False)
+        frame_utc = frame["data_frame_utc"] or frame["data_frame"]
+        frame_local = frame["data_frame_local"]
+        if not frame_local:
+            dt_legado = parse_datetime(frame_utc, assume_utc=True)
+            frame_local = iso_local(dt_legado) if dt_legado else None
+        idade = minutos_desde(frame_utc, assume_utc=True)
         frame_publico = {
             "id": frame["id"],
             "radar_codigo": frame["radar_codigo"],
             "produto": frame["produto"],
             "data_frame": frame["data_frame"],
+            "data_frame_utc": frame_utc,
+            "data_frame_local": frame_local,
+            "timestamp_status": frame["timestamp_status"],
             "largura": frame["largura"],
             "altura": frame["altura"],
             "idade_minutos": idade,
@@ -515,21 +680,30 @@ def obter_estado_radar(stale_minutes: int) -> dict:
                 "distancia_borda_escola_km": cluster["distancia_borda_escola_km"],
                 "direcao_relativa": cluster["direcao_relativa_escola"],
                 "suspeito_clutter": bool(cluster["suspeito_clutter"]),
+                "indice_persistencia_clutter": cluster["indice_persistencia_clutter"],
+                "clutter_amostras": cluster["clutter_amostras"],
                 "intensidade_codigo": cluster["intensidade_codigo"],
             }
         tracking = None
         if track:
             tracking = {
+                "track_id": track["id"],
                 "status": track["status"],
                 "quantidade_frames": track["quantidade_frames"],
                 "duracao_minutos": track["duracao_minutos"],
                 "velocidade_kmh": track["velocidade_media_kmh"],
                 "direcao_movimento": track["direcao_movimento"],
+                "bearing_movimento": track["bearing_movimento"],
+                "centro_lat": track["centro_lat_atual"],
+                "centro_lon": track["centro_lon_atual"],
                 "aproximando": None if track["aproximando"] is None else bool(track["aproximando"]),
                 "taxa_aproximacao_kmh": track["taxa_aproximacao_kmh"],
                 "trajetoria_compativel": bool(track["trajetoria_compativel"]),
                 "menor_aproximacao_km": track["menor_aproximacao_km"],
                 "eta_minutos": track["eta_minutos"],
+                "suspeito_clutter": bool(track["suspeito_clutter"]),
+                "indice_persistencia_clutter": track["indice_persistencia_clutter"],
+                "clutter_amostras": track["clutter_amostras"],
             }
         return {
             "disponivel": True,

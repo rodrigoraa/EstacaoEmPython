@@ -41,6 +41,7 @@ TABELAS_CONTAGEM = (
     "regional_stations",
     "regional_station_observations",
     "regional_station_state",
+    "nowcasting_snapshots",
 )
 INDICES_MANUAIS = (
     (

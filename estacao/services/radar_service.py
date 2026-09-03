@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
@@ -33,9 +33,33 @@ class RadarFrame:
     raio_km: float | None = None
     tamanho: int | None = None
 
+    def __post_init__(self):
+        momento = self.data_frame
+        if momento.tzinfo is None:
+            momento = momento.replace(tzinfo=timezone.utc)
+        object.__setattr__(self, "data_frame", momento.astimezone(timezone.utc))
+
+    @property
+    def data_frame_utc(self) -> datetime:
+        return self.data_frame
+
+    @property
+    def data_frame_local(self) -> datetime:
+        from time_utils import LOCAL_TZ
+
+        return self.data_frame.astimezone(LOCAL_TZ)
+
     @property
     def data_texto(self) -> str:
-        return self.data_frame.strftime("%Y-%m-%d %H:%M:%S")
+        return self.data_frame_utc.strftime("%Y-%m-%d %H:%M:%S")
+
+    @property
+    def data_utc_texto(self) -> str:
+        return self.data_frame_utc.replace(microsecond=0).isoformat()
+
+    @property
+    def data_local_texto(self) -> str:
+        return self.data_frame_local.replace(microsecond=0).isoformat()
 
 
 @dataclass(frozen=True)
@@ -74,7 +98,9 @@ def normalizar_frame(frame: dict[str, Any], produto_padrao: str) -> RadarFrame:
     if partes.scheme not in {"http", "https"} or not partes.netloc:
         raise RadarServiceError("Frame REDEMET possui URL de imagem invalida")
     try:
-        data_frame = datetime.strptime(str(frame["data"]).strip(), "%Y-%m-%d %H:%M:%S")
+        data_frame = datetime.strptime(
+            str(frame["data"]).strip(), "%Y-%m-%d %H:%M:%S"
+        ).replace(tzinfo=timezone.utc)
     except ValueError as erro:
         raise RadarServiceError("Frame REDEMET possui timestamp invalido") from erro
 

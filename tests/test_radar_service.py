@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import requests
+from datetime import timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,15 @@ class RadarServiceTest(unittest.TestCase):
             for a, b in zip(frames, frames[1:])
         ]
         self.assertEqual(intervalos, [20, 10])
+
+    def test_timestamp_redemet_e_utc_aware_com_dia_local_anterior(self):
+        payload = json.loads(json.dumps(self.payload))
+        frame = payload["data"]["radar"][0][0]
+        frame["data"] = "2026-09-03 00:30:00"
+        payload["data"]["radar"] = [[frame]]
+        resultado = normalizar_resposta(payload).frames[0]
+        self.assertEqual(resultado.data_frame_utc.utcoffset(), timezone.utc.utcoffset(None))
+        self.assertEqual(resultado.data_frame_local.isoformat(), "2026-09-02T20:30:00-04:00")
 
     def test_status_de_erro_rejeitado(self):
         with self.assertRaises(RadarServiceError):

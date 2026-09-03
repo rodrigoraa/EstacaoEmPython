@@ -115,6 +115,10 @@ def processar_frame(client, frame, config) -> tuple[int, int, bool]:
                 config["track_min_duration_minutes"],
                 config["track_max_speed_kmh"],
                 config["intercept_radius_km"],
+                config["track_max_size_ratio"],
+                config["track_max_direction_change_deg"],
+                config["track_prediction_weight"],
+                config["track_timeout_minutes"],
             )
             marcar_frame_processado(frame_id)
         return frame_id, len(clusters), alterado

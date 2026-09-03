@@ -1,63 +1,131 @@
 {% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
-<section class="regional-page max-w-7xl mx-auto space-y-6">
-  <header class="flex items-start gap-3">
-    <span class="regional-title-icon"><i class="fa-solid fa-tower-broadcast"></i></span>
-    <div>
-      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Estações meteorológicas regionais</h1>
-      <p class="text-slate-500 mt-1">Rede pública PIN-MS ao redor da EE São José</p>
+{% set status_labels = {'OK': 'Atualizada', 'ATRASADA': 'Atrasada', 'MUITO_ATRASADA': 'Muito atrasada', 'ERRO_FONTE': 'Erro na fonte', 'DADOS_ESTAGNADOS': 'Dados estagnados', 'SEM_DADOS': 'Sem dados'} %}
+{% set quality_labels = {'GOOD': 'Boa', 'PARTIAL': 'Parcial', 'INSUFFICIENT': 'Em formação'} %}
+{% set source_labels = {'local_history_layer0': 'Histórico local da camada 0', 'external_layer2_bootstrap': 'Histórico externo da camada 2', 'insufficient': 'Ainda insuficiente'} %}
+<section class="regional-page admin-weather-page max-w-7xl mx-auto space-y-6">
+  <header class="admin-weather-header">
+    <div class="flex items-start gap-3">
+      <span class="regional-title-icon"><i class="fa-solid fa-tower-broadcast"></i></span>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Estações meteorológicas regionais</h1>
+        <p class="text-slate-500 mt-1">Rede pública PIN-MS ao redor da EE São José</p>
+      </div>
     </div>
+    <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>
   </header>
 
   {% if not estado.stations %}
   <div class="card text-center py-12">
     <i class="fa-solid fa-cloud-circle-exclamation text-4xl text-slate-400"></i>
-    <h2 class="font-bold text-xl text-slate-700 mt-4">Dados regionais temporariamente indisponíveis.</h2>
+    <h2 class="font-bold text-xl text-slate-700 mt-4">Dados regionais temporariamente indisponíveis</h2>
     <p class="text-slate-500 mt-2">A coleta ainda não foi executada ou a migration está pendente.</p>
   </div>
   {% else %}
+  {% set resumo = namespace(ok=0, atencao=0, sem_dados=0, estagnadas=0) %}
+  {% for station in estado.stations %}
+    {% if station.status == 'OK' %}{% set resumo.ok = resumo.ok + 1 %}
+    {% elif station.status == 'SEM_DADOS' %}{% set resumo.sem_dados = resumo.sem_dados + 1 %}
+    {% else %}{% set resumo.atencao = resumo.atencao + 1 %}{% endif %}
+    {% if station.current_source.stagnant %}{% set resumo.estagnadas = resumo.estagnadas + 1 %}{% endif %}
+  {% endfor %}
+
+  <section aria-labelledby="regional-resumo-titulo">
+    <div class="admin-section-title">
+      <div><span class="admin-section-kicker">Leitura rápida</span><h2 id="regional-resumo-titulo">Resumo da rede</h2></div>
+      <p>Situação das seis estações monitoradas.</p>
+    </div>
+    <div class="admin-overview-grid">
+      <article class="admin-overview-item">
+        <span class="admin-overview-icon"><i class="fa-solid fa-tower-cell"></i></span>
+        <div><small>Estações configuradas</small><strong>{{ estado.stations|length }}</strong><p>Rede regional acompanhada</p></div>
+      </article>
+      <article class="admin-overview-item admin-overview-item--success">
+        <span class="admin-overview-icon"><i class="fa-solid fa-circle-check"></i></span>
+        <div><small>Atualizadas</small><strong>{{ resumo.ok }}</strong><p>Com coleta dentro da janela esperada</p></div>
+      </article>
+      <article class="admin-overview-item {{ 'admin-overview-item--warning' if resumo.atencao else 'admin-overview-item--neutral' }}">
+        <span class="admin-overview-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+        <div><small>Exigem atenção</small><strong>{{ resumo.atencao }}</strong><p>Atrasadas, estagnadas ou com erro</p></div>
+      </article>
+      <article class="admin-overview-item {{ 'admin-overview-item--warning' if resumo.sem_dados else 'admin-overview-item--neutral' }}">
+        <span class="admin-overview-icon"><i class="fa-solid fa-circle-question"></i></span>
+        <div><small>Sem dados</small><strong>{{ resumo.sem_dados }}</strong><p>{{ resumo.estagnadas }} com valores estagnados</p></div>
+      </article>
+    </div>
+  </section>
+
+  <aside class="admin-explainer" aria-label="Como interpretar as estações regionais">
+    <div class="admin-explainer-title"><i class="fa-solid fa-circle-info"></i><strong>Como interpretar</strong></div>
+    <div><strong>Condição atual</strong><span>vem da camada 0 e mostra a última coleta recebida.</span></div>
+    <div><strong>Qualidade da coleta</strong><span>indica atraso, repetição de valores e disponibilidade do histórico.</span></div>
+    <div><strong>Tendências</strong><span>comparam períodos anteriores; “em formação” significa base insuficiente.</span></div>
+  </aside>
+
   <div class="regional-grid">
     {% for station in estado.stations %}
     {% set obs = station.observation %}
     {% set trend = station.trend %}
     {% set current = station.current_source %}
+    {% set external = station.external_hourly_source %}
     <article class="card regional-card">
-      <div class="flex items-start justify-between gap-3">
+      <div class="regional-card-header">
         <div>
-          <h2 class="font-bold text-xl text-slate-800">{{ station.name }}</h2>
-          <p class="text-xs text-slate-500 mt-1">{{ station.code }} · Observação atual PIN-MS camada 0</p>
+          <h2>{{ station.name }}</h2>
+          <p>{{ station.code }} · PIN-MS camada 0</p>
         </div>
-        <span class="regional-status regional-status--{{ station.status|lower|replace('_', '-') }}">{{ station.status|replace('_', ' ') }}</span>
+        <span class="regional-status regional-status--{{ station.status|lower|replace('_', '-') }}">{{ status_labels.get(station.status, station.status|replace('_', ' ')) }}</span>
       </div>
 
-      <dl class="regional-values">
-        <div><dt>Última coleta local</dt><dd>{{ station.last_collection or 'Ainda não coletada' }}</dd></div>
-        <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(obs.temperature) if obs and obs.temperature is not none else '—' }}</dd></div>
-        <div><dt>Umidade</dt><dd>{{ '%.0f %%'|format(obs.humidity) if obs and obs.humidity is not none else '—' }}</dd></div>
-        <div><dt>Pressão da estação</dt><dd>{{ '%.1f hPa'|format(obs.pressure) if obs and obs.pressure is not none else '—' }}</dd></div>
-        <div><dt>Vento</dt><dd>{{ '%.1f km/h'|format(obs.wind_speed_kmh) if obs and obs.wind_speed_kmh is not none else '—' }}</dd></div>
-        <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(obs.wind_gust_kmh) if obs and obs.wind_gust_kmh is not none else '—' }}</dd></div>
-        <div><dt>Direção do vento</dt><dd>{{ '%.0f°'|format(obs.wind_direction_deg) if obs and obs.wind_direction_deg is not none else '—' }}</dd></div>
-        <div><dt>Chuva informada pela fonte</dt><dd>{{ '%.1f mm'|format(obs.rain_mm) if obs and obs.rain_mm is not none else '—' }}</dd></div>
-      </dl>
+      <section class="regional-card-section" aria-labelledby="condicao-{{ station.code }}">
+        <div class="regional-card-section-title"><i class="fa-solid fa-temperature-half"></i><div><h3 id="condicao-{{ station.code }}">Condição atual</h3><p>{{ station.last_collection or 'Ainda não coletada' }}{% if station.age_minutes is not none %} · há {{ '%.0f min'|format(station.age_minutes) }}{% endif %}</p></div></div>
+        <dl class="regional-values">
+          <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(obs.temperature) if obs and obs.temperature is not none else '—' }}</dd></div>
+          <div><dt>Umidade</dt><dd>{{ '%.0f %%'|format(obs.humidity) if obs and obs.humidity is not none else '—' }}</dd></div>
+          <div><dt>Pressão da estação</dt><dd>{{ '%.1f hPa'|format(obs.pressure) if obs and obs.pressure is not none else '—' }}</dd></div>
+          <div><dt>Vento</dt><dd>{{ '%.1f km/h'|format(obs.wind_speed_kmh) if obs and obs.wind_speed_kmh is not none else '—' }}</dd></div>
+          <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(obs.wind_gust_kmh) if obs and obs.wind_gust_kmh is not none else '—' }}</dd></div>
+          <div><dt>Direção do vento</dt><dd>{{ '%.0f°'|format(obs.wind_direction_deg) if obs and obs.wind_direction_deg is not none else '—' }}</dd></div>
+          <div class="regional-value-wide"><dt>Chuva informada pela fonte</dt><dd>{{ '%.1f mm'|format(obs.rain_mm) if obs and obs.rain_mm is not none else '—' }}</dd></div>
+        </dl>
+      </section>
 
-      <div class="regional-trends">
-        <span>Fonte atual: <strong>{{ current.status|replace('_', ' ') }}</strong></span>
-        <span>Valores sem alteração: <strong>{{ ('%.0f min'|format(current.same_values_minutes)) if current.same_values_minutes is not none else 'ainda não medido' }}</strong></span>
-        <span>Histórico próprio: <strong>{{ 'disponível' if station.trend_quality == 'GOOD' else 'em formação' }}</strong></span>
-        <span>Origem das tendências: <strong>{{ station.trend_source|replace('_', ' ') }}</strong></span>
-        <span>Histórico externo PIN-MS: <strong>{{ station.external_hourly_source.status|replace('_', ' ') }}</strong></span>
-      </div>
+      <section class="regional-card-section" aria-labelledby="qualidade-{{ station.code }}">
+        <div class="regional-card-section-title"><i class="fa-solid fa-signal"></i><div><h3 id="qualidade-{{ station.code }}">Qualidade da coleta</h3><p>Freshness, estabilidade e origem do histórico.</p></div></div>
+        <dl class="regional-quality-list">
+          <div><dt>Fonte atual</dt><dd>{{ status_labels.get(current.status, current.status|replace('_', ' ')) }}</dd></div>
+          <div><dt>Valores sem alteração</dt><dd>{{ ('%.0f min'|format(current.same_values_minutes)) if current.same_values_minutes is not none else 'Ainda não medido' }}</dd></div>
+          <div><dt>Qualidade das tendências</dt><dd>{{ quality_labels.get(station.trend_quality, station.trend_quality) }}</dd></div>
+          <div><dt>Origem das tendências</dt><dd>{{ source_labels.get(station.trend_source, station.trend_source|replace('_', ' ')) }}</dd></div>
+          <div><dt>Histórico externo PIN-MS</dt><dd>{{ status_labels.get(external.status, external.status|replace('_', ' ')) }}{% if external.age_hours is not none %} · {{ '%.1f h'|format(external.age_hours) }}{% endif %}</dd></div>
+        </dl>
+        {% if current.stagnant %}
+        <p class="regional-warning"><i class="fa-solid fa-pause"></i> Dados possivelmente estagnados: os valores permaneceram exatamente iguais por um período anormalmente longo.</p>
+        {% endif %}
+      </section>
 
-      {% if current.stagnant %}
-      <p class="text-sm text-amber-700 mt-3">Dados possivelmente estagnados: os valores recebidos permaneceram exatamente iguais por um período anormalmente longo.</p>
-      {% endif %}
-
-      <div class="regional-trends">
-        <span>Δ temperatura 1h: <strong>{{ '%+.1f °C'|format(trend.temperature_1h) if trend.temperature_1h is not none else 'dados insuficientes' }}</strong></span>
-        <span>Δ pressão 1h: <strong>{{ '%+.1f hPa'|format(trend.pressure_1h) if trend.pressure_1h is not none else 'dados insuficientes' }}</strong></span>
-        <span>Chuva 3h: <strong>{{ '%.1f mm'|format(trend.rain_3h) if trend.rain_3h is not none else 'dados insuficientes' }}</strong></span>
-      </div>
+      <section class="regional-card-section" aria-labelledby="tendencias-{{ station.code }}">
+        <div class="regional-card-section-title"><i class="fa-solid fa-chart-line"></i><div><h3 id="tendencias-{{ station.code }}">Tendências meteorológicas</h3><p>Variações calculadas com o histórico disponível.</p></div></div>
+        <dl class="regional-values regional-values--trends">
+          <div><dt>Temperatura 1h</dt><dd>{{ '%+.1f °C'|format(trend.temperature_1h) if trend.temperature_1h is not none else 'Dados insuficientes' }}</dd></div>
+          <div><dt>Pressão 1h</dt><dd>{{ '%+.1f hPa'|format(trend.pressure_1h) if trend.pressure_1h is not none else 'Dados insuficientes' }}</dd></div>
+          <div><dt>Chuva 3h</dt><dd>{{ '%.1f mm'|format(trend.rain_3h) if trend.rain_3h is not none else 'Dados insuficientes' }}</dd></div>
+        </dl>
+        <details class="regional-details">
+          <summary>Ver tendências detalhadas</summary>
+          <dl class="regional-values regional-values--details">
+            <div><dt>Temperatura 3h</dt><dd>{{ '%+.1f °C'|format(trend.temperature_3h) if trend.temperature_3h is not none else '—' }}</dd></div>
+            <div><dt>Umidade 1h</dt><dd>{{ '%+.1f p.p.'|format(trend.humidity_1h) if trend.humidity_1h is not none else '—' }}</dd></div>
+            <div><dt>Umidade 3h</dt><dd>{{ '%+.1f p.p.'|format(trend.humidity_3h) if trend.humidity_3h is not none else '—' }}</dd></div>
+            <div><dt>Pressão 3h</dt><dd>{{ '%+.1f hPa'|format(trend.pressure_3h) if trend.pressure_3h is not none else '—' }}</dd></div>
+            <div><dt>Vento 1h</dt><dd>{{ '%+.1f km/h'|format(trend.wind_1h) if trend.wind_1h is not none else '—' }}</dd></div>
+            <div><dt>Rajada 1h</dt><dd>{{ '%+.1f km/h'|format(trend.gust_1h) if trend.gust_1h is not none else '—' }}</dd></div>
+            <div><dt>Mudança de direção 1h</dt><dd>{{ '%+.0f°'|format(trend.wind_direction_change_1h) if trend.wind_direction_change_1h is not none else '—' }}</dd></div>
+            <div><dt>Chuva 1h</dt><dd>{{ '%.1f mm'|format(trend.rain_1h) if trend.rain_1h is not none else '—' }}</dd></div>
+            <div><dt>Chuva 6h</dt><dd>{{ '%.1f mm'|format(trend.rain_6h) if trend.rain_6h is not none else '—' }}</dd></div>
+          </dl>
+        </details>
+      </section>
 
       <footer class="regional-location">
         <i class="fa-solid fa-location-dot"></i>
@@ -68,6 +136,6 @@
   </div>
   {% endif %}
 
-  <p class="text-xs text-slate-500 text-center">Valores atuais da camada 0; tendências formadas pelo histórico local por hora. Não substitui os sensores locais da EE São José, previsões ou avisos oficiais.</p>
+  <p class="admin-weather-disclaimer">Valores atuais da camada 0; tendências formadas pelo histórico local por hora. Não substitui os sensores locais da EE São José, previsões ou avisos oficiais.</p>
 </section>
 {% endblock %}

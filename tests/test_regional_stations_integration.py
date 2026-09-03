@@ -166,7 +166,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         for nome in ("Dourados", "Caarapó", "Juti", "Naviraí", "Ivinhema", "Culturama"):
             self.assertIn(nome.encode(), response.data)
-        self.assertIn("Observação atual PIN-MS camada 0".encode(), response.data)
+        self.assertIn("Resumo da rede".encode(), response.data)
+        self.assertIn("Como interpretar".encode(), response.data)
+        self.assertIn("Condição atual".encode(), response.data)
 
     def test_api_sem_dados_nao_expoe_payload_bruto(self):
         self.autenticar_admin()
@@ -200,6 +202,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("Fonte atual".encode(), page.data)
         self.assertIn("Valores sem alteração".encode(), page.data)
+        self.assertIn("Qualidade da coleta".encode(), page.data)
+        self.assertIn("Tendências meteorológicas".encode(), page.data)
+        self.assertIn("Ver tendências detalhadas".encode(), page.data)
 
     def test_worker_mockado_processa_seis_e_ignora_slots_vazios(self):
         from config import regional_stations_config

@@ -1,12 +1,15 @@
 {% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
-<section class="monitor-page max-w-7xl mx-auto space-y-6">
-  <header class="flex items-start gap-3">
-    <span class="monitor-title-icon"><i class="fa-solid fa-binoculars"></i></span>
-    <div>
-      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Monitoramento Regional</h1>
-      <p class="text-slate-500 mt-1">Radar, estações meteorológicas e condições locais da EE São José</p>
+<section class="monitor-page admin-weather-page max-w-7xl mx-auto space-y-6">
+  <header class="admin-weather-header">
+    <div class="flex items-start gap-3">
+      <span class="monitor-title-icon"><i class="fa-solid fa-binoculars"></i></span>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Monitoramento Regional</h1>
+        <p class="text-slate-500 mt-1">Fusão de radar, estações regionais e condições locais da EE São José</p>
+      </div>
     </div>
+    <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>
   </header>
 
   {% if not estado %}
@@ -16,33 +19,77 @@
     <p class="text-slate-500 mt-2">O worker de nowcasting ainda não foi executado ou está desabilitado.</p>
   </article>
   {% else %}
-  <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
-    <p class="monitor-kicker">{{ 'AMEAÇA PRINCIPAL' if estado.ameaca_principal else 'STATUS ATUAL' }}</p>
-    <h2>{{ estado.status|replace('_', ' ') }}</h2>
-    <div class="monitor-evidence-level">
-      Evidência {{ estado.nivel_evidencia|replace('_', ' ') }}
-      <span>índice interno {{ estado.indice_evidencia }}/100</span>
+  {% set radar = estado.radar %}
+  {% set confirmacao = estado.confirmacao_regional or {} %}
+
+  <section aria-labelledby="monitor-resumo-titulo">
+    <div class="admin-section-title">
+      <div><span class="admin-section-kicker">Leitura rápida</span><h2 id="monitor-resumo-titulo">O que olhar primeiro</h2></div>
+      <p>Resumo das fontes que formam o estado atual.</p>
     </div>
-    <p class="text-sm text-slate-500">Última análise: {{ estado.gerado_em }}</p>
+    <div class="admin-overview-grid">
+      <article class="admin-overview-item {{ 'admin-overview-item--attention' if estado.ameaca_principal else 'admin-overview-item--success' }}">
+        <span class="admin-overview-icon"><i class="fa-solid fa-shield-halved"></i></span>
+        <div><small>Situação geral</small><strong>{{ estado.status|replace('_', ' ') }}</strong><p>Evidência {{ estado.nivel_evidencia|replace('_', ' ') }}</p></div>
+      </article>
+      <article class="admin-overview-item {{ 'admin-overview-item--warning' if radar.stale else 'admin-overview-item--neutral' }}">
+        <span class="admin-overview-icon"><i class="fa-solid fa-satellite-dish"></i></span>
+        <div><small>Radar</small><strong>{{ 'Desatualizado' if radar.stale else ('Disponível' if radar.disponivel else 'Sem dados') }}</strong><p>{{ ('Borda a %.1f km'|format(radar.distancia_borda_km)) if radar.distancia_borda_km is not none else 'Sem distância calculada' }}</p></div>
+      </article>
+      <article class="admin-overview-item {{ 'admin-overview-item--success' if confirmacao.confirmada else 'admin-overview-item--neutral' }}">
+        <span class="admin-overview-icon"><i class="fa-solid fa-tower-broadcast"></i></span>
+        <div><small>Confirmação de superfície</small><strong>{{ 'Confirmada' if confirmacao.confirmada else 'Não confirmada' }}</strong><p>{{ confirmacao.stations|join(', ') if confirmacao.stations else 'Nenhuma estação confirmou sinais' }}</p></div>
+      </article>
+      <article class="admin-overview-item {{ 'admin-overview-item--attention' if estado.evento_local_observado else 'admin-overview-item--neutral' }}">
+        <span class="admin-overview-icon"><i class="fa-solid fa-school"></i></span>
+        <div><small>EE São José</small><strong>{{ 'Evento observado' if estado.evento_local_observado else ('Dados disponíveis' if estado.escola else 'Sem leitura') }}</strong><p>Condições medidas no local da escola</p></div>
+      </article>
+    </div>
+  </section>
+
+  <aside class="admin-explainer" aria-label="Como interpretar o monitoramento">
+    <div class="admin-explainer-title"><i class="fa-solid fa-circle-info"></i><strong>Como interpretar</strong></div>
+    <div><strong>Índice de evidência</strong><span>organiza sinais observados; não é probabilidade de chuva.</span></div>
+    <div><strong>ETA</strong><span>só existe com deslocamento e trajetória tecnicamente compatíveis.</span></div>
+    <div><strong>Confirmação de superfície</strong><span>exige alterações coerentes em estações frescas a montante.</span></div>
+  </aside>
+
+  <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
+    <div class="monitor-hero-header">
+      <div>
+        <p class="monitor-kicker">{{ 'AMEAÇA PRINCIPAL' if estado.ameaca_principal else 'STATUS ATUAL' }}</p>
+        <h2>{{ estado.status|replace('_', ' ') }}</h2>
+      </div>
+      <span class="admin-time-badge"><i class="fa-regular fa-clock"></i>{{ estado.gerado_em }}</span>
+    </div>
+    <div class="monitor-score-header">
+      <div><strong>Índice interno de evidência</strong><span>{{ estado.indice_evidencia }} de 100</span></div>
+      <strong>{{ estado.nivel_evidencia|replace('_', ' ') }}</strong>
+    </div>
+    <div class="monitor-score-track" role="progressbar" aria-label="Índice interno de evidência" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ estado.indice_evidencia }}">
+      <span style="width: {{ estado.indice_evidencia }}%"></span>
+    </div>
+    <p class="monitor-score-note">Este índice resume evidências observacionais internas e não representa uma probabilidade meteorológica.</p>
     {% if estado.historico_regional_em_formacao %}
-    <p class="mt-3 text-sm text-slate-500">Dados atuais disponíveis; histórico regional ainda em formação.</p>
+    <p class="monitor-inline-note"><i class="fa-solid fa-hourglass-half"></i> Dados atuais disponíveis; histórico regional ainda em formação.</p>
     {% endif %}
-    {% set confirmacao = estado.confirmacao_regional or {} %}
-    <p class="mt-3 text-sm font-semibold">
-      Confirmação de superfície:
-      <span>{{ 'SIM' if confirmacao.confirmada else 'NÃO' }}</span>
-      {% if confirmacao.stations %} · {{ confirmacao.stations|join(', ') }}{% endif %}
-    </p>
-    <ul class="monitor-evidence-list">
-      {% for evidencia in estado.evidencias %}<li>{{ evidencia }}</li>{% endfor %}
-    </ul>
+    <div class="monitor-confirmation-line">
+      <span>Confirmação de superfície</span>
+      <strong>{{ 'SIM' if confirmacao.confirmada else 'NÃO' }}</strong>
+      {% if confirmacao.stations %}<small>{{ confirmacao.stations|join(', ') }}</small>{% endif %}
+    </div>
+    <div class="monitor-evidence-box">
+      <h3><i class="fa-solid fa-list-check"></i> Evidências consideradas</h3>
+      <ul class="monitor-evidence-list">
+        {% for evidencia in estado.evidencias %}<li>{{ evidencia }}</li>{% else %}<li>Nenhuma evidência registrada.</li>{% endfor %}
+      </ul>
+    </div>
   </article>
 
-  {% set radar = estado.radar %}
   <div class="monitor-grid">
     <article class="card monitor-panel">
-      <div class="flex items-center justify-between gap-3">
-        <h2><i class="fa-solid fa-satellite-dish"></i> Ameaça principal{% if radar.track_id %} · Sistema {{ radar.track_id }}{% endif %}</h2>
+      <div class="monitor-panel-heading">
+        <div><h2><i class="fa-solid fa-satellite-dish"></i> Radar e deslocamento{% if radar.track_id %} · Sistema {{ radar.track_id }}{% endif %}</h2><p>Posição e movimento do eco principal acompanhado.</p></div>
         <span class="regional-status">{{ 'DESATUALIZADO' if radar.stale else ('DISPONÍVEL' if radar.disponivel else 'SEM DADOS') }}</span>
       </div>
       <dl class="regional-values">
@@ -50,16 +97,25 @@
         <div><dt>Faixa</dt><dd>{{ radar.faixa_distancia or '—' }}</dd></div>
         <div><dt>Movimento</dt><dd>{{ radar.direcao or 'Dados insuficientes' }}</dd></div>
         <div><dt>Velocidade</dt><dd>{{ '%.1f km/h'|format(radar.velocidade_kmh) if radar.velocidade_kmh is not none else '—' }}</dd></div>
+        <div><dt>Tendência</dt><dd>{% if radar.aproximando is not none %}{{ 'Aproximando' if radar.aproximando else 'Afastando' }}{% else %}—{% endif %}</dd></div>
         <div><dt>ETA conservador</dt><dd>{{ '%.0f min'|format(radar.eta_minutos) if radar.eta_minutos is not none else '—' }}</dd></div>
-        <div><dt>Persistência de clutter</dt><dd>{{ '%.2f'|format(radar.indice_persistencia_clutter) if radar.indice_persistencia_clutter is not none else 'dados insuficientes' }}</dd></div>
+        <div><dt>Trajetória compatível</dt><dd>{{ 'Sim' if radar.trajetoria_compativel else 'Não confirmada' }}</dd></div>
+        <div><dt>Frames no tracking</dt><dd>{{ radar.quantidade_frames if radar.quantidade_frames is not none else '—' }}</dd></div>
+        <div><dt>Possível clutter</dt><dd>{{ 'Sim' if radar.suspeito_clutter else 'Não' }}</dd></div>
+        <div><dt>Persistência de clutter</dt><dd>{{ '%.2f'|format(radar.indice_persistencia_clutter) if radar.indice_persistencia_clutter is not none else 'Dados insuficientes' }}</dd></div>
       </dl>
       {% if radar.imagem_disponivel and radar.frame_id %}
-      <img src="{{ url_for('radar.imagem_radar_admin', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image mt-4" loading="lazy">
+      <div class="monitor-image-block">
+        <p><i class="fa-regular fa-image"></i> Frame usado nesta análise</p>
+        <img src="{{ url_for('radar.imagem_radar_admin', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image" loading="lazy">
+      </div>
       {% endif %}
     </article>
 
     <article class="card monitor-panel">
-      <h2><i class="fa-solid fa-school"></i> EE São José</h2>
+      <div class="monitor-panel-heading">
+        <div><h2><i class="fa-solid fa-school"></i> Condições na EE São José</h2><p>Última leitura persistida dos sensores locais.</p></div>
+      </div>
       {% if estado.escola %}
       <dl class="regional-values">
         <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(estado.escola.temperature) if estado.escola.temperature is not none else '—' }}</dd></div>
@@ -69,13 +125,13 @@
         <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(estado.escola.wind_gust) if estado.escola.wind_gust is not none else '—' }}</dd></div>
         <div><dt>Chuva atual</dt><dd>{{ '%.1f mm/h'|format(estado.escola.rain_rate) if estado.escola.rain_rate is not none else '—' }}</dd></div>
       </dl>
-      {% else %}<p class="text-slate-500 mt-4">Sem leitura local persistida.</p>{% endif %}
+      {% else %}<p class="admin-empty-inline"><i class="fa-solid fa-circle-minus"></i> Sem leitura local persistida.</p>{% endif %}
     </article>
   </div>
 
   {% if estado.ameacas and estado.ameacas|length > 1 %}
   <article class="card monitor-panel">
-    <h2><i class="fa-solid fa-layer-group"></i> Outros sistemas em monitoramento</h2>
+    <div class="monitor-panel-heading"><div><h2><i class="fa-solid fa-layer-group"></i> Outros sistemas em monitoramento</h2><p>Ecos secundários mantidos para acompanhamento.</p></div></div>
     <div class="monitor-stations">
       {% for ameaca in estado.ameacas[1:] %}
       <section>
@@ -83,12 +139,8 @@
           <strong>Sistema {{ ameaca.track_id or 'sem tracking' }}</strong>
           <span>{{ ameaca.status|replace('_', ' ') }}</span>
         </div>
-        <p>
-          {{ '%.1f km'|format(ameaca.distance_km) if ameaca.distance_km is not none else 'distância indefinida' }}
-          · {{ ameaca.direction or 'direção indefinida' }}
-          · ETA {{ '%.0f min'|format(ameaca.eta_minutes) if ameaca.eta_minutes is not none else 'indisponível' }}
-        </p>
-        <p>Confirmação de superfície: {{ 'SIM' if ameaca.confirmacao_regional.confirmada else 'NÃO' }}</p>
+        <p>{{ '%.1f km'|format(ameaca.distance_km) if ameaca.distance_km is not none else 'Distância indefinida' }} · {{ ameaca.direction or 'Direção indefinida' }} · ETA {{ '%.0f min'|format(ameaca.eta_minutes) if ameaca.eta_minutes is not none else 'indisponível' }}</p>
+        <p>Confirmação de superfície: <strong>{{ 'SIM' if ameaca.confirmacao_regional.confirmada else 'NÃO' }}</strong></p>
       </section>
       {% endfor %}
     </div>
@@ -96,21 +148,21 @@
   {% endif %}
 
   <article class="card monitor-panel">
-    <h2><i class="fa-solid fa-route"></i> Confirmação regional da ameaça principal</h2>
+    <div class="monitor-panel-heading"><div><h2><i class="fa-solid fa-route"></i> Confirmação regional da ameaça principal</h2><p>Estações frescas posicionadas no corredor estimado da trajetória.</p></div></div>
     {% if estado.estacoes_relevantes %}
     <div class="monitor-stations">
       {% for station in estado.estacoes_relevantes %}
       <section>
-        <div class="flex justify-between gap-3"><strong>{{ station.name }} · {{ station.code }}</strong><span>{{ station.status }}</span></div>
+        <div class="flex justify-between gap-3"><strong>{{ station.name }} · {{ station.code }}</strong><span>{{ station.status|replace('_', ' ') }}</span></div>
         <p>{{ '%.1f km da escola'|format(station.distance_km) if station.distance_km is not none else '' }} · {{ '%.1f km do eixo'|format(station.cross_track_km) }}</p>
         {% if station.evidencias %}<ul>{% for item in station.evidencias %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p>Sem alteração meteorológica relevante.</p>{% endif %}
       </section>
       {% endfor %}
     </div>
-    {% else %}<p class="text-slate-500 mt-4">Nenhuma estação fresca está no corredor da trajetória atual.</p>{% endif %}
+    {% else %}<p class="admin-empty-inline"><i class="fa-solid fa-circle-minus"></i> Nenhuma estação fresca está no corredor da trajetória atual.</p>{% endif %}
   </article>
   {% endif %}
 
-  <p class="text-xs text-slate-500 text-center">Fusão observacional experimental. Não representa probabilidade, previsão numérica, severidade nem substitui avisos meteorológicos oficiais.</p>
+  <p class="admin-weather-disclaimer">Fusão observacional experimental. Não representa probabilidade, previsão numérica ou severidade e não substitui avisos meteorológicos oficiais.</p>
 </section>
 {% endblock %}

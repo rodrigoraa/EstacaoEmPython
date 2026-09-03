@@ -9,6 +9,7 @@ import unittest
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image, ImageDraw
 
@@ -122,12 +123,32 @@ class RadarIntegrationTest(unittest.TestCase):
         imagem = self.client.get(f"/admin/radar/imagem/{frame_id}")
         self.assertEqual(pagina.status_code, 200)
         self.assertIn(b"Eco significativo", pagina.data)
+        self.assertIn(b"Resumo operacional", pagina.data)
+        self.assertIn(b"Atualiza", pagina.data)
+        self.assertIn(b"Eco e deslocamento", pagina.data)
+        self.assertIn(b"Como interpretar", pagina.data)
         self.assertTrue(payload["disponivel"])
         self.assertNotIn("arquivo_local", payload["frame"])
         self.assertNotIn("path_remoto", json.dumps(payload))
         self.assertEqual(imagem.status_code, 200)
         self.assertEqual(imagem.mimetype, "image/png")
         imagem.close()
+
+    def test_salvar_atomico_publica_png_legivel_pelo_grupo(self):
+        from workers import radar_updater
+
+        destino = self.raiz / "radar" / "analisadas" / "permissao.png"
+        chmod_real = radar_updater.os.chmod
+        with mock.patch.object(
+            radar_updater.os,
+            "chmod",
+            wraps=chmod_real,
+        ) as chmod:
+            radar_updater._salvar_atomico(b"conteudo-png", destino)
+
+        self.assertEqual(destino.read_bytes(), b"conteudo-png")
+        chmod.assert_called_once()
+        self.assertEqual(chmod.call_args.args[1], 0o640)
 
     def test_path_traversal_registrado_e_bloqueado(self):
         from services.radar_repository import salvar_resultado_frame

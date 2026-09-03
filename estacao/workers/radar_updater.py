@@ -66,6 +66,11 @@ def _salvar_atomico(imagem_ou_bytes, destino: Path, formato: str | None = None):
             Path(temporario).write_bytes(imagem_ou_bytes)
         else:
             imagem_ou_bytes.save(temporario, format=formato or "PNG")
+        # mkstemp cria 0600 no Linux. O worker e o Gunicorn podem executar
+        # com usuários diferentes, mas compartilham o grupo operacional.
+        # Ajustar antes do replace evita publicar por alguns instantes um
+        # arquivo que a aplicação web ainda não consegue ler.
+        os.chmod(temporario, 0o640)
         os.replace(temporario, destino)
     finally:
         if os.path.exists(temporario):

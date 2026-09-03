@@ -8,7 +8,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 logger = logging.getLogger(__name__)
 
 
@@ -526,9 +526,40 @@ def garantir_tabelas_estacoes_regionais(conn):
     garantir_coluna(conn, "regional_station_observations", "latitude_fonte", "REAL")
     garantir_coluna(conn, "regional_station_observations", "longitude_fonte", "REAL")
     conn.execute("""
+    CREATE TABLE IF NOT EXISTS regional_station_samples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        station_code TEXT NOT NULL,
+        source_observation_id INTEGER NOT NULL,
+        sample_time_utc TEXT NOT NULL,
+        sample_time_local TEXT NOT NULL,
+        sample_time_type TEXT NOT NULL DEFAULT 'collection_time_proxy',
+        bucket_hour_utc TEXT NOT NULL,
+        bucket_hour_local TEXT NOT NULL,
+        temperatura_atual REAL,
+        umidade_atual REAL,
+        pressao_atual REAL,
+        vento_velocidade_kmh REAL,
+        rajada_kmh REAL,
+        vento_direcao_graus REAL,
+        chuva_mm REAL,
+        source_layer INTEGER NOT NULL DEFAULT 0,
+        coletado_em_utc TEXT NOT NULL,
+        coletado_em_local TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(station_code, bucket_hour_utc),
+        FOREIGN KEY(station_code) REFERENCES regional_stations(codigo),
+        FOREIGN KEY(source_observation_id)
+            REFERENCES regional_station_observations(id)
+    )
+    """)
+    conn.execute("""
     CREATE TABLE IF NOT EXISTS regional_station_state (
         station_code TEXT PRIMARY KEY,
         source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+        current_source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+        external_history_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
         ultimo_erro TEXT,
         ultima_tentativa_em TEXT,
         ultimo_sucesso_em TEXT,
@@ -536,6 +567,14 @@ def garantir_tabelas_estacoes_regionais(conn):
         FOREIGN KEY(station_code) REFERENCES regional_stations(codigo)
     )
     """)
+    garantir_coluna(
+        conn, "regional_station_state", "current_source_status",
+        "TEXT NOT NULL DEFAULT 'SEM_DADOS'"
+    )
+    garantir_coluna(
+        conn, "regional_station_state", "external_history_status",
+        "TEXT NOT NULL DEFAULT 'SEM_DADOS'"
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_regional_obs_station_layer_time "
         "ON regional_station_observations(station_code, source_layer, medido_em_utc DESC)"
@@ -543,6 +582,10 @@ def garantir_tabelas_estacoes_regionais(conn):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_regional_obs_station_collected "
         "ON regional_station_observations(station_code, coletado_em_utc DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_regional_samples_station_time "
+        "ON regional_station_samples(station_code, sample_time_utc DESC)"
     )
     for station in REGIONAL_STATIONS.values():
         conn.execute(

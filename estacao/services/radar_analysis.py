@@ -316,7 +316,10 @@ def detectar_clusters(
         cx, cy = float(np.mean(orig_x)), float(np.mean(orig_y))
         centro_lat, centro_lon = pixel_para_latlon(cx, cy, bounds, width, height)
 
-        componente = componente_processado.astype(np.uint8)
+        # A morfologia apenas descobre quais fragmentos pertencem ao mesmo
+        # sistema. Centro, intensidade e borda meteorológica usam somente os
+        # pixels realmente presentes no PNG original.
+        componente = componente_original.astype(np.uint8)
         interior = cv2.erode(componente, np.ones((3, 3), np.uint8), iterations=1)
         borda_y, borda_x = np.nonzero(componente - interior)
         lons = bounds.lon_min + borda_x / (width - 1) * (bounds.lon_max - bounds.lon_min)

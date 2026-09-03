@@ -60,20 +60,21 @@ class NowcastingIntegrationTest(unittest.TestCase):
                 "confirmada": False, "stations": [], "evidence_count": 0,
             },
             "radar_only": False, "evento_local_observado": False,
+            "historico_regional_em_formacao": False,
             "evidencias": ["Sem evidencia observacional relevante no momento"],
             "gerado_em": "2026-09-03T09:20:00-04:00",
             "gerado_em_utc": "2026-09-03T13:20:00+00:00",
             "versao_algoritmo": "1.1",
         }
 
-    def test_migration_aditiva_idempotente_cria_snapshot_schema_6(self):
+    def test_migration_aditiva_idempotente_cria_snapshot_schema_7(self):
         self.database.init_db()
         conn = self.database.get_db()
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
         conn.close()
         self.assertIn("nowcasting_snapshots", tables)
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
         conn = self.database.get_db()
         frame_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_frames)")}
         cluster_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_clusters)")}
@@ -81,24 +82,30 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertTrue({"data_frame_raw", "coletado_em_utc"} <= frame_columns)
         self.assertTrue({"classe_predominante", "classe_maxima"} <= cluster_columns)
 
-    def test_migration_5_para_6_preserva_snapshot_existente(self):
+    def test_migration_6_para_7_preserva_snapshot_existente(self):
         from services.nowcasting_repository import salvar_snapshot
 
-        self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-5"))
+        self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-6"))
         conn = self.database.get_db()
-        conn.execute("UPDATE schema_version SET versao=5 WHERE id=1")
+        conn.execute("DROP TABLE regional_station_samples")
+        conn.execute("UPDATE schema_version SET versao=6 WHERE id=1")
         conn.commit()
         conn.close()
         self.database.init_db()
         conn = self.database.get_db()
         count = conn.execute(
             "SELECT COUNT(*) FROM nowcasting_snapshots WHERE input_fingerprint=?",
-            ("snapshot-schema-5",),
+            ("snapshot-schema-6",),
         ).fetchone()[0]
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
+        samples_exists = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type='table' AND name='regional_station_samples'"
+        ).fetchone()[0]
         conn.close()
         self.assertEqual(count, 1)
-        self.assertEqual(version, 6)
+        self.assertEqual(version, 7)
+        self.assertEqual(samples_exists, 1)
 
     def test_pagina_e_api_antes_do_primeiro_snapshot(self):
         page = self.client.get("/monitoramento")
@@ -138,6 +145,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         state["confirmacao_regional"] = {
             "confirmada": True, "stations": ["A749"], "evidence_count": 2,
         }
+        state["historico_regional_em_formacao"] = True
         self.assertIsNotNone(salvar_snapshot(state, "entrada-1"))
         self.assertIsNone(salvar_snapshot(state, "entrada-1"))
         conn = self.database.get_db()
@@ -149,6 +157,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("AMEAÇA PRINCIPAL".encode(), page.data)
         self.assertIn(b"Outros sistemas em monitoramento", page.data)
+        self.assertIn("histórico regional ainda em formação".encode(), page.data)
         self.assertEqual(payload["versao_algoritmo"], "1.1")
         self.assertIn("ameaca_principal", payload)
         self.assertIn("ameacas", payload)

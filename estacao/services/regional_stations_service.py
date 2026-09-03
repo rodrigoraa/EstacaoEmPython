@@ -160,10 +160,13 @@ def interpretar_timestamp(
     hr_raw: Any,
     collected_at: datetime | None = None,
     max_future_minutes: float = 90.0,
+    date_only_without_hour: bool = False,
 ) -> ParsedTimestamp:
     """Nunca interpreta formatos dia/mes ambiguos nem inventa hora de medicao."""
     base = _parse_dt_fonte(dt_raw)
     hora = _parse_hora(hr_raw)
+    if date_only_without_hour and base and not _raw(hr_raw):
+        return ParsedTimestamp(None, None, "date_only")
     if base and hora:
         base_hora = base.timetz().replace(tzinfo=None)
         if base_hora == hora:
@@ -222,7 +225,8 @@ def normalizar_registro(
     station = REGIONAL_STATIONS[code]
     collected_at = (collected_at or agora_utc()).astimezone(timezone.utc)
     timestamp = interpretar_timestamp(
-        attributes.get("DT_MEDICAO"), attributes.get("HR_MEDICAO"), collected_at
+        attributes.get("DT_MEDICAO"), attributes.get("HR_MEDICAO"), collected_at,
+        date_only_without_hour=source_layer == 0,
     )
     vento_raw = normalizar_valor_meteorologico(attributes.get("VEN_VEL"))
     rajada_raw = normalizar_valor_meteorologico(attributes.get("VEN_RAJ"))

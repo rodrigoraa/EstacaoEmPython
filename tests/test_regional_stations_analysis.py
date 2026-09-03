@@ -59,6 +59,16 @@ class RegionalStationsAnalysisTest(unittest.TestCase):
         trend = calcular_tendencias([])
         self.assertTrue(all(value is None for value in trend.values()))
 
+    def test_vinte_minutos_nao_sao_tratados_como_tendencia_de_uma_hora(self):
+        atual = self.row(0, 23, 70, 968.5, 18, 29, 10, 2)
+        anterior = self.row(0, 26, 50, 970, 4, 7, 5, 2)
+        anterior["medido_em_utc"] = (
+            datetime(2026, 9, 2, 19, tzinfo=timezone.utc) - timedelta(minutes=20)
+        ).isoformat()
+        trend = calcular_tendencias([atual, anterior])
+        self.assertIsNone(trend["temperatura_1h"])
+        self.assertIsNone(trend["chuva_1h"])
+
     def test_status_freshness(self):
         now = datetime(2026, 9, 2, 20, tzinfo=timezone.utc)
         def obs(minutes):

@@ -41,7 +41,12 @@ def diferenca_angular_graus(anterior, atual):
 
 
 def _dt(row):
-    return parse_datetime(row.get("medido_em_utc"), assume_utc=True)
+    return parse_datetime(
+        row.get("sample_time_utc")
+        or row.get("tempo_referencia_utc")
+        or row.get("medido_em_utc"),
+        assume_utc=True,
+    )
 
 
 def _referencia(rows, atual_dt, horas):
@@ -50,6 +55,10 @@ def _referencia(rows, atual_dt, horas):
     for row in rows[1:]:
         momento = _dt(row)
         if momento and momento < atual_dt:
+            intervalo = (atual_dt - momento).total_seconds()
+            intervalo_minimo = max(45 * 60, horas * 3600 - 45 * 60)
+            if intervalo < intervalo_minimo:
+                continue
             diferenca = abs((momento - alvo).total_seconds())
             if diferenca <= 45 * 60:
                 candidatos.append((diferenca, row))
@@ -77,7 +86,7 @@ def calcular_tendencias(observacoes: Sequence[dict]):
         return vazio
     atual = validas[0]
     atual_dt = _dt(atual)
-    refs = {horas: _referencia(validas, atual_dt, horas) for horas in (1, 3)}
+    refs = {horas: _referencia(validas, atual_dt, horas) for horas in (1, 3, 6)}
     resultado = dict(vazio)
     for campo_saida, campo in (
         ("temperatura", "temperatura_atual"),
@@ -93,20 +102,50 @@ def calcular_tendencias(observacoes: Sequence[dict]):
         atual.get("vento_direcao_graus"),
     )
     for horas in (1, 3, 6):
+        if refs[horas] is None:
+            continue
         inicio = atual_dt - timedelta(hours=horas)
-        chuvas = [
-            row["chuva_mm"]
-            for row in validas
-            if inicio < _dt(row) <= atual_dt and row.get("chuva_mm") is not None
-        ]
+        chuvas = []
+        origens_contadas = set()
+        for row in validas:
+            momento = _dt(row)
+            if not (momento and inicio < momento <= atual_dt):
+                continue
+            chuva = row.get("chuva_mm")
+            if chuva is None:
+                continue
+            # O mesmo registro da fonte pode permanecer visível em vários polls
+            # ou buckets. Ele representa uma leitura, não novos acumulados.
+            origem = (
+                row.get("source_observation_id")
+                or row.get("fingerprint")
+                or row.get("id")
+                or (momento.isoformat(), float(chuva))
+            )
+            if origem in origens_contadas:
+                continue
+            origens_contadas.add(origem)
+            chuvas.append(float(chuva))
         resultado[f"chuva_{horas}h"] = sum(chuvas) if chuvas else None
     return resultado
+
+
+def qualidade_tendencias(observacoes: Sequence[dict]):
+    """Qualifica somente a cobertura temporal, sem fabricar valores ausentes."""
+    validas = [dict(row) for row in observacoes if _dt(dict(row))]
+    validas.sort(key=lambda row: _dt(row), reverse=True)
+    if len(validas) < 2:
+        return "INSUFFICIENT"
+    atual_dt = _dt(validas[0])
+    if _referencia(validas, atual_dt, 1) is not None:
+        return "GOOD"
+    return "PARTIAL"
 
 
 def idade_minutos_observacao(observacao, now=None):
     if not observacao:
         return None
-    medido = parse_datetime(observacao.get("medido_em_utc"), assume_utc=True)
+    medido = _dt(observacao)
     if not medido:
         return None
     now = (now or agora_utc()).astimezone(timezone.utc)

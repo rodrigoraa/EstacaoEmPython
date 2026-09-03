@@ -31,7 +31,7 @@ from services.regional_stations_service import (
     RegionalStationsError,
     normalizar_registro,
 )
-from time_utils import agora_utc
+from time_utils import agora_utc, parse_datetime
 
 
 logger = logging.getLogger(__name__)
@@ -56,13 +56,24 @@ def enfileirar_alertas_regionais(config, _estado):
     return 0
 
 
+def _layer2_recente(observacao, collected_at, max_age_hours):
+    if not observacao or observacao.timestamp_status not in {"valid", "reconciled"}:
+        return False
+    momento = parse_datetime(observacao.medido_em_utc, assume_utc=True)
+    if momento is None:
+        return False
+    idade_horas = (collected_at - momento).total_seconds() / 3600
+    return -1.5 <= idade_horas <= max_age_hours
+
+
 def executar_ciclo(client=None, config=None):
     config = config or regional_stations_config()
     if not config["enabled"]:
         return {
             "disabled": True, "configured": 6, "found": 0, "with_current_data": 0,
             "new": 0, "duplicates": 0, "empty": 0, "errors": 0, "state": None,
-            "time_diagnostics": [],
+            "samples_updated": 0, "layer2_recent": 0, "layer2_stale": 0,
+            "history_source": "layer0_local", "time_diagnostics": [],
         }
     database.init_db()
     client = client or PinMsRegionalClient(
@@ -108,16 +119,20 @@ def executar_ciclo(client=None, config=None):
         erros += 1
         current_error = erro_externo_seguro(erro)
 
-    novos = duplicados = vazios = 0
+    novos = duplicados = vazios = amostras_atualizadas = 0
+    layer2_recent_stations = layer2_stale_stations = 0
     for code in REGIONAL_STATION_CODES:
         problema = None
-        historico_valido = False
+        layer2_tem_dado = False
+        layer2_tem_recente = False
         atual = atuais.get(code)
         if atual:
-            if salvar_observacao(atual):
+            persistencia = salvar_observacao(atual, return_details=True)
+            if persistencia["inserted"]:
                 novos += 1
             else:
                 duplicados += 1
+            amostras_atualizadas += int(persistencia["sample_updated"])
         elif code in encontrados:
             vazios += 1
 
@@ -129,7 +144,10 @@ def executar_ciclo(client=None, config=None):
                     vazios += 1
                     continue
                 registrar_diagnostico(observacao)
-                historico_valido = True
+                layer2_tem_dado = True
+                layer2_tem_recente = layer2_tem_recente or _layer2_recente(
+                    observacao, collected_at, config["layer2_max_age_hours"]
+                )
                 if salvar_observacao(observacao):
                     novos += 1
                 else:
@@ -138,16 +156,36 @@ def executar_ciclo(client=None, config=None):
             erros += 1
             problema = erro_externo_seguro(erro)
 
-        if current_error:
-            registrar_status_estacao(code, "ERRO_FONTE", current_error)
-        elif code not in encontrados:
-            registrar_status_estacao(code, "AUSENTE", "Estacao ausente na camada atual")
+        if layer2_tem_recente:
+            external_status = "OK"
+            layer2_recent_stations += 1
+        elif layer2_tem_dado:
+            external_status = "STALE"
+            layer2_stale_stations += 1
         elif problema:
-            registrar_status_estacao(code, "ERRO_FONTE", problema)
-        elif atual is None and not historico_valido:
-            registrar_status_estacao(code, "SEM_DADOS", None, sucesso=True)
+            external_status = "ERRO_FONTE"
         else:
-            registrar_status_estacao(code, "OK", None, sucesso=True)
+            external_status = "SEM_DADOS"
+
+        if current_error:
+            current_status = "ERRO_FONTE"
+            current_problem = current_error
+        elif code not in encontrados:
+            current_status = "AUSENTE"
+            current_problem = "Estacao ausente na camada atual"
+        elif atual is None:
+            current_status = "SEM_DADOS"
+            current_problem = None
+        else:
+            current_status = "OK"
+            current_problem = None
+        registrar_status_estacao(
+            code,
+            current_status,
+            current_problem,
+            sucesso=current_status in {"OK", "SEM_DADOS"},
+            external_history_status=external_status,
+        )
 
     estado = obter_estado_rede(config)
     enfileirar_alertas_regionais(config, estado)
@@ -158,6 +196,10 @@ def executar_ciclo(client=None, config=None):
         "with_current_data": sum(obs is not None for obs in atuais.values()),
         "new": novos,
         "duplicates": duplicados,
+        "samples_updated": amostras_atualizadas,
+        "layer2_recent": layer2_recent_stations,
+        "layer2_stale": layer2_stale_stations,
+        "history_source": "layer0_local",
         "empty": vazios,
         "errors": erros,
         "state": estado,
@@ -166,15 +208,21 @@ def executar_ciclo(client=None, config=None):
         ],
     }
     logger.info(
-        "Coleta PIN-MS: configuradas=%s retornadas=%s atuais=%s novas=%s "
+        "Coleta PIN-MS: layer0=%s/%s layer2_recent=%s layer2_stale=%s "
+        "samples_updated=%s history_source=layer0_local novas=%s "
         "duplicadas=%s vazias=%s erros=%s",
-        resultado["configured"], resultado["found"], resultado["with_current_data"],
+        resultado["with_current_data"], resultado["configured"],
+        layer2_recent_stations, layer2_stale_stations, amostras_atualizadas,
         novos, duplicados, vazios, erros,
     )
+    if layer2_recent_stations == 0 and layer2_stale_stations:
+        logger.info(
+            "PIN-MS layer 2 sem histórico recente; utilizando histórico próprio da layer 0"
+        )
     return resultado
 
 
-def imprimir_resumo(resultado, verbose_time=False):
+def imprimir_resumo(resultado, verbose_time=False, verbose_history=False):
     print("Estações regionais PIN-MS")
     print("==========================")
     if resultado["disabled"]:
@@ -196,6 +244,9 @@ def imprimir_resumo(resultado, verbose_time=False):
     for key, label in (
         ("configured", "configuradas"), ("found", "encontradas"),
         ("with_current_data", "com dados atuais"), ("new", "novos registros"),
+        ("samples_updated", "buckets locais atualizados"),
+        ("layer2_recent", "estações com layer 2 recente"),
+        ("layer2_stale", "estações com layer 2 desatualizada"),
         ("duplicates", "duplicados"), ("empty", "slots vazios"),
         ("errors", "erros HTTP/fonte"),
     ):
@@ -209,6 +260,18 @@ def imprimir_resumo(resultado, verbose_time=False):
                 f"utc={item['resolved_utc'] or '-'} "
                 f"local={item['resolved_local'] or '-'} "
                 f"status={item['timestamp_status']}"
+            )
+    if verbose_history:
+        print("\nDiagnóstico do histórico:")
+        for station in (resultado.get("state") or {}).get("stations", []):
+            external = station.get("external_hourly_source") or {}
+            print(
+                f"{station['code']} layer0_age={station.get('age_minutes')}min "
+                f"layer2_age={external.get('age_hours')}h "
+                f"layer2_usable={external.get('usable')} "
+                f"bucket={station.get('current_bucket') or '-'} "
+                f"trend_source={station.get('trend_source')} "
+                f"trend_quality={station.get('trend_quality')}"
             )
 
 
@@ -224,6 +287,11 @@ def parse_args(argv=None):
         action="store_true",
         help="Exibe campos temporais brutos e resolvidos sem alterar a coleta",
     )
+    parser.add_argument(
+        "--verbose-history",
+        action="store_true",
+        help="Exibe freshness das fontes e qualidade do histórico local",
+    )
     return parser.parse_args(argv)
 
 
@@ -232,14 +300,20 @@ def main(argv=None):
     configurar_logging()
     config = regional_stations_config()
     if args.once:
-        imprimir_resumo(executar_ciclo(config=config), args.verbose_time)
+        imprimir_resumo(
+            executar_ciclo(config=config), args.verbose_time, args.verbose_history
+        )
         return 0
     if not config["enabled"]:
-        imprimir_resumo(executar_ciclo(config=config), args.verbose_time)
+        imprimir_resumo(
+            executar_ciclo(config=config), args.verbose_time, args.verbose_history
+        )
         return 0
     while True:
         try:
-            imprimir_resumo(executar_ciclo(config=config), args.verbose_time)
+            imprimir_resumo(
+                executar_ciclo(config=config), args.verbose_time, args.verbose_history
+            )
         except Exception as erro:
             logger.error("Ciclo PIN-MS falhou: %s", erro_externo_seguro(erro))
         time.sleep(config["poll_seconds"])

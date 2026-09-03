@@ -105,6 +105,28 @@ class RadarAnalysisTest(unittest.TestCase):
         cluster = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)[0]
         self.assertLess(cluster.distancia_borda_escola_km, cluster.distancia_centro_escola_km)
 
+    def test_distancia_da_borda_nao_e_aproximada_pela_dilatacao(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        ImageDraw.Draw(imagem).rectangle((45, 45, 54, 54), fill=(43, 185, 0))
+        sem_dilatacao = detectar_clusters(
+            imagem, self.bounds, -0.8, -0.8, 0, 0,
+            DetectionConfig(
+                min_cluster_pixels=20, close_iterations=0, dilate_iterations=0
+            ),
+        )[0]
+        com_dilatacao = detectar_clusters(
+            imagem, self.bounds, -0.8, -0.8, 0, 0,
+            DetectionConfig(
+                min_cluster_pixels=20, close_iterations=0, dilate_iterations=6
+            ),
+        )[0]
+        self.assertEqual(com_dilatacao.pixels_eco, 100)
+        self.assertAlmostEqual(
+            com_dilatacao.distancia_borda_escola_km,
+            sem_dilatacao.distancia_borda_escola_km,
+            places=9,
+        )
+
     def test_cluster_perto_radar_marcado_e_nao_excluido(self):
         imagem = Image.new("RGB", (100, 100), "black")
         ImageDraw.Draw(imagem).rectangle((45, 45, 55, 55), fill=(43, 185, 0))

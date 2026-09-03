@@ -40,6 +40,7 @@ TABELAS_CONTAGEM = (
     "radar_track_points",
     "regional_stations",
     "regional_station_observations",
+    "regional_station_samples",
     "regional_station_state",
     "nowcasting_snapshots",
 )
@@ -266,10 +267,18 @@ def executar_cleanup_regional(conn, lote=None):
     lote = max(1, lote or env_int("RETENCAO_DELETE_BATCH_SIZE", 1000))
     plano = plano_retencao_regional(conn)
     removidos = 0
+    conn.execute(
+        "DELETE FROM regional_station_samples WHERE sample_time_utc < ?",
+        (plano["limite"],),
+    )
+    conn.commit()
     while True:
         ids = conn.execute(
             "SELECT id FROM regional_station_observations "
-            "WHERE coletado_em_utc < ? ORDER BY id LIMIT ?",
+            "WHERE coletado_em_utc < ? AND NOT EXISTS ("
+            "SELECT 1 FROM regional_station_samples s "
+            "WHERE s.source_observation_id=regional_station_observations.id"
+            ") ORDER BY id LIMIT ?",
             (plano["limite"], lote),
         ).fetchall()
         if not ids:

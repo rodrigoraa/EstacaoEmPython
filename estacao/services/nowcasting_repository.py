@@ -178,8 +178,10 @@ def carregar_entradas_nowcasting(config):
         "regional": [
             (
                 station.get("code"),
-                station.get("last_valid_hourly"),
+                station.get("last_collection"),
                 station.get("status"),
+                station.get("trend_source"),
+                station.get("trend_quality"),
                 station.get("observation"),
                 station.get("trend"),
             )

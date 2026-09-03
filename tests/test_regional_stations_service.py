@@ -80,6 +80,14 @@ class RegionalStationsServiceTest(unittest.TestCase):
         self.assertEqual(obs.timestamp_status, "date_only")
         self.assertIsNone(obs.medido_em_utc)
 
+    def test_camada_atual_epoch_meia_noite_local_continua_date_only(self):
+        raw = dict(self.layer0["features"][0]["attributes"])
+        raw["DT_MEDICAO"] = 1788408000000
+        obs = normalizar_registro(raw, 0, datetime(2026, 9, 3, 16, tzinfo=timezone.utc))
+        self.assertEqual(obs.source_dt_medicao_raw, "1788408000000")
+        self.assertEqual(obs.timestamp_status, "date_only")
+        self.assertIsNone(obs.medido_em_utc)
+
     def test_slots_vazios_sao_ignorados(self):
         raw = self.layer2["features"][0]["attributes"]
         self.assertFalse(registro_tem_dados_meteorologicos(raw))

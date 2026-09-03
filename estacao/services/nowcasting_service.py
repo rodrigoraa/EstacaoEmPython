@@ -16,6 +16,14 @@ EVIDENCE_LEVELS = (
     (10, "BAIXA"),
     (0, "SEM_EVIDENCIA"),
 )
+THREAT_STATUS_PRIORITY = {
+    "ATENCAO_PREVENTIVA": 0,
+    "EVIDENCIA_REGIONAL": 1,
+    "TRAJETORIA_RELEVANTE": 2,
+    "SISTEMA_SE_APROXIMANDO": 3,
+    "SISTEMA_EM_MOVIMENTO": 4,
+    "ECO_EM_MONITORAMENTO": 5,
+}
 
 
 def _xy_local(lat, lon, ref_lat, ref_lon):
@@ -79,6 +87,12 @@ def _evidencias_estacao(station, regional_max_age_minutes):
         return 0, []
     age = station.get("age_minutes")
     if age is None or age > regional_max_age_minutes:
+        return 0, []
+    if station.get("trend_quality") != "GOOD":
+        return 0, []
+    if station.get("trend_source") not in {
+        "local_history_layer0", "external_layer2_bootstrap"
+    }:
         return 0, []
     trend = station.get("trend") or {}
     score = 0
@@ -190,6 +204,8 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
                     "code": station.get("code"), "name": station.get("name"),
                     "distance_km": station.get("distance_km"), "upstream": True,
                     "status": station.get("status"), "age_minutes": station.get("age_minutes"),
+                    "trend_source": station.get("trend_source"),
+                    "trend_quality": station.get("trend_quality"),
                     "along_km": geometry["along_km"],
                     "cross_track_km": geometry["cross_track_km"],
                     "evidencias": station_evidence,
@@ -273,6 +289,8 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
 def _prioridade_ameaca(ameaca):
     clutter = ameaca.get("indice_persistencia_clutter")
     return (
+        THREAT_STATUS_PRIORITY.get(ameaca.get("status"), 99),
+        0 if (ameaca.get("confirmacao_regional") or {}).get("confirmada") else 1,
         0 if ameaca.get("trajectory_compatible") else 1,
         0 if ameaca.get("approaching") else 1,
         0 if ameaca.get("tracking_valid") else 1,
@@ -314,6 +332,10 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         station.get("status") == "OK"
         and station.get("age_minutes") is not None
         and station["age_minutes"] <= config["regional_max_age_minutes"]
+        for station in regional.get("stations", [])
+    )
+    regional_history_ready = any(
+        station.get("status") == "OK" and station.get("trend_quality") == "GOOD"
         for station in regional.get("stations", [])
     )
 
@@ -373,6 +395,9 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         "estacoes_relevantes": principal.get("upstream_stations", []) if principal else [],
         "escola": local,
         "evento_local_observado": evento_local,
+        "historico_regional_em_formacao": bool(
+            regional_usable and not regional_history_ready
+        ),
         "evidencias": evidence,
         "gerado_em": iso_local(now),
         "gerado_em_utc": iso_utc(now),

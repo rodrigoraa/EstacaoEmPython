@@ -38,6 +38,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         fixtures = ROOT / "tests" / "fixtures"
         self.layer0 = json.loads((fixtures / "pinms_layer0.json").read_text(encoding="utf-8"))
         self.layer2 = json.loads((fixtures / "pinms_layer2.json").read_text(encoding="utf-8"))
+        self.real_freshness = json.loads(
+            (fixtures / "pinms_layer_freshness_real.json").read_text(encoding="utf-8")
+        )
         self.collected = datetime(2026, 9, 2, 20, tzinfo=timezone.utc)
 
     def tearDown(self):
@@ -45,6 +48,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         for key in (
             "ESTACAO_DB", "REGIONAL_STATIONS_ENABLED", "REGIONAL_STATIONS_ALERTS_ENABLED",
             "REGIONAL_STATIONS_RETENTION_ENABLED", "REGIONAL_STATIONS_RETENTION_DAYS",
+            "REGIONAL_LAYER2_MAX_AGE_HOURS",
             "RATELIMIT_ENABLED", "SECRET_KEY",
         ):
             os.environ.pop(key, None)
@@ -55,10 +59,20 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         tabelas = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         total = conn.execute("SELECT COUNT(*) FROM regional_stations").fetchone()[0]
         versao = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
+        sample_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(regional_station_samples)")
+        }
         conn.close()
-        self.assertTrue({"regional_stations", "regional_station_observations", "regional_station_state"} <= tabelas)
+        self.assertTrue({
+            "regional_stations", "regional_station_observations",
+            "regional_station_samples", "regional_station_state",
+        } <= tabelas)
         self.assertEqual(total, 6)
         self.assertEqual(versao, self.database.SCHEMA_VERSION)
+        self.assertTrue({
+            "source_observation_id", "sample_time_utc", "sample_time_type",
+            "bucket_hour_utc", "chuva_mm", "fingerprint",
+        } <= sample_columns)
 
     def test_deduplicacao_polling_repetido(self):
         from services.regional_stations_repository import salvar_observacao
@@ -79,7 +93,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         for nome in ("Dourados", "Caarapó", "Juti", "Naviraí", "Ivinhema", "Culturama"):
             self.assertIn(nome.encode(), response.data)
-        self.assertIn("Dado horário de estação externa".encode(), response.data)
+        self.assertIn("Observação atual PIN-MS camada 0".encode(), response.data)
 
     def test_api_sem_dados_nao_expoe_payload_bruto(self):
         payload = self.client.get("/api/regional-stations").get_json()
@@ -99,7 +113,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         payload = self.client.get("/api/regional-stations").get_json()
         dourados = next(item for item in payload["stations"] if item["code"] == "A721")
         self.assertEqual(dourados["observation"]["temperature"], 21.6)
-        self.assertEqual(dourados["trend"]["temperature_1h"], 1.0)
+        self.assertIsNone(dourados["trend"]["temperature_1h"])
+        self.assertEqual(dourados["trend_source"], "local_history_layer0")
+        self.assertEqual(dourados["trend_quality"], "INSUFFICIENT")
         self.assertGreater(dourados["distance_km"], 0)
         self.assertEqual(self.client.get("/estacoes-regionais").status_code, 200)
 
@@ -125,6 +141,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(primeiro["found"], 6)
         self.assertEqual(primeiro["with_current_data"], 6)
         self.assertEqual(primeiro["new"], 24)
+        self.assertEqual(primeiro["samples_updated"], 6)
+        self.assertEqual(primeiro["layer2_recent"], 0)
+        self.assertEqual(primeiro["layer2_stale"], 6)
         self.assertEqual(primeiro["empty"], 12)
         self.assertTrue(primeiro["time_diagnostics"])
         self.assertTrue(
@@ -194,6 +213,194 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(modular.returncode, 0, modular.stderr)
         self.assertIn("--once", direto.stdout)
         self.assertIn("--verbose-time", direto.stdout)
+        self.assertIn("--verbose-history", direto.stdout)
+
+    def test_fixture_real_layer0_fresca_layer2_marco_stale(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import (
+            obter_estado_rede, registrar_status_estacao, salvar_observacao,
+        )
+        from services.regional_stations_service import normalizar_registro
+
+        now = datetime.fromisoformat(self.real_freshness["collected_at"])
+        atual = normalizar_registro(self.real_freshness["layer0"], 0, now)
+        externa = normalizar_registro(self.real_freshness["layer2"], 2, now)
+        salvar_observacao(atual)
+        salvar_observacao(externa)
+        registrar_status_estacao(
+            "S735", "OK", sucesso=True, external_history_status="STALE"
+        )
+        estado = obter_estado_rede(regional_stations_config(), now=now)
+        navirai = next(item for item in estado["stations"] if item["code"] == "S735")
+        self.assertEqual(navirai["status"], "OK")
+        self.assertEqual(navirai["observation"]["temperature"], 20.6)
+        self.assertEqual(navirai["observation"]["reference_time_type"], "collection_time_proxy")
+        self.assertEqual(navirai["external_hourly_source"]["status"], "STALE")
+        self.assertFalse(navirai["external_hourly_source"]["usable"])
+        self.assertEqual(navirai["trend_source"], "local_history_layer0")
+        self.assertEqual(navirai["trend_quality"], "INSUFFICIENT")
+
+    def _salvar_layer0(self, momento, temperatura, umidade=60, pressao=970,
+                       vento=2, rajada=4, chuva=0, code="A721"):
+        from services.regional_stations_repository import salvar_observacao
+        from services.regional_stations_service import normalizar_registro
+
+        raw = dict(next(
+            feature["attributes"] for feature in self.layer0["features"]
+            if feature["attributes"]["CD_ESTACAO"] == code
+        ))
+        raw.update({
+            "TEM_INS": temperatura, "UMD_INS": umidade, "PRE_INS": pressao,
+            "VEN_VEL": vento, "VEN_RAJ": rajada, "CHUVA": chuva,
+        })
+        salvar_observacao(normalizar_registro(raw, 0, momento))
+
+    def test_historico_proprio_usa_ultima_observacao_de_cada_bucket(self):
+        momentos = (
+            (datetime(2026, 9, 3, 17, 5, tzinfo=timezone.utc), 25.1),
+            (datetime(2026, 9, 3, 17, 20, tzinfo=timezone.utc), 25.0),
+            (datetime(2026, 9, 3, 17, 55, tzinfo=timezone.utc), 24.4),
+            (datetime(2026, 9, 3, 18, 5, tzinfo=timezone.utc), 23.8),
+            (datetime(2026, 9, 3, 18, 55, tzinfo=timezone.utc), 23.0),
+            (datetime(2026, 9, 3, 19, 50, tzinfo=timezone.utc), 22.5),
+        )
+        for momento, temperatura in momentos:
+            self._salvar_layer0(momento, temperatura)
+        conn = self.database.get_db()
+        rows = conn.execute(
+            "SELECT bucket_hour_local, temperatura_atual FROM regional_station_samples "
+            "WHERE station_code='A721' ORDER BY bucket_hour_utc"
+        ).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([row["temperatura_atual"] for row in rows], [24.4, 23.0, 22.5])
+        self.assertTrue(rows[0]["bucket_hour_local"].startswith("2026-09-03T13:00"))
+
+    def test_tendencia_local_exige_base_horaria_e_calcula_deltas(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import obter_estado_rede
+
+        self._salvar_layer0(
+            datetime(2026, 9, 3, 17, 55, tzinfo=timezone.utc),
+            26, umidade=50, pressao=970,
+        )
+        self._salvar_layer0(
+            datetime(2026, 9, 3, 18, 55, tzinfo=timezone.utc),
+            23, umidade=70, pressao=968.5,
+        )
+        estado = obter_estado_rede(
+            regional_stations_config(),
+            now=datetime(2026, 9, 3, 18, 56, tzinfo=timezone.utc),
+        )
+        station = next(item for item in estado["stations"] if item["code"] == "A721")
+        self.assertEqual(station["trend_quality"], "GOOD")
+        self.assertEqual(station["trend"]["temperature_1h"], -3)
+        self.assertEqual(station["trend"]["humidity_1h"], 20)
+        self.assertEqual(station["trend"]["pressure_1h"], -1.5)
+
+    def test_poll_repetido_nao_multiplica_observacao_nem_chuva(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import obter_estado_rede
+
+        for hora in (15, 16, 17, 18):
+            self._salvar_layer0(
+                datetime(2026, 9, 3, hora, 5, tzinfo=timezone.utc), 24, chuva=2
+            )
+        conn = self.database.get_db()
+        observacoes = conn.execute(
+            "SELECT COUNT(*) FROM regional_station_observations "
+            "WHERE station_code='A721' AND source_layer=0"
+        ).fetchone()[0]
+        buckets = conn.execute(
+            "SELECT COUNT(*) FROM regional_station_samples WHERE station_code='A721'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(observacoes, 1)
+        self.assertEqual(buckets, 4)
+        estado = obter_estado_rede(
+            regional_stations_config(),
+            now=datetime(2026, 9, 3, 18, 6, tzinfo=timezone.utc),
+        )
+        station = next(item for item in estado["stations"] if item["code"] == "A721")
+        self.assertEqual(station["trend"]["rain_3h"], 2.0)
+
+    def test_vinte_minutos_de_coleta_mantem_status_ok_e_trend_insufficient(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import obter_estado_rede
+
+        self._salvar_layer0(datetime(2026, 9, 3, 17, 5, tzinfo=timezone.utc), 25)
+        self._salvar_layer0(datetime(2026, 9, 3, 17, 25, tzinfo=timezone.utc), 24)
+        estado = obter_estado_rede(
+            regional_stations_config(),
+            now=datetime(2026, 9, 3, 17, 26, tzinfo=timezone.utc),
+        )
+        station = next(item for item in estado["stations"] if item["code"] == "A721")
+        self.assertEqual(station["status"], "OK")
+        self.assertEqual(station["trend_quality"], "INSUFFICIENT")
+        self.assertTrue(all(value is None for value in station["trend"].values()))
+
+    def test_nowcasting_pode_confirmar_com_historico_proprio_layer0(self):
+        from config import nowcasting_config, regional_stations_config
+        from services.nowcasting_service import analisar_nowcasting
+        from services.regional_stations_repository import obter_estado_rede
+
+        anterior = datetime(2026, 9, 3, 17, 55, tzinfo=timezone.utc)
+        atual = datetime(2026, 9, 3, 18, 55, tzinfo=timezone.utc)
+        self._salvar_layer0(
+            anterior, 26, umidade=50, pressao=970, vento=1, rajada=2,
+            chuva=0, code="A749",
+        )
+        self._salvar_layer0(
+            atual, 23, umidade=70, pressao=968.5, vento=5, rajada=8,
+            chuva=1, code="A749",
+        )
+        regional = obter_estado_rede(
+            regional_stations_config(),
+            now=datetime(2026, 9, 3, 18, 56, tzinfo=timezone.utc),
+        )
+        radar = {
+            "disponivel": True, "stale": False,
+            "frame": {"id": 7, "imagem_disponivel": False},
+            "tracking": {
+                "track_id": 12, "quantidade_frames": 4,
+                "velocidade_kmh": 45, "bearing_movimento": 0,
+                "direcao_movimento": "N", "centro_lat": -22.8,
+                "centro_lon": -54.46, "aproximando": True,
+                "trajetoria_compativel": True, "eta_minutos": 80,
+            },
+            "cluster_mais_proximo": {"distancia_borda_escola_km": 60},
+        }
+        estado = analisar_nowcasting(
+            radar, regional, None, nowcasting_config(),
+            now=datetime(2026, 9, 3, 18, 56, tzinfo=timezone.utc),
+        )
+        self.assertEqual(estado["status"], "ATENCAO_PREVENTIVA")
+        self.assertEqual(estado["confirmacao_regional"]["stations"], ["A749"])
+        self.assertEqual(
+            estado["estacoes_relevantes"][0]["trend_source"],
+            "local_history_layer0",
+        )
+
+    def test_layer2_recente_pode_servir_de_bootstrap_temporario(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import obter_estado_rede, salvar_observacao
+        from services.regional_stations_service import normalizar_registro
+
+        now = datetime(2026, 9, 3, 18, 30, tzinfo=timezone.utc)
+        self._salvar_layer0(now, 24)
+        for hour, temperature in ((18, 24), (17, 26)):
+            raw = dict(self.layer2["features"][2]["attributes"])
+            raw.update({
+                "DT_MEDICAO": "2026-09-03", "HR_MEDICAO": f"{hour}:00",
+                "TEM_INS": temperature, "UMD_INS": 60, "PRE_INS": 970,
+            })
+            salvar_observacao(normalizar_registro(raw, 2, now))
+        estado = obter_estado_rede(regional_stations_config(), now=now)
+        station = next(item for item in estado["stations"] if item["code"] == "A721")
+        self.assertEqual(station["status"], "OK")
+        self.assertEqual(station["trend_source"], "external_layer2_bootstrap")
+        self.assertEqual(station["trend_quality"], "GOOD")
+        self.assertTrue(station["external_hourly_source"]["usable"])
 
 
 if __name__ == "__main__":

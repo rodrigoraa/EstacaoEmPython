@@ -66,6 +66,7 @@ class NowcastingServiceTest(unittest.TestCase):
             "code": "A749", "name": "Juti", "status": status,
             "age_minutes": 60, "latitude": lat, "longitude": lon,
             "distance_km": 80, "trend": trend,
+            "trend_source": "local_history_layer0", "trend_quality": "GOOD",
         }
 
     def local(self):
@@ -242,6 +243,42 @@ class NowcastingServiceTest(unittest.TestCase):
         )
         self.assertEqual([item["track_id"] for item in state["ameacas"]], [12, 18])
         self.assertTrue(all(item["trajectory_compatible"] for item in state["ameacas"]))
+
+    def test_status_mais_alto_define_principal_mesmo_mais_distante(self):
+        radar = self.radar()
+        track_a = deepcopy(radar["tracking"])
+        cluster_a = deepcopy(radar["cluster_mais_proximo"])
+        track_b = deepcopy(track_a)
+        cluster_b = deepcopy(cluster_a)
+        track_a["track_id"] = 12
+        cluster_a["distancia_borda_escola_km"] = 40
+        track_b["track_id"] = 18
+        cluster_b["distancia_borda_escola_km"] = 60
+        radar["tracks_atuais"] = [
+            {"track": track_a, "cluster": cluster_a},
+            {"track": track_b, "cluster": cluster_b},
+        ]
+        # Só o track B tem uma estação a montante no seu corredor.
+        track_a["centro_lon"] = -53.4
+        state = analisar_nowcasting(
+            radar, {"stations": [self.station()]}, self.local(), self.config, self.now
+        )
+        ameacas = {item["track_id"]: item for item in state["ameacas"]}
+        self.assertEqual(ameacas[12]["status"], "TRAJETORIA_RELEVANTE")
+        self.assertEqual(ameacas[18]["status"], "ATENCAO_PREVENTIVA")
+        self.assertEqual(state["ameaca_principal"]["track_id"], 18)
+        self.assertEqual(state["status"], "ATENCAO_PREVENTIVA")
+
+    def test_layer0_fresca_sem_historico_suficiente_nao_confirma(self):
+        station = self.station()
+        station["trend_quality"] = "INSUFFICIENT"
+        station["trend"] = {key: None for key in station["trend"]}
+        state = analisar_nowcasting(
+            self.radar(), {"stations": [station]}, self.local(), self.config, self.now
+        )
+        self.assertEqual(state["status"], "TRAJETORIA_RELEVANTE")
+        self.assertFalse(state["confirmacao_regional"]["confirmada"])
+        self.assertTrue(state["historico_regional_em_formacao"])
 
     def test_evento_local_observado_nao_vira_prevencao(self):
         local = self.local()

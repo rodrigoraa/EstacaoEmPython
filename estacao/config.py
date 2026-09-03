@@ -103,6 +103,9 @@ def regional_stations_config():
         "bootstrap_hours": min(
             168, max(6, env_int("REGIONAL_STATIONS_BOOTSTRAP_HOURS", 24))
         ),
+        "layer2_max_age_hours": max(
+            1, env_int("REGIONAL_LAYER2_MAX_AGE_HOURS", 12)
+        ),
         "stale_minutes": max(
             60, env_int("REGIONAL_STATION_STALE_MINUTES", 120)
         ),

@@ -196,17 +196,18 @@ A chave não aparece em HTML/JSON/logs e não é necessária para iniciar o Flas
 | `REGIONAL_STATIONS_POLL_SECONDS` | `300` | frequência de consulta |
 | `REGIONAL_STATIONS_TIMEOUT_SECONDS` | `30` | timeout HTTP |
 | `REGIONAL_STATIONS_BOOTSTRAP_HOURS` | `24` | janela inicial/recorrente limitada |
+| `REGIONAL_LAYER2_MAX_AGE_HOURS` | `12` | idade máxima para a camada 2 servir de bootstrap |
 | `REGIONAL_STATION_STALE_MINUTES` | `120` | início do status `ATRASADA` |
 | `REGIONAL_STATION_VERY_STALE_MINUTES` | `240` | início de `MUITO_ATRASADA` |
 | `REGIONAL_STATIONS_ALERTS_ENABLED` | `false` | reservado; não envia alertas nesta versão |
 | `REGIONAL_TARGET_LAT` | `-22.4925326` | latitude da EE São José |
 | `REGIONAL_TARGET_LON` | `-54.4610352` | longitude da EE São José |
 
-A fonte fixa é o serviço público `Estacoes_CEMADEN_INMET` do PIN-MS. A camada 0 fornece o estado mais recente e a camada 2 a série horária. A allowlist dos seis códigos impede usar entrada HTTP para construir endpoints ou cláusulas ArcGIS arbitrárias.
+A fonte fixa é o serviço público `Estacoes_CEMADEN_INMET` do PIN-MS. A camada 0 fornece o estado operacional mais recente. A camada 2 continua persistida para auditoria e bootstrap, mas só participa de tendências quando possui timestamps confiáveis dentro de `REGIONAL_LAYER2_MAX_AGE_HOURS`. Em setembro de 2026 foram observados registros reais da camada 2 ainda em março de 2026; eles não são corrigidos, reinterpretados nem apagados. A allowlist dos seis códigos impede usar entrada HTTP para construir endpoints ou cláusulas ArcGIS arbitrárias.
 
 A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos aliases. O esquema corresponde aos dados automáticos do INMET, cuja documentação oficial define temperatura em °C, umidade em %, pressão no nível da estação em hPa, vento e rajada em m/s, direção em graus, precipitação em mm e radiação global em kJ/m². Por isso vento/rajada são preservados em valor bruto e m/s, com uma coluna derivada em km/h (`m/s × 3,6`). Nenhuma correção de pressão ao nível do mar é feita.
 
-`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Datas com hora inequívoca produzem timestamps timezone-aware; data sem hora recebe `date_only`; uma data ArcGIS à meia-noite combinada com a hora horária recebe `reconciled`. Hora própria conflitante, futuro incompatível e formatos dia/mês ambíguos ficam `suspect`, sem dia ou hora inventados. Somente `valid`/`reconciled` participam de freshness, tendências e confirmação do nowcasting. Na virada UTC, 00:00–03:00 ainda pertencem ao dia anterior em `America/Campo_Grande`; 04:00 UTC corresponde a 00:00 local. `coletado_em` nunca é apresentado como se fosse `medido_em`.
+`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Na camada 0, `DT_MEDICAO` sem `HR_MEDICAO` representa somente a data operacional, mesmo quando o epoch equivale a 04:00 UTC/00:00 local; portanto recebe `date_only` e nunca vira uma hora oficial inventada. Para o histórico recente, `coletado_em` é copiado para `sample_time` com o tipo explícito `collection_time_proxy`: sabemos quando o servidor recebeu os valores, não o minuto oficial da medição. Na camada 2, datas com hora inequívoca produzem timestamps timezone-aware e uma data ArcGIS à meia-noite combinada com a hora recebe `reconciled`. Hora própria conflitante, futuro incompatível e formatos dia/mês ambíguos ficam `suspect`.
 
 ### Nowcasting observacional
 
@@ -250,7 +251,7 @@ A fila mantém semântica at-least-once. Se a Evolution aceitar uma mensagem e a
 
 ## Banco e migrations
 
-O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `6`, registrada na pequena tabela `schema_version`.
+O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `7`, registrada na pequena tabela `schema_version`.
 
 Execute a migration leve explicitamente antes de reiniciar os serviços:
 
@@ -266,7 +267,8 @@ As migrations automáticas são aditivas e idempotentes:
 - adição de `usuarios.confirmado_em TEXT`;
 - criação de tabelas ausentes já suportadas pelo projeto.
 - criação de `radar_frames`, `radar_clusters`, `radar_tracks` e `radar_track_points`, com chaves estrangeiras, índices pequenos e `UNIQUE(path_remoto)`.
-- criação de `regional_stations`, `regional_station_observations` e `regional_station_state`, com catálogo idempotente, índices e `UNIQUE(fingerprint)`.
+- criação de `regional_stations`, `regional_station_observations`, `regional_station_samples` e `regional_station_state`, com catálogo idempotente, índices e `UNIQUE(fingerprint)`.
+- adição dos estados separados da fonte atual e do histórico externo; criação dos buckets horários locais por proxy de coleta, sem payload JSON duplicado;
 - adição das colunas UTC/local, timestamp raw, coleta UTC/local, classes relativas de refletividade e diagnóstico de clutter às estruturas de radar;
 - criação de `nowcasting_snapshots`, com `UNIQUE(input_fingerprint)` e versão do algoritmo.
 
@@ -392,7 +394,7 @@ python -m estacao.workers.maintenance --regional-dry-run
 REGIONAL_STATIONS_RETENTION_ENABLED=true python -m estacao.workers.maintenance --regional-cleanup --batch-size 1000
 ```
 
-`REGIONAL_STATIONS_RETENTION_DAYS` tem default de 730 dias. A limpeza alcança apenas observações regionais; catálogo e estado das estações são preservados.
+`REGIONAL_STATIONS_RETENTION_DAYS` tem default de 730 dias. A limpeza remove primeiro buckets expirados e depois somente observações antigas que não estejam referenciadas por buckets recentes; catálogo e estado das estações são preservados.
 
 ## Execução
 
@@ -409,6 +411,7 @@ python -m estacao.workers.radar_updater --diagnose-time
 REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater --once
 REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater
 REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater --once --verbose-time
+REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater --once --verbose-history
 NOWCASTING_ENABLED=true python -m estacao.workers.nowcasting_updater --once
 NOWCASTING_ENABLED=true python -m estacao.workers.nowcasting_updater
 ```
@@ -461,11 +464,11 @@ As rotas existentes foram preservadas, incluindo páginas, APIs, administração
 
 ### Regras da observação regional
 
-Slots sem nenhuma variável meteorológica são ignorados. A deduplicação usa SHA-256 determinístico sobre código, camada, `DT_MEDICAO` raw, `HR_MEDICAO` raw, coordenadas e valores meteorológicos normalizados; o horário interpretado não é a única chave. A primeira coleta consulta uma janela limitada, nunca anos inteiros, e pollings posteriores reenviam a mesma janela curta para deduplicação segura.
+Slots sem nenhuma variável meteorológica são ignorados. A deduplicação das observações usa SHA-256 determinístico sobre código, camada, `DT_MEDICAO` raw, `HR_MEDICAO` raw, coordenadas e valores meteorológicos normalizados. A camada 0 atualiza um único bucket por estação/hora com a última coleta válida daquele período; polls idênticos referenciam a mesma observação e não geram eventos meteorológicos novos. O bucket não duplica `payload_json`.
 
-Freshness usa a observação horária com timestamp confiável, não o instante da consulta. Os estados são `OK`, `ATRASADA`, `MUITO_ATRASADA`, `SEM_DADOS`, `ERRO_FONTE` e `TIMESTAMP_INDEFINIDO`. Uma estação ausente ou com erro não impede persistir as demais.
+Freshness operacional usa a última coleta válida da camada 0. Assim, uma coleta atual não vira `MUITO_ATRASADA` porque o histórico externo está antigo. `current_source` e `external_hourly_source` são expostos separadamente; este último pode ficar `STALE` sem degradar o status atual. Uma estação ausente ou com erro não impede persistir as demais.
 
-As tendências incluem deltas de temperatura, umidade e pressão em 1h/3h; delta de vento e rajada em 1h; mudança angular circular do vento; e chuva em 1h/3h/6h. Se a camada não fornecer a variável ou faltar uma referência temporal compatível, o resultado é `null`. Pressões absolutas entre cidades não são comparadas: somente a tendência da própria estação é calculada.
+As tendências usam os buckets locais e só aparecem quando existe uma referência aproximadamente 1h/3h/6h atrás, com tolerância de 45 minutos; caso contrário retornam `null`. `trend_quality` distingue `INSUFFICIENT`, `PARTIAL` e `GOOD`, e `trend_source` informa histórico local ou bootstrap externo. Temperatura, umidade e pressão têm deltas 1h/3h; vento e rajada, delta 1h; a direção usa diferença angular. Chuva usa o valor representativo do bucket e soma cada observação-fonte no máximo uma vez, portanto `CHUVA=2` repetido em vários polls não vira 6 mm. Pressão é comparada somente com a própria estação.
 
 Essa rede é observacional. Não existe inferência de deslocamento meteorológico, frente, tempestade, probabilidade, IA ou previsão; latitude, longitude, bearing, distância e freshness apenas deixam uma futura integração com radar tecnicamente possível.
 
@@ -473,7 +476,7 @@ Essa rede é observacional. Não existe inferência de deslocamento meteorológi
 
 Cada frame usa os próprios limites `lat_min`, `lat_max`, `lon_min`/`lon_max`, raio informado e dimensões reais do PNG. A paleta foi levantada em 42 PNGs MaxCAPPI reais de Jaraguari, todos 750×750 RGBA: foram observadas 49 cores opacas, agrupadas sem equivalência dBZ em `REFLETIVIDADE_BAIXA` (cinza/azul), `REFLETIVIDADE_MEDIA` (verde), `REFLETIVIDADE_ALTA` (amarelo/laranja) e `REFLETIVIDADE_MUITO_ALTA` (vermelho). A classificação aceita somente essas cores confirmadas.
 
-A área meteorologicamente válida é a interseção entre pixels não transparentes e o círculo de cobertura geográfica do radar. Assim, barras/legendas nas margens e cores fora do raio não viram clusters. A máscara original recebe somente pixels reais da paleta; uma segunda máscara recebe `MORPH_CLOSE` 3×3 e dilatação para conectar fragmentos. Connected components usam a processada, mas tamanho, centro, classe predominante, classe máxima e distribuição por classe usam exclusivamente a original. Um núcleo pequeno de classe superior não desaparece atrás da classe predominante.
+A área meteorologicamente válida é a interseção entre pixels não transparentes e o círculo de cobertura geográfica do radar. Assim, barras/legendas nas margens e cores fora do raio não viram clusters. A máscara original recebe somente pixels reais da paleta; uma segunda máscara recebe `MORPH_CLOSE` 3×3 e dilatação para conectar fragmentos. Connected components usam a processada apenas para agrupar fragmentos; tamanho, centro, contorno/borda meteorológica, classe predominante, classe máxima e distribuição por classe usam exclusivamente a união dos pixels originais. A dilatação não aproxima artificialmente `distancia_borda_escola_km`.
 
 `python -m estacao.workers.radar_updater --diagnose-palette [PNG]` usa o PNG original mais recente quando o caminho é omitido, mostra dimensões, RGB/HSV, contagens, grupos, descartes e percentual de eco, e grava `mask_original.png`/`mask_classes.png` sob `RADAR_DATA_DIR/diagnosticos` (diretório operacional ignorado pelo Git). `--diagnose-time` consulta somente os metadados atuais e mostra raw, UTC assumido, horário local, agora UTC, diferença e status sem exibir a chave.
 
@@ -492,7 +495,7 @@ do movimento, até 300 km, e a distância perpendicular ao eixo é menor que o c
 Quando o alvo é fornecido, o vetor também precisa apontar para a região da escola.
 Direção do vento de superfície nunca é usada como direção da célula.
 
-Na versão 1.1 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A principal é ordenada por trajetória compatível, aproximação, tracking válido, menor distância de borda, menor ETA válido e menor clutter. As demais permanecem em `ameacas` e no painel.
+Na versão 1.1 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A ameaça principal é ordenada primeiro por status explícito (`ATENCAO_PREVENTIVA`, `EVIDENCIA_REGIONAL`, `TRAJETORIA_RELEVANTE`, `SISTEMA_SE_APROXIMANDO`, `SISTEMA_EM_MOVIMENTO`, `ECO_EM_MONITORAMENTO`) e depois por confirmação regional, trajetória, aproximação, tracking, distância, ETA e clutter. Assim, uma ameaça confirmada mais distante prevalece sobre uma trajetória sem confirmação. As demais permanecem em `ameacas` e no painel.
 
 O índice por ameaça é auditável: eco +8, tracking válido +12, aproximação +12,
 trajetória compatível +15 e faixa de distância +2/+5/+8. O radar sozinho chega no
@@ -507,7 +510,9 @@ apresentadas como probabilidade.
 `ATENCAO_PREVENTIVA` não depende apenas do score: exige radar fresco, tracking
 suficiente, aproximação, trajetória compatível e confirmação regional. Por padrão,
 essa confirmação requer ao menos dois sinais independentes distribuídos em uma ou
-mais estações frescas a montante. Alteração fora do corredor ou estação stale não
+mais estações frescas a montante com `trend_quality=GOOD`. As tendências vêm do
+histórico próprio da camada 0 ou, apenas durante bootstrap, de uma camada 2 recente.
+Alteração fora do corredor, estação stale ou histórico ainda em formação não
 confirma a ameaça. Chuva local gera a evidência separada “Evento já observado na
 estação local”, sem aumentar o score preventivo. `confirmacao_regional`, `radar_only`,
 `ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria. Mesmo assim,

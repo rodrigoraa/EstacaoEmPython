@@ -1,0 +1,31 @@
+{
+  "collected_at": "2026-09-03T16:03:00+00:00",
+  "layer0": {
+    "CD_ESTACAO": "S735",
+    "DC_NOME": "NAVIRAÍ (FAZ. SANTA HELENA DO PINDÓ)",
+    "VL_LATITUDE": -22.899909,
+    "VL_LONGITUDE": -53.869219,
+    "DT_MEDICAO": 1788408000000,
+    "HR_MEDICAO": null,
+    "TEM_INS": 20.6,
+    "UMD_INS": 73,
+    "PRE_INS": 979.3,
+    "VEN_DIR": 90,
+    "VEN_VEL": 2.8,
+    "VEN_RAJ": 5.5,
+    "CHUVA": 0.0
+  },
+  "layer2": {
+    "CD_ESTACAO": "S735",
+    "DC_NOME": "NAVIRAÍ (FAZ. SANTA HELENA DO PINDÓ)",
+    "DT_MEDICAO": 1773028800000,
+    "HR_MEDICAO": "04:00",
+    "TEM_INS": 24.0,
+    "UMD_INS": 60,
+    "PRE_INS": 980.0,
+    "VEN_DIR": 80,
+    "VEN_VEL": 2.0,
+    "VEN_RAJ": 3.0,
+    "CHUVA": 0.0
+  }
+}

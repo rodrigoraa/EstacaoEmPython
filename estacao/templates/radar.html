@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
 <section class="radar-page max-w-7xl mx-auto space-y-6">
   <header>
@@ -56,7 +56,7 @@
         <div><h2 class="font-bold text-lg text-slate-800">Imagem analisada</h2><p class="text-sm text-slate-500">Áreas marcadas são ecos experimentais de refletividade, não confirmação de tempestade.</p></div>
         <span class="text-sm text-slate-500">{{ frame.data_frame_formatada }}</span>
       </div>
-      <img src="{{ url_for('radar.imagem_radar', frame_id=frame.id) }}" alt="Imagem do radar de Jaraguari com a escola e ecos significativos anotados" class="radar-image" loading="lazy">
+      <img src="{{ url_for('radar.imagem_radar_admin', frame_id=frame.id) }}" alt="Imagem do radar de Jaraguari com a escola e ecos significativos anotados" class="radar-image" loading="lazy">
     </article>
     {% endif %}
   {% endif %}

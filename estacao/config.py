@@ -106,11 +106,17 @@ def regional_stations_config():
         "layer2_max_age_hours": max(
             1, env_int("REGIONAL_LAYER2_MAX_AGE_HOURS", 12)
         ),
+        "layer2_poll_seconds": max(
+            60, env_int("REGIONAL_LAYER2_POLL_SECONDS", 3600)
+        ),
         "stale_minutes": max(
             60, env_int("REGIONAL_STATION_STALE_MINUTES", 120)
         ),
         "very_stale_minutes": max(
             120, env_int("REGIONAL_STATION_VERY_STALE_MINUTES", 240)
+        ),
+        "stagnant_minutes": max(
+            60, env_int("REGIONAL_STATION_STAGNANT_MINUTES", 180)
         ),
         "alerts_enabled": env_bool("REGIONAL_STATIONS_ALERTS_ENABLED", False),
         "target_lat": env_float("REGIONAL_TARGET_LAT", -22.4925326),
@@ -148,7 +154,7 @@ def nowcasting_config():
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.1") or "1.1",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.2") or "1.2",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),

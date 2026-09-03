@@ -8,7 +8,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 logger = logging.getLogger(__name__)
 
 
@@ -560,6 +560,10 @@ def garantir_tabelas_estacoes_regionais(conn):
         source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
         current_source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
         external_history_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+        current_fingerprint TEXT,
+        current_fingerprint_first_seen TEXT,
+        current_fingerprint_last_seen TEXT,
+        last_layer2_poll_utc TEXT,
         ultimo_erro TEXT,
         ultima_tentativa_em TEXT,
         ultimo_sucesso_em TEXT,
@@ -575,6 +579,14 @@ def garantir_tabelas_estacoes_regionais(conn):
         conn, "regional_station_state", "external_history_status",
         "TEXT NOT NULL DEFAULT 'SEM_DADOS'"
     )
+    garantir_coluna(conn, "regional_station_state", "current_fingerprint", "TEXT")
+    garantir_coluna(
+        conn, "regional_station_state", "current_fingerprint_first_seen", "TEXT"
+    )
+    garantir_coluna(
+        conn, "regional_station_state", "current_fingerprint_last_seen", "TEXT"
+    )
+    garantir_coluna(conn, "regional_station_state", "last_layer2_poll_utc", "TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_regional_obs_station_layer_time "
         "ON regional_station_observations(station_code, source_layer, medido_em_utc DESC)"

@@ -20,7 +20,7 @@ class NowcastingServiceTest(unittest.TestCase):
             "track_min_frames": 3,
             "upstream_corridor_km": 50,
             "regional_max_age_minutes": 180,
-            "algorithm_version": "1.1",
+            "algorithm_version": "1.2",
             "target_lat": -22.49,
             "target_lon": -54.46,
             "regional_confirm_min_signals": 2,
@@ -138,6 +138,16 @@ class NowcastingServiceTest(unittest.TestCase):
         )
         self.assertFalse(state["estacoes_relevantes"][0]["evidencias"])
         self.assertNotEqual(state["status"], "EVIDENCIA_REGIONAL")
+
+    def test_estacao_estagnada_nao_confirma_mesmo_com_tendencia_forte(self):
+        station = self.station()
+        station["current_source"] = {"status": "OK", "stagnant": True}
+        state = analisar_nowcasting(
+            self.radar(), {"stations": [station]}, self.local(), self.config, self.now
+        )
+        self.assertFalse(state["estacoes_relevantes"][0]["evidencias"])
+        self.assertFalse(state["confirmacao_regional"]["confirmada"])
+        self.assertEqual(state["status"], "TRAJETORIA_RELEVANTE")
 
     def test_radar_stale_limita_evidencia(self):
         state = analisar_nowcasting(

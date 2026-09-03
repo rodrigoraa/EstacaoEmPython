@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
 <section class="monitor-page max-w-7xl mx-auto space-y-6">
   <header class="flex items-start gap-3">
@@ -54,7 +54,7 @@
         <div><dt>Persistência de clutter</dt><dd>{{ '%.2f'|format(radar.indice_persistencia_clutter) if radar.indice_persistencia_clutter is not none else 'dados insuficientes' }}</dd></div>
       </dl>
       {% if radar.imagem_disponivel and radar.frame_id %}
-      <img src="{{ url_for('radar.imagem_radar', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image mt-4" loading="lazy">
+      <img src="{{ url_for('radar.imagem_radar_admin', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image mt-4" loading="lazy">
       {% endif %}
     </article>
 

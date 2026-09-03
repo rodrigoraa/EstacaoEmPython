@@ -1,0 +1,15 @@
+<nav class="bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+    <div class="flex items-center gap-3 min-w-0"><i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i><div class="min-w-0"><h1 class="text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1><p class="text-xs font-medium text-slate-400 uppercase">Estação Meteorológica</p></div></div>
+    <form action="{{ url_for('admin.admin_logout') }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Sair"><i class="fa-solid fa-right-from-bracket"></i><span class="hidden sm:inline">Sair</span></button></form>
+</nav>
+
+{% set totais = contagens|default({}) %}
+<div class="admin-tabs-shell bg-white border-b border-slate-200 shadow-sm">
+    <nav class="max-w-7xl mx-auto px-4 flex overflow-x-auto" aria-label="Seções do painel">
+        {% set abas = [('visao-geral', 'fa-chart-pie', 'Visão geral', none), ('usuarios', 'fa-users', 'Usuários', totais.get('usuarios')), ('cadastros', 'fa-address-book', 'Cadastros', totais.get('cadastros')), ('eventos', 'fa-cloud-bolt', 'Eventos', totais.get('eventos')), ('envios', 'fa-paper-plane', 'Envios', totais.get('envios')), ('historico', 'fa-server', 'Histórico', totais.get('historico'))] %}
+        {% for chave, icone, rotulo, total in abas %}<a href="{{ url_for('admin.admin', aba=chave) }}" class="admin-tab {% if aba_ativa == chave %}admin-tab-active{% endif %}" {% if aba_ativa == chave %}aria-current="page"{% endif %}><i class="fa-solid {{ icone }}"></i><span>{{ rotulo }}</span>{% if total is not none %}<span class="admin-tab-count">{{ total }}</span>{% endif %}</a>{% endfor %}
+        <a href="/admin/radar" class="admin-tab {% if aba_ativa == 'radar' %}admin-tab-active{% endif %}" {% if aba_ativa == 'radar' %}aria-current="page"{% endif %}><i class="fa-solid fa-satellite-dish"></i><span>Radar</span></a>
+        <a href="/admin/estacoes-regionais" class="admin-tab {% if aba_ativa == 'estacoes-regionais' %}admin-tab-active{% endif %}" {% if aba_ativa == 'estacoes-regionais' %}aria-current="page"{% endif %}><i class="fa-solid fa-tower-broadcast"></i><span>Estações regionais</span></a>
+        <a href="/admin/monitoramento" class="admin-tab {% if aba_ativa == 'monitoramento' %}admin-tab-active{% endif %}" {% if aba_ativa == 'monitoramento' %}aria-current="page"{% endif %}><i class="fa-solid fa-binoculars"></i><span>Monitoramento</span></a>
+    </nav>
+</div>

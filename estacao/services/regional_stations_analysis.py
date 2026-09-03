@@ -160,6 +160,7 @@ def classificar_status(
     source_status="OK",
     stale_minutes=120,
     very_stale_minutes=240,
+    stagnant=False,
     now=None,
 ):
     if source_status in {"ERRO_FONTE", "AUSENTE"}:
@@ -173,4 +174,6 @@ def classificar_status(
         return "MUITO_ATRASADA"
     if idade > stale_minutes:
         return "ATRASADA"
+    if stagnant:
+        return "DADOS_ESTAGNADOS"
     return "OK"

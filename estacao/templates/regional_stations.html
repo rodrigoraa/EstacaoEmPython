@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
 <section class="regional-page max-w-7xl mx-auto space-y-6">
   <header class="flex items-start gap-3">
@@ -20,6 +20,7 @@
     {% for station in estado.stations %}
     {% set obs = station.observation %}
     {% set trend = station.trend %}
+    {% set current = station.current_source %}
     <article class="card regional-card">
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -41,10 +42,16 @@
       </dl>
 
       <div class="regional-trends">
+        <span>Fonte atual: <strong>{{ current.status|replace('_', ' ') }}</strong></span>
+        <span>Valores sem alteração: <strong>{{ ('%.0f min'|format(current.same_values_minutes)) if current.same_values_minutes is not none else 'ainda não medido' }}</strong></span>
         <span>Histórico próprio: <strong>{{ 'disponível' if station.trend_quality == 'GOOD' else 'em formação' }}</strong></span>
         <span>Origem das tendências: <strong>{{ station.trend_source|replace('_', ' ') }}</strong></span>
         <span>Histórico externo PIN-MS: <strong>{{ station.external_hourly_source.status|replace('_', ' ') }}</strong></span>
       </div>
+
+      {% if current.stagnant %}
+      <p class="text-sm text-amber-700 mt-3">Dados possivelmente estagnados: os valores recebidos permaneceram exatamente iguais por um período anormalmente longo.</p>
+      {% endif %}
 
       <div class="regional-trends">
         <span>Δ temperatura 1h: <strong>{{ '%+.1f °C'|format(trend.temperature_1h) if trend.temperature_1h is not none else 'dados insuficientes' }}</strong></span>

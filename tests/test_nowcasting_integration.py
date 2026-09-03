@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,12 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.database.init_db()
         self.app_module = importlib.reload(app)
         self.client = self.app_module.app.test_client()
+
+    def autenticar_admin(self):
+        with self.client.session_transaction() as session:
+            session["logado"] = True
+            session["ultimo_acesso"] = time.time()
+            session["csrf_token"] = "csrf-teste"
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -64,17 +71,17 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "evidencias": ["Sem evidencia observacional relevante no momento"],
             "gerado_em": "2026-09-03T09:20:00-04:00",
             "gerado_em_utc": "2026-09-03T13:20:00+00:00",
-            "versao_algoritmo": "1.1",
+            "versao_algoritmo": "1.2",
         }
 
-    def test_migration_aditiva_idempotente_cria_snapshot_schema_7(self):
+    def test_migration_aditiva_idempotente_cria_snapshot_schema_8(self):
         self.database.init_db()
         conn = self.database.get_db()
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
         conn.close()
         self.assertIn("nowcasting_snapshots", tables)
-        self.assertEqual(version, 7)
+        self.assertEqual(version, 8)
         conn = self.database.get_db()
         frame_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_frames)")}
         cluster_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_clusters)")}
@@ -82,34 +89,38 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertTrue({"data_frame_raw", "coletado_em_utc"} <= frame_columns)
         self.assertTrue({"classe_predominante", "classe_maxima"} <= cluster_columns)
 
-    def test_migration_6_para_7_preserva_snapshot_existente(self):
+    def test_migration_7_para_8_preserva_snapshot_existente(self):
         from services.nowcasting_repository import salvar_snapshot
 
-        self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-6"))
+        self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-7"))
         conn = self.database.get_db()
-        conn.execute("DROP TABLE regional_station_samples")
-        conn.execute("UPDATE schema_version SET versao=6 WHERE id=1")
+        conn.execute(
+            "UPDATE regional_station_state SET external_history_status='STALE' "
+            "WHERE station_code='A721'"
+        )
+        conn.execute("UPDATE schema_version SET versao=7 WHERE id=1")
         conn.commit()
         conn.close()
         self.database.init_db()
         conn = self.database.get_db()
         count = conn.execute(
             "SELECT COUNT(*) FROM nowcasting_snapshots WHERE input_fingerprint=?",
-            ("snapshot-schema-6",),
+            ("snapshot-schema-7",),
         ).fetchone()[0]
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
-        samples_exists = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master "
-            "WHERE type='table' AND name='regional_station_samples'"
+        external_status = conn.execute(
+            "SELECT external_history_status FROM regional_station_state "
+            "WHERE station_code='A721'"
         ).fetchone()[0]
         conn.close()
         self.assertEqual(count, 1)
-        self.assertEqual(version, 7)
-        self.assertEqual(samples_exists, 1)
+        self.assertEqual(version, 8)
+        self.assertEqual(external_status, "STALE")
 
     def test_pagina_e_api_antes_do_primeiro_snapshot(self):
-        page = self.client.get("/monitoramento")
-        api = self.client.get("/api/nowcasting/status")
+        self.autenticar_admin()
+        page = self.client.get("/admin/monitoramento")
+        api = self.client.get("/admin/api/nowcasting/status")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Aguardando a primeira análise".encode(), page.data)
         self.assertEqual(api.get_json()["status"], "SEM_DADOS")
@@ -151,14 +162,15 @@ class NowcastingIntegrationTest(unittest.TestCase):
         conn = self.database.get_db()
         count = conn.execute("SELECT COUNT(*) FROM nowcasting_snapshots").fetchone()[0]
         conn.close()
-        payload = self.client.get("/api/nowcasting/status").get_json()
-        page = self.client.get("/monitoramento")
+        self.autenticar_admin()
+        payload = self.client.get("/admin/api/nowcasting/status").get_json()
+        page = self.client.get("/admin/monitoramento")
         self.assertEqual(count, 1)
         self.assertEqual(page.status_code, 200)
         self.assertIn("AMEAÇA PRINCIPAL".encode(), page.data)
         self.assertIn(b"Outros sistemas em monitoramento", page.data)
         self.assertIn("histórico regional ainda em formação".encode(), page.data)
-        self.assertEqual(payload["versao_algoritmo"], "1.1")
+        self.assertEqual(payload["versao_algoritmo"], "1.2")
         self.assertIn("ameaca_principal", payload)
         self.assertIn("ameacas", payload)
         self.assertIn("confirmacao_regional", payload)

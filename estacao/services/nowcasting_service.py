@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from time_utils import agora_utc, iso_local, iso_utc
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.1"
+NOWCASTING_ALGORITHM_VERSION = "1.2"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -84,6 +84,8 @@ def classificar_estacao_montante(
 
 def _evidencias_estacao(station, regional_max_age_minutes):
     if station.get("status") != "OK":
+        return 0, []
+    if (station.get("current_source") or {}).get("stagnant"):
         return 0, []
     age = station.get("age_minutes")
     if age is None or age > regional_max_age_minutes:

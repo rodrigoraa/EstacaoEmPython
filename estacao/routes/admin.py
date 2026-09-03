@@ -9,7 +9,6 @@ import requests
 from flask import (
     Blueprint,
     abort,
-    current_app,
     flash,
     redirect,
     render_template,
@@ -24,6 +23,7 @@ from time_utils import agora_local as agora_local
 from time_utils import formatar_local, minutos_desde
 from unsubscribe_tokens import normalizar_telefone
 from config import env_str
+from admin_auth import admin_autenticado
 
 admin_routes = Blueprint("admin", __name__)
 
@@ -152,25 +152,6 @@ def senha_admin_valida(senha):
         return False
 
     return hmac.compare_digest(senha, senha_admin)
-
-
-def admin_autenticado():
-    if not session.get("logado"):
-        return False
-
-    ultimo_acesso = session.get("ultimo_acesso")
-    if not ultimo_acesso:
-        session.clear()
-        return False
-
-    if time.time() - ultimo_acesso > current_app.permanent_session_lifetime.total_seconds():
-        session.clear()
-        flash("Sessão expirada. Faça login novamente.")
-        return False
-
-    session["ultimo_acesso"] = time.time()
-    session.permanent = True
-    return True
 
 
 def obter_status_evolution():

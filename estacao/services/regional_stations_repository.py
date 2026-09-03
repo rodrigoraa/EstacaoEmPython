@@ -118,6 +118,46 @@ def salvar_observacao(observacao: RegionalObservation, return_details=False):
                 ),
             )
             amostra_atualizada = sample_cursor.rowcount == 1
+            sample_iso = iso_utc(sample_utc)
+            estado = conn.execute(
+                """
+                SELECT current_fingerprint, current_fingerprint_first_seen,
+                       current_fingerprint_last_seen
+                FROM regional_station_state WHERE station_code=?
+                """,
+                (observacao.station_code,),
+            ).fetchone()
+            ultimo_visto = (
+                parse_datetime(estado["current_fingerprint_last_seen"], assume_utc=True)
+                if estado else None
+            )
+            if ultimo_visto is None or sample_utc >= ultimo_visto.astimezone(timezone.utc):
+                mesmo_fingerprint = (
+                    estado is not None
+                    and estado["current_fingerprint"] == observacao.fingerprint
+                )
+                primeiro_visto = (
+                    estado["current_fingerprint_first_seen"]
+                    if mesmo_fingerprint
+                    and estado["current_fingerprint_first_seen"]
+                    else sample_iso
+                )
+                conn.execute(
+                    """
+                    UPDATE regional_station_state SET
+                        current_fingerprint=?,
+                        current_fingerprint_first_seen=?,
+                        current_fingerprint_last_seen=?,
+                        atualizado_em=CURRENT_TIMESTAMP
+                    WHERE station_code=?
+                    """,
+                    (
+                        observacao.fingerprint,
+                        primeiro_visto,
+                        sample_iso,
+                        observacao.station_code,
+                    ),
+                )
         conn.commit()
         if return_details:
             return {"inserted": inserida, "sample_updated": amostra_atualizada}
@@ -130,24 +170,33 @@ def salvar_observacao(observacao: RegionalObservation, return_details=False):
 
 
 def registrar_status_estacao(
-    code, status, erro=None, sucesso=False, external_history_status=None
+    code,
+    status,
+    erro=None,
+    sucesso=False,
+    external_history_status=None,
+    layer2_polled_at=None,
+    now=None,
 ):
     if code not in REGIONAL_STATION_CODES:
         raise ValueError("Codigo regional fora da allowlist")
     conn = database.get_db()
     try:
-        agora = iso_utc()
+        agora = iso_utc(now)
+        layer2_poll = iso_utc(layer2_polled_at) if layer2_polled_at else None
         conn.execute(
             """
             INSERT INTO regional_station_state (
                 station_code, source_status, current_source_status,
-                external_history_status, ultimo_erro, ultima_tentativa_em,
-                ultimo_sucesso_em, atualizado_em
-            ) VALUES (?, ?, ?, COALESCE(?, 'SEM_DADOS'), ?, ?, ?, CURRENT_TIMESTAMP)
+                external_history_status, last_layer2_poll_utc,
+                ultimo_erro, ultima_tentativa_em, ultimo_sucesso_em, atualizado_em
+            ) VALUES (?, ?, ?, COALESCE(?, 'SEM_DADOS'), ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(station_code) DO UPDATE SET
                 source_status=excluded.source_status,
                 current_source_status=excluded.current_source_status,
                 external_history_status=COALESCE(?, regional_station_state.external_history_status),
+                last_layer2_poll_utc=COALESCE(excluded.last_layer2_poll_utc,
+                                              regional_station_state.last_layer2_poll_utc),
                 ultimo_erro=excluded.ultimo_erro,
                 ultima_tentativa_em=excluded.ultima_tentativa_em,
                 ultimo_sucesso_em=COALESCE(excluded.ultimo_sucesso_em,
@@ -155,11 +204,37 @@ def registrar_status_estacao(
                 atualizado_em=CURRENT_TIMESTAMP
             """,
             (
-                code, status, status, external_history_status, erro, agora,
-                agora if sucesso else None, external_history_status,
+                code, status, status, external_history_status, layer2_poll,
+                erro, agora, agora if sucesso else None, external_history_status,
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def layer2_poll_devido(poll_seconds, now=None):
+    """Consulta o estado persistido; reiniciar o processo nao antecipa a layer 2."""
+    now = (now or agora_utc()).astimezone(timezone.utc)
+    conn = database.get_db()
+    try:
+        rows = conn.execute(
+            """
+            SELECT st.last_layer2_poll_utc
+            FROM regional_stations s
+            LEFT JOIN regional_station_state st ON st.station_code=s.codigo
+            WHERE s.ativo=1
+            """
+        ).fetchall()
+        if not rows:
+            return True
+        polls = []
+        for row in rows:
+            poll = parse_datetime(row["last_layer2_poll_utc"], assume_utc=True)
+            if poll is None:
+                return True
+            polls.append(poll.astimezone(timezone.utc))
+        return (now - min(polls)).total_seconds() >= max(60, int(poll_seconds))
     finally:
         conn.close()
 
@@ -269,7 +344,11 @@ def obter_estado_rede(config, now=None):
             """
             SELECT s.*, st.source_status, st.current_source_status,
                    st.external_history_status, st.ultimo_erro,
-                   st.ultima_tentativa_em, st.ultimo_sucesso_em
+                   st.ultima_tentativa_em, st.ultimo_sucesso_em,
+                   st.current_fingerprint,
+                   st.current_fingerprint_first_seen,
+                   st.current_fingerprint_last_seen,
+                   st.last_layer2_poll_utc
             FROM regional_stations s
             LEFT JOIN regional_station_state st ON st.station_code=s.codigo
             WHERE s.ativo=1 ORDER BY s.nome_exibicao
@@ -331,11 +410,35 @@ def obter_estado_rede(config, now=None):
             current_source_status = (
                 station["current_source_status"] or station["source_status"] or "SEM_DADOS"
             )
+            fingerprint_first_seen = parse_datetime(
+                station["current_fingerprint_first_seen"], assume_utc=True
+            )
+            fingerprint_last_seen = parse_datetime(
+                station["current_fingerprint_last_seen"], assume_utc=True
+            )
+            same_values_minutes = None
+            if fingerprint_first_seen and fingerprint_last_seen:
+                same_values_minutes = round(
+                    max(
+                        0.0,
+                        (
+                            fingerprint_last_seen.astimezone(timezone.utc)
+                            - fingerprint_first_seen.astimezone(timezone.utc)
+                        ).total_seconds()
+                        / 60,
+                    ),
+                    1,
+                )
+            stagnant = (
+                same_values_minutes is not None
+                and same_values_minutes >= config.get("stagnant_minutes", 180)
+            )
             status = classificar_status(
                 dict(atual) if atual else None,
                 source_status=current_source_status,
                 stale_minutes=config["stale_minutes"],
                 very_stale_minutes=config["very_stale_minutes"],
+                stagnant=stagnant,
                 now=now,
             )
             external_age_hours = None
@@ -375,12 +478,20 @@ def obter_estado_rede(config, now=None):
                         "status": current_source_status,
                         "age_minutes": idade_minutos_observacao(dict(atual), now=now) if atual else None,
                         "last_collection": atual["tempo_referencia_local"] if atual else None,
+                        "same_values_since": station["current_fingerprint_first_seen"],
+                        "same_values_minutes": same_values_minutes,
+                        "stagnant": stagnant,
+                    },
+                    "data_freshness": {
+                        "status": status,
+                        "stagnant": stagnant,
                     },
                     "external_hourly_source": {
                         "status": external_status,
                         "age_hours": round(external_age_hours, 1) if external_age_hours is not None else None,
                         "last_valid": horaria["medido_em_local"] if horaria else None,
                         "usable": bool(external_rows),
+                        "last_checked_at": station["last_layer2_poll_utc"],
                     },
                     "latitude": lat,
                     "longitude": lon,

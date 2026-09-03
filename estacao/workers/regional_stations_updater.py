@@ -22,6 +22,7 @@ from config import regional_stations_config
 from logging_utils import configurar_logging, erro_externo_seguro
 from services.regional_stations_catalog import REGIONAL_STATIONS, REGIONAL_STATION_CODES
 from services.regional_stations_repository import (
+    layer2_poll_devido,
     obter_estado_rede,
     registrar_status_estacao,
     salvar_observacao,
@@ -66,13 +67,14 @@ def _layer2_recente(observacao, collected_at, max_age_hours):
     return -1.5 <= idade_horas <= max_age_hours
 
 
-def executar_ciclo(client=None, config=None):
+def executar_ciclo(client=None, config=None, now=None):
     config = config or regional_stations_config()
     if not config["enabled"]:
         return {
             "disabled": True, "configured": 6, "found": 0, "with_current_data": 0,
             "new": 0, "duplicates": 0, "empty": 0, "errors": 0, "state": None,
             "samples_updated": 0, "layer2_recent": 0, "layer2_stale": 0,
+            "layer2_checked": False, "stagnant": 0,
             "history_source": "layer0_local", "time_diagnostics": [],
         }
     database.init_db()
@@ -80,7 +82,10 @@ def executar_ciclo(client=None, config=None):
         timeout=config["timeout_seconds"],
         bootstrap_hours=config["bootstrap_hours"],
     )
-    collected_at = agora_utc()
+    collected_at = now or agora_utc()
+    layer2_checked = layer2_poll_devido(
+        config.get("layer2_poll_seconds", 3600), now=collected_at
+    )
     atuais = {}
     diagnosticos_tempo = {}
 
@@ -120,7 +125,6 @@ def executar_ciclo(client=None, config=None):
         current_error = erro_externo_seguro(erro)
 
     novos = duplicados = vazios = amostras_atualizadas = 0
-    layer2_recent_stations = layer2_stale_stations = 0
     for code in REGIONAL_STATION_CODES:
         problema = None
         layer2_tem_dado = False
@@ -136,36 +140,37 @@ def executar_ciclo(client=None, config=None):
         elif code in encontrados:
             vazios += 1
 
-        try:
-            historico = client.obter_historico(code)
-            for raw in _attributes(historico):
-                observacao = normalizar_registro(raw, 2, collected_at)
-                if observacao is None:
-                    vazios += 1
-                    continue
-                registrar_diagnostico(observacao)
-                layer2_tem_dado = True
-                layer2_tem_recente = layer2_tem_recente or _layer2_recente(
-                    observacao, collected_at, config["layer2_max_age_hours"]
-                )
-                if salvar_observacao(observacao):
-                    novos += 1
-                else:
-                    duplicados += 1
-        except (RegionalStationsError, ValueError) as erro:
-            erros += 1
-            problema = erro_externo_seguro(erro)
+        if layer2_checked:
+            try:
+                historico = client.obter_historico(code)
+                for raw in _attributes(historico):
+                    observacao = normalizar_registro(raw, 2, collected_at)
+                    if observacao is None:
+                        vazios += 1
+                        continue
+                    registrar_diagnostico(observacao)
+                    layer2_tem_dado = True
+                    layer2_tem_recente = layer2_tem_recente or _layer2_recente(
+                        observacao, collected_at, config["layer2_max_age_hours"]
+                    )
+                    if salvar_observacao(observacao):
+                        novos += 1
+                    else:
+                        duplicados += 1
+            except (RegionalStationsError, ValueError) as erro:
+                erros += 1
+                problema = erro_externo_seguro(erro)
 
-        if layer2_tem_recente:
-            external_status = "OK"
-            layer2_recent_stations += 1
-        elif layer2_tem_dado:
-            external_status = "STALE"
-            layer2_stale_stations += 1
-        elif problema:
-            external_status = "ERRO_FONTE"
+            if layer2_tem_recente:
+                external_status = "OK"
+            elif layer2_tem_dado:
+                external_status = "STALE"
+            elif problema:
+                external_status = "ERRO_FONTE"
+            else:
+                external_status = "SEM_DADOS"
         else:
-            external_status = "SEM_DADOS"
+            external_status = None
 
         if current_error:
             current_status = "ERRO_FONTE"
@@ -185,10 +190,23 @@ def executar_ciclo(client=None, config=None):
             current_problem,
             sucesso=current_status in {"OK", "SEM_DADOS"},
             external_history_status=external_status,
+            layer2_polled_at=collected_at if layer2_checked else None,
+            now=collected_at,
         )
 
-    estado = obter_estado_rede(config)
+    estado = obter_estado_rede(config, now=collected_at)
     enfileirar_alertas_regionais(config, estado)
+    layer2_recent_stations = sum(
+        item["external_hourly_source"]["status"] == "OK"
+        for item in estado["stations"]
+    )
+    layer2_stale_stations = sum(
+        item["external_hourly_source"]["status"] == "STALE"
+        for item in estado["stations"]
+    )
+    stagnant_stations = sum(
+        bool(item["current_source"]["stagnant"]) for item in estado["stations"]
+    )
     resultado = {
         "disabled": False,
         "configured": len(REGIONAL_STATIONS),
@@ -199,6 +217,8 @@ def executar_ciclo(client=None, config=None):
         "samples_updated": amostras_atualizadas,
         "layer2_recent": layer2_recent_stations,
         "layer2_stale": layer2_stale_stations,
+        "layer2_checked": layer2_checked,
+        "stagnant": stagnant_stations,
         "history_source": "layer0_local",
         "empty": vazios,
         "errors": erros,
@@ -208,14 +228,16 @@ def executar_ciclo(client=None, config=None):
         ],
     }
     logger.info(
-        "Coleta PIN-MS: layer0=%s/%s layer2_recent=%s layer2_stale=%s "
+        "Coleta PIN-MS: layer0=%s/%s stagnant=%s layer2_checked=%s "
+        "layer2_recent=%s layer2_stale=%s "
         "samples_updated=%s history_source=layer0_local novas=%s "
         "duplicadas=%s vazias=%s erros=%s",
         resultado["with_current_data"], resultado["configured"],
+        stagnant_stations, str(layer2_checked).lower(),
         layer2_recent_stations, layer2_stale_stations, amostras_atualizadas,
         novos, duplicados, vazios, erros,
     )
-    if layer2_recent_stations == 0 and layer2_stale_stations:
+    if layer2_checked and layer2_recent_stations == 0 and layer2_stale_stations:
         logger.info(
             "PIN-MS layer 2 sem histórico recente; utilizando histórico próprio da layer 0"
         )
@@ -230,20 +252,25 @@ def imprimir_resumo(resultado, verbose_time=False, verbose_history=False):
         return
     for station in (resultado.get("state") or {}).get("stations", []):
         obs = station.get("observation") or {}
+        current = station.get("current_source") or {}
         print(f"\n{station['name']} {station['code']}")
-        print(f"  atual: {'OK' if obs else 'SEM DADOS'}")
+        print(f"  fonte atual: {current.get('status') or 'SEM_DADOS'}")
         print(f"  temperatura: {_valor(obs.get('temperature'), '°C')}")
         print(f"  umidade: {_valor(obs.get('humidity'), '%')}")
         print(f"  pressão: {_valor(obs.get('pressure'), 'hPa')}")
         print(f"  vento: {_valor(obs.get('wind_speed_kmh'), 'km/h')}")
         print(f"  rajada: {_valor(obs.get('wind_gust_kmh'), 'km/h')}")
         print(f"  chuva: {_valor(obs.get('rain_mm'), 'mm')}")
-        print(f"  último horário válido: {station.get('last_valid_hourly') or 'indefinido'}")
+        print(
+            "  último histórico externo válido: "
+            f"{station.get('last_valid_hourly') or 'indefinido'}"
+        )
         print(f"  status: {station['status']}")
     print("\nResumo:")
     for key, label in (
         ("configured", "configuradas"), ("found", "encontradas"),
         ("with_current_data", "com dados atuais"), ("new", "novos registros"),
+        ("stagnant", "com valores possivelmente estagnados"),
         ("samples_updated", "buckets locais atualizados"),
         ("layer2_recent", "estações com layer 2 recente"),
         ("layer2_stale", "estações com layer 2 desatualizada"),
@@ -251,6 +278,7 @@ def imprimir_resumo(resultado, verbose_time=False, verbose_history=False):
         ("errors", "erros HTTP/fonte"),
     ):
         print(f"{resultado[key]} {label}")
+    print(f"layer 2 consultada neste ciclo: {str(resultado['layer2_checked']).lower()}")
     if verbose_time:
         print("\nDiagnóstico temporal:")
         for item in resultado.get("time_diagnostics", []):
@@ -265,8 +293,11 @@ def imprimir_resumo(resultado, verbose_time=False, verbose_history=False):
         print("\nDiagnóstico do histórico:")
         for station in (resultado.get("state") or {}).get("stations", []):
             external = station.get("external_hourly_source") or {}
+            current = station.get("current_source") or {}
             print(
                 f"{station['code']} layer0_age={station.get('age_minutes')}min "
+                f"same_values={current.get('same_values_minutes')}min "
+                f"stagnant={current.get('stagnant')} "
                 f"layer2_age={external.get('age_hours')}h "
                 f"layer2_usable={external.get('usable')} "
                 f"bucket={station.get('current_bucket') or '-'} "

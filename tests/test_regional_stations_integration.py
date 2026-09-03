@@ -1,11 +1,13 @@
 import importlib
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -43,12 +45,19 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         )
         self.collected = datetime(2026, 9, 2, 20, tzinfo=timezone.utc)
 
+    def autenticar_admin(self):
+        with self.client.session_transaction() as session:
+            session["logado"] = True
+            session["ultimo_acesso"] = time.time()
+            session["csrf_token"] = "csrf-teste"
+
     def tearDown(self):
         self.tmp.cleanup()
         for key in (
             "ESTACAO_DB", "REGIONAL_STATIONS_ENABLED", "REGIONAL_STATIONS_ALERTS_ENABLED",
             "REGIONAL_STATIONS_RETENTION_ENABLED", "REGIONAL_STATIONS_RETENTION_DAYS",
-            "REGIONAL_LAYER2_MAX_AGE_HOURS",
+            "REGIONAL_LAYER2_MAX_AGE_HOURS", "REGIONAL_LAYER2_POLL_SECONDS",
+            "REGIONAL_STATION_STAGNANT_MINUTES",
             "RATELIMIT_ENABLED", "SECRET_KEY",
         ):
             os.environ.pop(key, None)
@@ -62,6 +71,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         sample_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(regional_station_samples)")
         }
+        state_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(regional_station_state)")
+        }
         conn.close()
         self.assertTrue({
             "regional_stations", "regional_station_observations",
@@ -73,6 +85,66 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
             "source_observation_id", "sample_time_utc", "sample_time_type",
             "bucket_hour_utc", "chuva_mm", "fingerprint",
         } <= sample_columns)
+        self.assertTrue({
+            "current_fingerprint", "current_fingerprint_first_seen",
+            "current_fingerprint_last_seen", "last_layer2_poll_utc",
+        } <= state_columns)
+
+    def test_migration_7_para_8_adiciona_estado_sem_perder_linha(self):
+        legacy_path = Path(self.tmp.name) / "legacy-schema-7.db"
+        conn = sqlite3.connect(legacy_path)
+        conn.executescript(
+            """
+            CREATE TABLE schema_version (
+                id INTEGER PRIMARY KEY, versao INTEGER NOT NULL,
+                atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO schema_version (id, versao) VALUES (1, 7);
+            CREATE TABLE regional_station_state (
+                station_code TEXT PRIMARY KEY,
+                source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+                current_source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+                external_history_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+                ultimo_erro TEXT,
+                ultima_tentativa_em TEXT,
+                ultimo_sucesso_em TEXT,
+                atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO regional_station_state (
+                station_code, source_status, current_source_status,
+                external_history_status
+            ) VALUES ('A721', 'OK', 'OK', 'STALE');
+            """
+        )
+        conn.close()
+        original_path = os.environ["ESTACAO_DB"]
+        try:
+            os.environ["ESTACAO_DB"] = str(legacy_path)
+            database = importlib.reload(self.database)
+            database.init_db()
+            conn = database.get_db()
+            columns = {
+                row[1] for row in conn.execute(
+                    "PRAGMA table_info(regional_station_state)"
+                )
+            }
+            row = conn.execute(
+                "SELECT current_source_status, external_history_status "
+                "FROM regional_station_state WHERE station_code='A721'"
+            ).fetchone()
+            version = conn.execute(
+                "SELECT versao FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            conn.close()
+            self.assertTrue({
+                "current_fingerprint", "current_fingerprint_first_seen",
+                "current_fingerprint_last_seen", "last_layer2_poll_utc",
+            } <= columns)
+            self.assertEqual(tuple(row), ("OK", "STALE"))
+            self.assertEqual(version, 8)
+        finally:
+            os.environ["ESTACAO_DB"] = original_path
+            self.database = importlib.reload(self.database)
 
     def test_deduplicacao_polling_repetido(self):
         from services.regional_stations_repository import salvar_observacao
@@ -89,14 +161,16 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(row["source_dt_medicao_raw"], "1788307200000")
 
     def test_pagina_sem_observacoes_exibe_seis_estacoes(self):
-        response = self.client.get("/estacoes-regionais")
+        self.autenticar_admin()
+        response = self.client.get("/admin/estacoes-regionais")
         self.assertEqual(response.status_code, 200)
         for nome in ("Dourados", "Caarapó", "Juti", "Naviraí", "Ivinhema", "Culturama"):
             self.assertIn(nome.encode(), response.data)
         self.assertIn("Observação atual PIN-MS camada 0".encode(), response.data)
 
     def test_api_sem_dados_nao_expoe_payload_bruto(self):
-        payload = self.client.get("/api/regional-stations").get_json()
+        self.autenticar_admin()
+        payload = self.client.get("/admin/api/regional-stations").get_json()
         self.assertEqual(len(payload["stations"]), 6)
         self.assertTrue(all(item["status"] == "SEM_DADOS" for item in payload["stations"]))
         self.assertNotIn("payload_json", json.dumps(payload))
@@ -110,14 +184,22 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
             salvar_observacao(normalizar_registro(self.layer2["features"][index]["attributes"], 2, self.collected))
         salvar_observacao(normalizar_registro(self.layer0["features"][0]["attributes"], 0, self.collected))
         registrar_status_estacao("A721", "OK", sucesso=True)
-        payload = self.client.get("/api/regional-stations").get_json()
+        self.autenticar_admin()
+        payload = self.client.get("/admin/api/regional-stations").get_json()
         dourados = next(item for item in payload["stations"] if item["code"] == "A721")
         self.assertEqual(dourados["observation"]["temperature"], 21.6)
         self.assertIsNone(dourados["trend"]["temperature_1h"])
         self.assertEqual(dourados["trend_source"], "local_history_layer0")
         self.assertEqual(dourados["trend_quality"], "INSUFFICIENT")
+        self.assertEqual(dourados["current_source"]["same_values_minutes"], 0)
+        self.assertFalse(dourados["current_source"]["stagnant"])
+        self.assertEqual(dourados["current_source"]["status"], "OK")
+        self.assertEqual(dourados["data_freshness"]["status"], "MUITO_ATRASADA")
         self.assertGreater(dourados["distance_km"], 0)
-        self.assertEqual(self.client.get("/estacoes-regionais").status_code, 200)
+        page = self.client.get("/admin/estacoes-regionais")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Fonte atual".encode(), page.data)
+        self.assertIn("Valores sem alteração".encode(), page.data)
 
     def test_worker_mockado_processa_seis_e_ignora_slots_vazios(self):
         from config import regional_stations_config
@@ -144,6 +226,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(primeiro["samples_updated"], 6)
         self.assertEqual(primeiro["layer2_recent"], 0)
         self.assertEqual(primeiro["layer2_stale"], 6)
+        self.assertTrue(primeiro["layer2_checked"])
         self.assertEqual(primeiro["empty"], 12)
         self.assertTrue(primeiro["time_diagnostics"])
         self.assertTrue(
@@ -151,6 +234,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
                 for item in primeiro["time_diagnostics"])
         )
         self.assertEqual(segundo["new"], 0)
+        self.assertFalse(segundo["layer2_checked"])
         self.assertGreater(segundo["duplicates"], 0)
 
     def test_estacao_ausente_nao_impede_as_demais(self):
@@ -174,8 +258,9 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertNotEqual(states["A721"]["source_status"], "ERRO_FONTE")
 
     def test_fonte_indisponivel_nao_derruba_flask(self):
-        self.assertEqual(self.client.get("/estacoes-regionais").status_code, 200)
-        self.assertEqual(self.client.get("/api/regional-stations").status_code, 200)
+        self.autenticar_admin()
+        self.assertEqual(self.client.get("/admin/estacoes-regionais").status_code, 200)
+        self.assertEqual(self.client.get("/admin/api/regional-stations").status_code, 200)
 
     def test_alertas_desabilitados_nao_criam_fila(self):
         from config import regional_stations_config
@@ -338,6 +423,148 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(station["status"], "OK")
         self.assertEqual(station["trend_quality"], "INSUFFICIENT")
         self.assertTrue(all(value is None for value in station["trend"].values()))
+
+    def test_fingerprint_igual_por_30_120_e_181_minutos_detecta_estagnacao(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import (
+            obter_estado_rede, registrar_status_estacao,
+        )
+
+        inicio = datetime(2026, 9, 3, 14, tzinfo=timezone.utc)
+        self._salvar_layer0(inicio, 22.3)
+        registrar_status_estacao("A721", "OK", sucesso=True, now=inicio)
+        for minutos, esperado in ((30, "OK"), (120, "OK"), (181, "DADOS_ESTAGNADOS")):
+            momento = inicio + timedelta(minutes=minutos)
+            self._salvar_layer0(momento, 22.3)
+            station = next(
+                item for item in obter_estado_rede(
+                    regional_stations_config(), now=momento
+                )["stations"] if item["code"] == "A721"
+            )
+            self.assertEqual(station["status"], esperado)
+            self.assertEqual(station["current_source"]["same_values_minutes"], minutos)
+        self.assertTrue(station["current_source"]["stagnant"])
+        self.assertEqual(station["current_source"]["status"], "OK")
+
+    def test_novo_fingerprint_reseta_estagnacao_e_erro_http_tem_prioridade(self):
+        from config import regional_stations_config
+        from services.regional_stations_repository import (
+            obter_estado_rede, registrar_status_estacao,
+        )
+
+        inicio = datetime(2026, 9, 3, 12, tzinfo=timezone.utc)
+        self._salvar_layer0(inicio, 22.3)
+        quatro_horas = inicio + timedelta(hours=4)
+        self._salvar_layer0(quatro_horas, 22.3)
+        registrar_status_estacao("A721", "ERRO_FONTE", "falha simulada", now=quatro_horas)
+        station = next(
+            item for item in obter_estado_rede(
+                regional_stations_config(), now=quatro_horas
+            )["stations"] if item["code"] == "A721"
+        )
+        self.assertTrue(station["current_source"]["stagnant"])
+        self.assertEqual(station["status"], "ERRO_FONTE")
+
+        mudou = quatro_horas + timedelta(minutes=5)
+        self._salvar_layer0(mudou, 22.4)
+        registrar_status_estacao("A721", "OK", sucesso=True, now=mudou)
+        station = next(
+            item for item in obter_estado_rede(
+                regional_stations_config(), now=mudou
+            )["stations"] if item["code"] == "A721"
+        )
+        self.assertEqual(station["current_source"]["same_values_minutes"], 0)
+        self.assertFalse(station["current_source"]["stagnant"])
+        self.assertEqual(station["status"], "OK")
+
+    def test_layer2_poll_independente_persiste_apos_restart(self):
+        from config import regional_stations_config
+        from workers.regional_stations_updater import executar_ciclo
+
+        class Client:
+            def __init__(inner_self):
+                inner_self.history_calls = 0
+
+            def obter_atuais(inner_self):
+                return self.layer0
+
+            def obter_historico(inner_self, code):
+                inner_self.history_calls += 1
+                raw = dict(self.layer2["features"][2]["attributes"])
+                raw["CD_ESTACAO"] = code
+                return {"features": [{"attributes": raw}]}
+
+        os.environ["REGIONAL_STATIONS_ENABLED"] = "true"
+        os.environ["REGIONAL_LAYER2_POLL_SECONDS"] = "3600"
+        config = regional_stations_config()
+        inicio = datetime(2026, 9, 3, 18, tzinfo=timezone.utc)
+        primeiro_client = Client()
+        primeiro = executar_ciclo(primeiro_client, config, now=inicio)
+        cinco_min = executar_ciclo(
+            primeiro_client, config, now=inicio + timedelta(minutes=5)
+        )
+        reiniciado = Client()
+        dez_min = executar_ciclo(
+            reiniciado, config, now=inicio + timedelta(minutes=10)
+        )
+        uma_hora = executar_ciclo(
+            reiniciado, config, now=inicio + timedelta(hours=1)
+        )
+        self.assertTrue(primeiro["layer2_checked"])
+        self.assertEqual(primeiro_client.history_calls, 6)
+        self.assertFalse(cinco_min["layer2_checked"])
+        self.assertFalse(dez_min["layer2_checked"])
+        self.assertTrue(uma_hora["layer2_checked"])
+        self.assertEqual(reiniciado.history_calls, 6)
+        self.assertEqual(cinco_min["layer2_stale"], 6)
+        conn = self.database.get_db()
+        polls = conn.execute(
+            "SELECT COUNT(DISTINCT last_layer2_poll_utc) FROM regional_station_state"
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(polls, 1)
+
+    def test_layer2_stale_recupera_automaticamente_quando_atualiza(self):
+        from config import regional_stations_config
+        from workers.regional_stations_updater import executar_ciclo
+
+        class Client:
+            recent = False
+
+            def obter_atuais(inner_self):
+                return self.layer0
+
+            def obter_historico(inner_self, code):
+                if not inner_self.recent:
+                    raw = dict(self.layer2["features"][2]["attributes"])
+                    raw["CD_ESTACAO"] = code
+                    return {"features": [{"attributes": raw}]}
+                features = []
+                for hour, temperature in ((18, 24), (17, 26)):
+                    raw = dict(self.layer2["features"][2]["attributes"])
+                    raw.update({
+                        "CD_ESTACAO": code, "DT_MEDICAO": "2026-09-03",
+                        "HR_MEDICAO": f"{hour}:00", "TEM_INS": temperature,
+                    })
+                    features.append({"attributes": raw})
+                return {"features": features}
+
+        os.environ["REGIONAL_STATIONS_ENABLED"] = "true"
+        config = regional_stations_config()
+        inicio = datetime(2026, 9, 3, 18, tzinfo=timezone.utc)
+        client = Client()
+        primeiro = executar_ciclo(client, config, now=inicio)
+        client.recent = True
+        recuperado = executar_ciclo(
+            client, config, now=inicio + timedelta(hours=1, seconds=1)
+        )
+        self.assertEqual(primeiro["layer2_stale"], 6)
+        self.assertEqual(recuperado["layer2_recent"], 6)
+        self.assertTrue(all(
+            station["external_hourly_source"]["status"] == "OK"
+            and station["external_hourly_source"]["usable"]
+            for station in recuperado["state"]["stations"]
+        ))
 
     def test_nowcasting_pode_confirmar_com_historico_proprio_layer0(self):
         from config import nowcasting_config, regional_stations_config

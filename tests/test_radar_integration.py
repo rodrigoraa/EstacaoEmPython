@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from io import BytesIO
@@ -43,6 +44,12 @@ class RadarIntegrationTest(unittest.TestCase):
         self.app = self.app_module.app
         self.app.config.update(TESTING=True)
         self.client = self.app.test_client()
+
+    def autenticar_admin(self):
+        with self.client.session_transaction() as session:
+            session["logado"] = True
+            session["ultimo_acesso"] = time.time()
+            session["csrf_token"] = "csrf-teste"
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -93,8 +100,9 @@ class RadarIntegrationTest(unittest.TestCase):
         conn.close()
 
     def test_pagina_e_api_sem_dados(self):
-        pagina = self.client.get("/radar")
-        api = self.client.get("/api/radar/status")
+        self.autenticar_admin()
+        pagina = self.client.get("/admin/radar")
+        api = self.client.get("/admin/api/radar/status")
         self.assertEqual(pagina.status_code, 200)
         self.assertIn("Radar temporariamente indisponível".encode(), pagina.data)
         self.assertFalse(api.get_json()["disponivel"])
@@ -108,9 +116,10 @@ class RadarIntegrationTest(unittest.TestCase):
         frame_id, _ = salvar_resultado_frame(
             self.frame(), None, "analisadas/frame.png", 20, 20, [self.cluster()]
         )
-        pagina = self.client.get("/radar")
-        payload = self.client.get("/api/radar/status").get_json()
-        imagem = self.client.get(f"/radar/imagem/{frame_id}")
+        self.autenticar_admin()
+        pagina = self.client.get("/admin/radar")
+        payload = self.client.get("/admin/api/radar/status").get_json()
+        imagem = self.client.get(f"/admin/radar/imagem/{frame_id}")
         self.assertEqual(pagina.status_code, 200)
         self.assertIn(b"Eco significativo", pagina.data)
         self.assertTrue(payload["disponivel"])
@@ -126,12 +135,19 @@ class RadarIntegrationTest(unittest.TestCase):
         fora = self.raiz / "fora.png"
         Image.new("RGB", (10, 10), "black").save(fora)
         frame_id, _ = salvar_resultado_frame(self.frame(), None, "../fora.png", 10, 10, [])
-        self.assertEqual(self.client.get(f"/radar/imagem/{frame_id}").status_code, 404)
+        self.autenticar_admin()
+        self.assertEqual(
+            self.client.get(f"/admin/radar/imagem/{frame_id}").status_code, 404
+        )
 
     def test_ausencia_api_key_nao_impede_flask(self):
         os.environ.pop("REDEMET_API_KEY", None)
         aplicacao = self.app_module.create_app({"TESTING": True, "RATELIMIT_ENABLED": False})
-        self.assertEqual(aplicacao.test_client().get("/radar").status_code, 200)
+        client = aplicacao.test_client()
+        with client.session_transaction() as session:
+            session["logado"] = True
+            session["ultimo_acesso"] = time.time()
+        self.assertEqual(client.get("/admin/radar").status_code, 200)
 
     def test_stale(self):
         from services.radar_repository import obter_estado_radar, salvar_resultado_frame

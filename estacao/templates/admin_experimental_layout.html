@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ titulo }} | Painel Admin | EESJ</title>
+    {% include "includes/common_head_assets.html" %}
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 pb-12">
+    {% include "includes/admin_navigation.html" %}
+    <main class="max-w-7xl mx-auto px-4 mt-6 md:mt-8 space-y-6">
+        {% block conteudo %}{% endblock %}
+    </main>
+</body>
+</html>

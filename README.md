@@ -26,15 +26,15 @@ PIN-MS (6 estações) --> regional_stations_updater --┘      │
                                                        snapshots
                                                            │
                                                            v
-                                                Flask /monitoramento
+                                           Flask /admin/monitoramento
 
 Open-Meteo ---------------------------------------> /previsao
 updater + fila -----------------------------------> alertas atuais
 ```
 
-O radar é uma fonte independente e complementar. O navegador nunca consulta a REDEMET: o worker baixa e analisa os PNGs, persiste o estado e a aplicação lê somente SQLite/arquivos locais. Nesta fase ele não envia alertas preventivos; `RADAR_ALERTS_ENABLED=false` é o default e a função de integração permanece deliberadamente inativa até validação meteorológica.
+O radar é uma fonte independente, complementar e experimental. O navegador nunca consulta a REDEMET: o worker baixa e analisa os PNGs, persiste o estado e a aplicação lê somente SQLite/arquivos locais. Sua visualização exige a sessão administrativa; visitantes não recebem o painel, a API nem as imagens. Nesta fase ele não envia alertas preventivos; `RADAR_ALERTS_ENABLED=false` é o default e a função de integração permanece deliberadamente inativa até validação meteorológica.
 
-A rede PIN-MS também é independente: Dourados A721, Caarapó S706, Juti A749, Naviraí S735, Ivinhema A709 e Culturama S708 complementam a observação local, mas não são sensores da escola e não produzem previsão ou alertas.
+A rede PIN-MS e o nowcasting também são experimentais e visíveis somente no painel administrativo. Dourados A721, Caarapó S706, Juti A749, Naviraí S735, Ivinhema A709 e Culturama S708 complementam a observação local, mas não são sensores da escola e não produzem previsão ou alertas. Os três workers continuam executando em background sem depender de sessão ou navegador autenticado.
 
 O acesso a `/previsao` nunca coleta uma nova leitura oficial nem grava em `leituras_brutas`; a página usa a última leitura persistida pelo updater. Os processos principais são:
 
@@ -197,17 +197,19 @@ A chave não aparece em HTML/JSON/logs e não é necessária para iniciar o Flas
 | `REGIONAL_STATIONS_TIMEOUT_SECONDS` | `30` | timeout HTTP |
 | `REGIONAL_STATIONS_BOOTSTRAP_HOURS` | `24` | janela inicial/recorrente limitada |
 | `REGIONAL_LAYER2_MAX_AGE_HOURS` | `12` | idade máxima para a camada 2 servir de bootstrap |
+| `REGIONAL_LAYER2_POLL_SECONDS` | `3600` | frequência independente e persistente de consulta da camada 2 |
 | `REGIONAL_STATION_STALE_MINUTES` | `120` | início do status `ATRASADA` |
 | `REGIONAL_STATION_VERY_STALE_MINUTES` | `240` | início de `MUITO_ATRASADA` |
+| `REGIONAL_STATION_STAGNANT_MINUTES` | `180` | mesmo fingerprint antes de `DADOS_ESTAGNADOS` (mínimo 60 min) |
 | `REGIONAL_STATIONS_ALERTS_ENABLED` | `false` | reservado; não envia alertas nesta versão |
 | `REGIONAL_TARGET_LAT` | `-22.4925326` | latitude da EE São José |
 | `REGIONAL_TARGET_LON` | `-54.4610352` | longitude da EE São José |
 
-A fonte fixa é o serviço público `Estacoes_CEMADEN_INMET` do PIN-MS. A camada 0 fornece o estado operacional mais recente. A camada 2 continua persistida para auditoria e bootstrap, mas só participa de tendências quando possui timestamps confiáveis dentro de `REGIONAL_LAYER2_MAX_AGE_HOURS`. Em setembro de 2026 foram observados registros reais da camada 2 ainda em março de 2026; eles não são corrigidos, reinterpretados nem apagados. A allowlist dos seis códigos impede usar entrada HTTP para construir endpoints ou cláusulas ArcGIS arbitrárias.
+A fonte fixa é o serviço público `Estacoes_CEMADEN_INMET` do PIN-MS. A camada 0 fornece o estado operacional mais recente e forma um histórico próprio por hora. A camada 2 continua persistida para auditoria e bootstrap, mas é consultada em frequência independente, por padrão a cada hora, e só participa de tendências quando possui timestamps confiáveis dentro de `REGIONAL_LAYER2_MAX_AGE_HOURS`. O último poll fica no estado persistido por estação, de modo que reiniciar o worker não antecipa uma nova consulta; a fonte volta a ser usada automaticamente se passar a oferecer dados recentes. Em setembro de 2026 foram observados registros reais da camada 2 ainda em março de 2026; eles permanecem `STALE`, não utilizáveis, e não são corrigidos, reinterpretados nem apagados. A allowlist dos seis códigos impede usar entrada HTTP para construir endpoints ou cláusulas ArcGIS arbitrárias.
 
 A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos aliases. O esquema corresponde aos dados automáticos do INMET, cuja documentação oficial define temperatura em °C, umidade em %, pressão no nível da estação em hPa, vento e rajada em m/s, direção em graus, precipitação em mm e radiação global em kJ/m². Por isso vento/rajada são preservados em valor bruto e m/s, com uma coluna derivada em km/h (`m/s × 3,6`). Nenhuma correção de pressão ao nível do mar é feita.
 
-`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Na camada 0, `DT_MEDICAO` sem `HR_MEDICAO` representa somente a data operacional, mesmo quando o epoch equivale a 04:00 UTC/00:00 local; portanto recebe `date_only` e nunca vira uma hora oficial inventada. Para o histórico recente, `coletado_em` é copiado para `sample_time` com o tipo explícito `collection_time_proxy`: sabemos quando o servidor recebeu os valores, não o minuto oficial da medição. Na camada 2, datas com hora inequívoca produzem timestamps timezone-aware e uma data ArcGIS à meia-noite combinada com a hora recebe `reconciled`. Hora própria conflitante, futuro incompatível e formatos dia/mês ambíguos ficam `suspect`.
+`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Na camada 0, `DT_MEDICAO` sem `HR_MEDICAO` representa somente a data operacional, mesmo quando o epoch equivale a 04:00 UTC/00:00 local; portanto recebe `date_only` e nunca vira uma hora oficial inventada. Para o histórico recente, `coletado_em` é copiado para `sample_time` com o tipo explícito `collection_time_proxy`: sabemos quando o servidor recebeu os valores, não o minuto oficial da medição. O fingerprint completo da leitura atual mantém `first_seen` e `last_seen` mesmo quando a observação é deduplicada. Após 180 minutos exatamente iguais, `DADOS_ESTAGNADOS` indica apenas que os valores recebidos podem estar congelados; não afirma que a estação está quebrada. Uma mudança em qualquer valor relevante reinicia o contador. A disponibilidade HTTP continua separada dessa heurística. Na camada 2, datas com hora inequívoca produzem timestamps timezone-aware e uma data ArcGIS à meia-noite combinada com a hora recebe `reconciled`. Hora própria conflitante, futuro incompatível e formatos dia/mês ambíguos ficam `suspect`.
 
 ### Nowcasting observacional
 
@@ -221,13 +223,15 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS` | `2` | sinais independentes mínimos para confirmação |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS` | `1` | estações a montante mínimas com sinais |
-| `NOWCASTING_ALGORITHM_VERSION` | `1.1` | versão persistida junto ao snapshot |
+| `NOWCASTING_ALGORITHM_VERSION` | `1.2` | versão persistida junto ao snapshot |
 
 Nowcasting aqui não é previsão numérica. É fusão observacional de curtíssimo prazo:
 o radar acompanha ecos, as estações regionais confirmam alterações em superfície e
 a estação local confirma a chegada à escola. O serviço não acessa REDEMET, PIN-MS,
 Ambient Weather nem Open-Meteo; lê somente o SQLite preenchido pelos workers
 independentes.
+
+Estações com `DADOS_ESTAGNADOS` não fornecem confirmação regional, mesmo quando existe tendência histórica anterior. Os alertas preventivos de nowcasting continuam bloqueados nesta versão, inclusive se a variável reservada for habilitada.
 
 ### WhatsApp e double opt-in
 
@@ -251,7 +255,7 @@ A fila mantém semântica at-least-once. Se a Evolution aceitar uma mensagem e a
 
 ## Banco e migrations
 
-O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `7`, registrada na pequena tabela `schema_version`.
+O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `8`, registrada na pequena tabela `schema_version`.
 
 Execute a migration leve explicitamente antes de reiniciar os serviços:
 
@@ -269,6 +273,7 @@ As migrations automáticas são aditivas e idempotentes:
 - criação de `radar_frames`, `radar_clusters`, `radar_tracks` e `radar_track_points`, com chaves estrangeiras, índices pequenos e `UNIQUE(path_remoto)`.
 - criação de `regional_stations`, `regional_station_observations`, `regional_station_samples` e `regional_station_state`, com catálogo idempotente, índices e `UNIQUE(fingerprint)`.
 - adição dos estados separados da fonte atual e do histórico externo; criação dos buckets horários locais por proxy de coleta, sem payload JSON duplicado;
+- adição do fingerprint atual com primeira/última observação contínua e do último poll da camada 2 ao estado regional;
 - adição das colunas UTC/local, timestamp raw, coleta UTC/local, classes relativas de refletividade e diagnóstico de clutter às estruturas de radar;
 - criação de `nowcasting_snapshots`, com `UNIQUE(input_fingerprint)` e versão do algoritmo.
 
@@ -448,17 +453,19 @@ gunicorn -w 2 -b 127.0.0.1:8080 app:app
 
 ## Rotas e saúde
 
-As rotas existentes foram preservadas, incluindo páginas, APIs, administração, cancelamento e `/deploy/python` e `/deploy/php`. Foram adicionadas:
+As rotas públicas existentes da estação foram preservadas, incluindo páginas, APIs, cancelamento e `/deploy/python` e `/deploy/php`. As superfícies experimentais ficam sob autenticação administrativa:
 
 - `GET /signup/confirm`: confirmação do double opt-in;
 - `GET /health`: status externo sem PII/segredos;
-- `GET /radar`: painel público do último estado persistido;
-- `GET /api/radar/status`: JSON somente leitura, sem chave nem paths internos;
-- `GET /radar/imagem/<frame_id>` e `/radar/imagem/atual`: PNG local registrado e validado.
-- `GET /estacoes-regionais`: seis cards públicos para diagnóstico da coleta;
-- `GET /api/regional-stations`: observações, geografia, freshness e tendências sem payload bruto.
-- `GET /monitoramento`: painel unificado do último snapshot observacional;
-- `GET /api/nowcasting/status`: último snapshot com campos compatíveis, `ameaca_principal`, `ameacas` e `confirmacao_regional`, sem coleta externa ou payload bruto.
+- `GET /admin/radar`: último estado persistido, imagem, clusters e tracking;
+- `GET /admin/api/radar/status`: JSON do radar sem chave nem paths internos;
+- `GET /admin/radar/imagem/<frame_id>` e `/admin/radar/imagem/atual`: PNG local registrado, validado e protegido;
+- `GET /admin/estacoes-regionais`: seis cards para diagnóstico da coleta;
+- `GET /admin/api/regional-stations`: observações, geografia, freshness e tendências sem payload bruto;
+- `GET /admin/monitoramento`: painel unificado do último snapshot observacional;
+- `GET /admin/api/nowcasting/status`: último snapshot com `ameaca_principal`, `ameacas` e `confirmacao_regional`.
+
+As URLs experimentais antigas fora de `/admin` não servem dados publicamente: páginas redirecionam ao login e APIs/imagens retornam `401` sem sessão. O menu público permanece equivalente ao da master, com Dashboard, Histórico, Previsão do tempo e Sobre a estação.
 
 `/health` retorna `200` para banco e leitura recente; retorna `503` para banco indisponível, ausência de leitura ou leitura antiga. A resposta contém somente `status`, `database`, `last_reading_age_seconds`, `queue`, `radar`, `regional_stations` e `nowcasting`. Fontes auxiliares desabilitadas aparecem como `disabled`; ausência/stale quando ativas aparece como `warning`, mas não torna sozinha a saúde principal `DOWN`.
 
@@ -495,7 +502,7 @@ do movimento, até 300 km, e a distância perpendicular ao eixo é menor que o c
 Quando o alvo é fornecido, o vetor também precisa apontar para a região da escola.
 Direção do vento de superfície nunca é usada como direção da célula.
 
-Na versão 1.1 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A ameaça principal é ordenada primeiro por status explícito (`ATENCAO_PREVENTIVA`, `EVIDENCIA_REGIONAL`, `TRAJETORIA_RELEVANTE`, `SISTEMA_SE_APROXIMANDO`, `SISTEMA_EM_MOVIMENTO`, `ECO_EM_MONITORAMENTO`) e depois por confirmação regional, trajetória, aproximação, tracking, distância, ETA e clutter. Assim, uma ameaça confirmada mais distante prevalece sobre uma trajetória sem confirmação. As demais permanecem em `ameacas` e no painel.
+Na versão 1.2 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A ameaça principal é ordenada primeiro por status explícito (`ATENCAO_PREVENTIVA`, `EVIDENCIA_REGIONAL`, `TRAJETORIA_RELEVANTE`, `SISTEMA_SE_APROXIMANDO`, `SISTEMA_EM_MOVIMENTO`, `ECO_EM_MONITORAMENTO`) e depois por confirmação regional, trajetória, aproximação, tracking, distância, ETA e clutter. Assim, uma ameaça confirmada mais distante prevalece sobre uma trajetória sem confirmação. As demais permanecem em `ameacas` e no painel. A versão 1.2 também exclui da confirmação regional as estações com valores estagnados.
 
 O índice por ameaça é auditável: eco +8, tracking válido +12, aproximação +12,
 trajetória compatível +15 e faixa de distância +2/+5/+8. O radar sozinho chega no

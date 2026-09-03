@@ -3,8 +3,9 @@
 import logging
 from pathlib import Path
 
-from flask import Blueprint, abort, jsonify, render_template, send_file
+from flask import Blueprint, abort, jsonify, redirect, render_template, send_file, url_for
 
+from admin_auth import admin_api_required, admin_page_required
 from config import radar_config
 from services.radar_repository import obter_arquivo_frame, obter_estado_radar
 from time_utils import formatar_local
@@ -29,8 +30,9 @@ def _estado_seguro():
         }
 
 
-@radar_routes.route("/radar")
-def radar():
+@radar_routes.route("/admin/radar")
+@admin_page_required
+def radar_admin():
     estado = _estado_seguro()
     if estado.get("frame"):
         estado["frame"]["data_frame_formatada"] = formatar_local(
@@ -46,12 +48,26 @@ def radar():
         estado=estado,
         titulo="Radar Meteorológico",
         radar_track_min_frames=radar_config()["track_min_frames"],
+        aba_ativa="radar",
     )
 
 
-@radar_routes.route("/api/radar/status")
-def api_radar_status():
+@radar_routes.route("/radar")
+@admin_page_required
+def radar_legacy():
+    return redirect(url_for("radar.radar_admin"))
+
+
+@radar_routes.route("/admin/api/radar/status")
+@admin_api_required
+def api_radar_status_admin():
     return jsonify(_estado_seguro())
+
+
+@radar_routes.route("/api/radar/status")
+@admin_api_required
+def api_radar_status_legacy():
+    return redirect(url_for("radar.api_radar_status_admin"), code=308)
 
 
 def _enviar_imagem(frame_id: int):
@@ -81,15 +97,29 @@ def _enviar_imagem(frame_id: int):
     )
 
 
-@radar_routes.route("/radar/imagem/<int:frame_id>")
-def imagem_radar(frame_id):
+@radar_routes.route("/admin/radar/imagem/<int:frame_id>")
+@admin_api_required
+def imagem_radar_admin(frame_id):
     return _enviar_imagem(frame_id)
 
 
-@radar_routes.route("/radar/imagem/atual")
-def imagem_radar_atual():
+@radar_routes.route("/admin/radar/imagem/atual")
+@admin_api_required
+def imagem_radar_atual_admin():
     estado = _estado_seguro()
     frame = estado.get("frame")
     if not frame:
         abort(404)
     return _enviar_imagem(frame["id"])
+
+
+@radar_routes.route("/radar/imagem/<int:frame_id>")
+@admin_api_required
+def imagem_radar_legacy(frame_id):
+    return redirect(url_for("radar.imagem_radar_admin", frame_id=frame_id), code=308)
+
+
+@radar_routes.route("/radar/imagem/atual")
+@admin_api_required
+def imagem_radar_atual_legacy():
+    return redirect(url_for("radar.imagem_radar_atual_admin"), code=308)

@@ -5,7 +5,7 @@ import calendar
 import os
 import json
 import logging
-from config import env_float, env_int
+from config import env_float, env_int, radar_config, regional_stations_config
 from time_utils import agora_local, data_local, parse_datetime
 
 api_routes = Blueprint("api", __name__)
@@ -54,6 +54,30 @@ def health():
             "last_reading_age_seconds": idade,
             "queue": "ok" if not fila["total"] else "pending",
         }
+        radar_cfg = radar_config()
+        if not radar_cfg["enabled"]:
+            payload["radar"] = "disabled"
+        else:
+            try:
+                from services.radar_repository import obter_estado_radar
+
+                radar_estado = obter_estado_radar(radar_cfg["stale_minutes"])
+                payload["radar"] = (
+                    "warning"
+                    if not radar_estado["disponivel"] or radar_estado["stale"]
+                    else "ok"
+                )
+            except Exception:
+                payload["radar"] = "warning"
+        regional_cfg = regional_stations_config()
+        try:
+            from services.regional_stations_repository import status_health_regional
+
+            payload["regional_stations"] = status_health_regional(regional_cfg)
+        except Exception:
+            payload["regional_stations"] = (
+                "warning" if regional_cfg["enabled"] else "disabled"
+            )
         return jsonify(payload), 200 if leitura_ok else 503
     except Exception as erro:
         logger.error("Health check HTTP falhou: %s", erro)

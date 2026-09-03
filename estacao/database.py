@@ -8,7 +8,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 logger = logging.getLogger(__name__)
 
 
@@ -241,6 +241,228 @@ def garantir_tabela_health_check_estado(conn):
         atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+
+def garantir_tabelas_radar(conn):
+    """Cria somente estruturas aditivas do radar; nunca altera dados legados."""
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS radar_frames (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        radar_codigo TEXT NOT NULL,
+        produto TEXT NOT NULL,
+        data_frame TEXT NOT NULL,
+        path_remoto TEXT NOT NULL UNIQUE,
+        arquivo_local TEXT,
+        arquivo_analisado TEXT,
+        largura INTEGER,
+        altura INTEGER,
+        lat_center REAL NOT NULL,
+        lon_center REAL NOT NULL,
+        lat_min REAL NOT NULL,
+        lat_max REAL NOT NULL,
+        lon_min REAL NOT NULL,
+        lon_max REAL NOT NULL,
+        raio_km REAL,
+        tamanho INTEGER,
+        baixado_em TEXT,
+        processado_em TEXT,
+        status_processamento TEXT NOT NULL DEFAULT 'pendente',
+        erro_processamento TEXT,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS radar_clusters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        frame_id INTEGER NOT NULL,
+        cluster_numero INTEGER NOT NULL,
+        pixels_eco INTEGER NOT NULL,
+        centro_x REAL NOT NULL,
+        centro_y REAL NOT NULL,
+        centro_lat REAL NOT NULL,
+        centro_lon REAL NOT NULL,
+        bbox_x INTEGER NOT NULL,
+        bbox_y INTEGER NOT NULL,
+        bbox_width INTEGER NOT NULL,
+        bbox_height INTEGER NOT NULL,
+        distancia_centro_escola_km REAL NOT NULL,
+        distancia_borda_escola_km REAL NOT NULL,
+        distancia_radar_km REAL NOT NULL,
+        direcao_relativa_escola TEXT NOT NULL,
+        suspeito_clutter INTEGER NOT NULL DEFAULT 0,
+        intensidade_codigo TEXT,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(frame_id, cluster_numero),
+        FOREIGN KEY(frame_id) REFERENCES radar_frames(id) ON DELETE CASCADE
+    )
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS radar_tracks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_codigo TEXT NOT NULL UNIQUE,
+        primeiro_frame_em TEXT NOT NULL,
+        ultimo_frame_em TEXT NOT NULL,
+        quantidade_frames INTEGER NOT NULL DEFAULT 1,
+        duracao_minutos REAL NOT NULL DEFAULT 0,
+        deslocamento_total_km REAL NOT NULL DEFAULT 0,
+        velocidade_media_kmh REAL,
+        bearing_movimento REAL,
+        direcao_movimento TEXT,
+        centro_lat_atual REAL NOT NULL,
+        centro_lon_atual REAL NOT NULL,
+        distancia_centro_escola_km REAL,
+        distancia_borda_escola_km REAL,
+        aproximando INTEGER,
+        taxa_aproximacao_kmh REAL,
+        trajetoria_compativel INTEGER NOT NULL DEFAULT 0,
+        menor_aproximacao_km REAL,
+        eta_minutos REAL,
+        suspeito_clutter INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'DADOS_INSUFICIENTES',
+        ativo INTEGER NOT NULL DEFAULT 1,
+        atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS radar_track_points (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_id INTEGER NOT NULL,
+        frame_id INTEGER NOT NULL,
+        cluster_id INTEGER NOT NULL UNIQUE,
+        data_frame TEXT NOT NULL,
+        centro_lat REAL NOT NULL,
+        centro_lon REAL NOT NULL,
+        distancia_centro_escola_km REAL NOT NULL,
+        distancia_borda_escola_km REAL NOT NULL,
+        pixels_eco INTEGER NOT NULL,
+        FOREIGN KEY(track_id) REFERENCES radar_tracks(id) ON DELETE CASCADE,
+        FOREIGN KEY(frame_id) REFERENCES radar_frames(id) ON DELETE CASCADE,
+        FOREIGN KEY(cluster_id) REFERENCES radar_clusters(id) ON DELETE CASCADE
+    )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_radar_frames_data "
+        "ON radar_frames(data_frame DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_radar_clusters_frame_distancia "
+        "ON radar_clusters(frame_id, distancia_borda_escola_km)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_radar_tracks_ativos "
+        "ON radar_tracks(ativo, ultimo_frame_em DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_radar_track_points_track_data "
+        "ON radar_track_points(track_id, data_frame)"
+    )
+
+
+def garantir_tabelas_estacoes_regionais(conn):
+    """Cria a rede regional de modo aditivo e registra o catalogo idempotente."""
+    from services.regional_stations_catalog import REGIONAL_STATIONS
+
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS regional_stations (
+        codigo TEXT PRIMARY KEY,
+        nome_exibicao TEXT NOT NULL,
+        nome_fonte TEXT,
+        latitude_configurada REAL NOT NULL,
+        longitude_configurada REAL NOT NULL,
+        latitude_fonte REAL,
+        longitude_fonte REAL,
+        fonte TEXT NOT NULL DEFAULT 'PIN-MS ArcGIS',
+        ativo INTEGER NOT NULL DEFAULT 1,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS regional_station_observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        station_code TEXT NOT NULL,
+        source_layer INTEGER NOT NULL,
+        source_dt_medicao_raw TEXT,
+        source_hr_medicao_raw TEXT,
+        medido_em_utc TEXT,
+        medido_em_local TEXT,
+        timestamp_status TEXT NOT NULL,
+        coletado_em_utc TEXT NOT NULL,
+        coletado_em_local TEXT NOT NULL,
+        temperatura_atual REAL,
+        temperatura_min REAL,
+        temperatura_max REAL,
+        umidade_atual REAL,
+        umidade_min REAL,
+        umidade_max REAL,
+        pressao_atual REAL,
+        pressao_min REAL,
+        pressao_max REAL,
+        vento_direcao_graus REAL,
+        vento_velocidade_raw REAL,
+        vento_velocidade_ms REAL,
+        vento_velocidade_kmh REAL,
+        rajada_raw REAL,
+        rajada_ms REAL,
+        rajada_kmh REAL,
+        chuva_mm REAL,
+        radiacao_raw REAL,
+        radiacao_unidade TEXT,
+        latitude REAL,
+        longitude REAL,
+        latitude_fonte REAL,
+        longitude_fonte REAL,
+        fingerprint TEXT NOT NULL UNIQUE,
+        payload_json TEXT NOT NULL,
+        qualidade TEXT NOT NULL,
+        criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(station_code) REFERENCES regional_stations(codigo)
+    )
+    """)
+    garantir_coluna(conn, "regional_station_observations", "latitude_fonte", "REAL")
+    garantir_coluna(conn, "regional_station_observations", "longitude_fonte", "REAL")
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS regional_station_state (
+        station_code TEXT PRIMARY KEY,
+        source_status TEXT NOT NULL DEFAULT 'SEM_DADOS',
+        ultimo_erro TEXT,
+        ultima_tentativa_em TEXT,
+        ultimo_sucesso_em TEXT,
+        atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(station_code) REFERENCES regional_stations(codigo)
+    )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_regional_obs_station_layer_time "
+        "ON regional_station_observations(station_code, source_layer, medido_em_utc DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_regional_obs_station_collected "
+        "ON regional_station_observations(station_code, coletado_em_utc DESC)"
+    )
+    for station in REGIONAL_STATIONS.values():
+        conn.execute(
+            """
+            INSERT INTO regional_stations (
+                codigo, nome_exibicao, latitude_configurada, longitude_configurada
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(codigo) DO UPDATE SET
+                nome_exibicao=excluded.nome_exibicao,
+                latitude_configurada=excluded.latitude_configurada,
+                longitude_configurada=excluded.longitude_configurada,
+                ativo=1
+            """,
+            (
+                station.code,
+                station.display_name,
+                station.configured_lat,
+                station.configured_lon,
+            ),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO regional_station_state (station_code) VALUES (?)",
+            (station.code,),
+        )
 
 
 def garantir_tabela_campanhas_whatsapp_envios(conn):
@@ -485,6 +707,8 @@ def init_db():
     garantir_tabela_alertas_fila(conn)
     garantir_tabela_alertas_eventos(conn)
     garantir_tabela_health_check_estado(conn)
+    garantir_tabelas_radar(conn)
+    garantir_tabelas_estacoes_regionais(conn)
     garantir_tabela_campanhas_whatsapp_envios(conn)
     garantir_tabela_cadastro_eventos(conn)
     garantir_schema_version(conn)

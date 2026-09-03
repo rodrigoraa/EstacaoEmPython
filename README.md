@@ -16,10 +16,22 @@ Os demais padrões continuam configuráveis sem alterar esses contratos. A indic
 ## Arquitetura
 
 ```text
-Ambient Weather -> updater -> SQLite -> Flask/APIs/páginas
-                                     -> fila -> whatsapp_sender -> Evolution API
-Open-Meteo ------------------------------> /previsao (somente previsão)
+Ambient Weather --------> updater ------------------┐
+                                                    │
+REDEMET Jaraguari ------> radar_updater ------------┼--> SQLite --> Flask
+                                                    │                 │
+PIN-MS (6 estações) --> regional_stations_updater --┤                 │
+                                                    │                 │
+Open-Meteo -----------------------------------------┘                 v
+                                                              páginas/APIs
+                                                                    │
+                                                                    v
+                                                              alertas atuais
 ```
+
+O radar é uma fonte independente e complementar. O navegador nunca consulta a REDEMET: o worker baixa e analisa os PNGs, persiste o estado e a aplicação lê somente SQLite/arquivos locais. Nesta fase ele não envia alertas preventivos; `RADAR_ALERTS_ENABLED=false` é o default e a função de integração permanece deliberadamente inativa até validação meteorológica.
+
+A rede PIN-MS também é independente: Dourados A721, Caarapó S706, Juti A749, Naviraí S735, Ivinhema A709 e Culturama S708 complementam a observação local, mas não são sensores da escola e não produzem previsão ou alertas.
 
 O acesso a `/previsao` nunca coleta uma nova leitura oficial nem grava em `leituras_brutas`; a página usa a última leitura persistida pelo updater. Os processos principais são:
 
@@ -28,6 +40,8 @@ O acesso a `/previsao` nunca coleta uma nova leitura oficial nem grava em `leitu
 - `workers/whatsapp_sender.py`: claim transacional e envio at-least-once da fila;
 - `workers/health_check.py`: diagnóstico interno e notificação operacional;
 - `workers/maintenance.py`: auditoria, índices e retenção manual;
+- `workers/radar_updater.py`: coleta REDEMET, análise de ecos e tracking;
+- `workers/regional_stations_updater.py`: coleta atual/horária e tendências PIN-MS;
 - `workers/backup_db.py`: backup consistente via API do SQLite.
 
 O estado de alertas mantém a precedência `SQLite -> alert_state.json legado -> default`.
@@ -125,6 +139,66 @@ Ative `TRUST_PROXY=true` somente quando a aplicação aceitar tráfego exclusiva
 
 Também permanecem os limites `ALERTA_CALOR_*`, `ALERTA_FRIO_*`, `ALERTA_VENTO_*`, `ALERTA_UMIDADE_*` e `ALERTA_CONFIRMACOES_NIVEL_1` já usados pelo updater.
 
+### Radar REDEMET Jaraguari
+
+| Variável | Default | Finalidade |
+|---|---:|---|
+| `REDEMET_API_KEY` | vazio | chave oficial, exigida somente pelo worker |
+| `RADAR_ENABLED` | `false` | ativa a coleta independente |
+| `RADAR_AREA` | `jr` | código do radar de Jaraguari/MS |
+| `RADAR_PRODUCT` | `maxcappi` | produto inicial |
+| `RADAR_ANIMA` | `15` | quantidade solicitada à API |
+| `RADAR_TARGET_LAT` | `-22.4925326` | latitude da EE São José |
+| `RADAR_TARGET_LON` | `-54.4610352` | longitude da EE São José |
+| `RADAR_POLL_SECONDS` | `300` | intervalo mínimo entre ciclos |
+| `RADAR_REQUEST_TIMEOUT_SECONDS` | `30` | timeout HTTP |
+| `RADAR_MIN_CLUSTER_PIXELS` | `100` | filtro de componentes pequenos |
+| `RADAR_MORPH_CLOSE_ITERATIONS` | `2` | fechamento morfológico 3x3 |
+| `RADAR_DILATE_ITERATIONS` | `1` | dilatação 3x3 |
+| `RADAR_CLUTTER_RADIUS_KM` | `50` | apenas marca possível eco fixo |
+| `RADAR_TRACK_MIN_FRAMES` | `3` | mínimo para movimento/ETA |
+| `RADAR_TRACK_MIN_DURATION_MINUTES` | `10` | duração mínima observada para tracking |
+| `RADAR_TRACK_MAX_SPEED_KMH` | `150` | limite de associação plausível |
+| `RADAR_INTERCEPT_RADIUS_KM` | `25` | raio da trajetória compatível |
+| `RADAR_STALE_MINUTES` | `45` | idade para aviso visual |
+| `RADAR_DATA_DIR` | `estacao/data/radar` | originais e imagens anotadas |
+| `RADAR_ALERTS_ENABLED` | `false` | reservado; não envia nesta versão |
+
+Exemplo de `.env` não versionado:
+
+```dotenv
+REDEMET_API_KEY=coloque-a-chave-somente-no-servidor
+RADAR_ENABLED=true
+RADAR_AREA=jr
+RADAR_PRODUCT=maxcappi
+RADAR_ANIMA=15
+RADAR_TARGET_LAT=-22.4925326
+RADAR_TARGET_LON=-54.4610352
+RADAR_ALERTS_ENABLED=false
+```
+
+A chave não aparece em HTML/JSON/logs e não é necessária para iniciar o Flask. Não a coloque no código, README, unit files versionados ou comandos registrados no histórico do shell; prefira arquivo de ambiente com permissão restrita ou o mecanismo de secrets do serviço.
+
+### Rede regional PIN-MS
+
+| Variável | Default | Finalidade |
+|---|---:|---|
+| `REGIONAL_STATIONS_ENABLED` | `false` | ativa o worker regional separado |
+| `REGIONAL_STATIONS_POLL_SECONDS` | `300` | frequência de consulta |
+| `REGIONAL_STATIONS_TIMEOUT_SECONDS` | `30` | timeout HTTP |
+| `REGIONAL_STATIONS_BOOTSTRAP_HOURS` | `24` | janela inicial/recorrente limitada |
+| `REGIONAL_STATION_STALE_MINUTES` | `120` | início do status `ATRASADA` |
+| `REGIONAL_STATION_VERY_STALE_MINUTES` | `240` | início de `MUITO_ATRASADA` |
+| `REGIONAL_STATIONS_ALERTS_ENABLED` | `false` | reservado; não envia alertas nesta versão |
+| `REGIONAL_TARGET_LAT` | `-22.4925326` | latitude da EE São José |
+| `REGIONAL_TARGET_LON` | `-54.4610352` | longitude da EE São José |
+
+A fonte fixa é o serviço público `Estacoes_CEMADEN_INMET` do PIN-MS. A camada 0 fornece o estado mais recente e a camada 2 a série horária. A allowlist dos seis códigos impede usar entrada HTTP para construir endpoints ou cláusulas ArcGIS arbitrárias.
+
+A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos aliases. O esquema corresponde aos dados automáticos do INMET, cuja documentação oficial define temperatura em °C, umidade em %, pressão no nível da estação em hPa, vento e rajada em m/s, direção em graus, precipitação em mm e radiação global em kJ/m². Por isso vento/rajada são preservados em valor bruto e m/s, com uma coluna derivada em km/h (`m/s × 3,6`). Nenhuma correção de pressão ao nível do mar é feita.
+
+`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Datas com hora inequívoca produzem timestamps timezone-aware; data sem hora recebe `date_only`; combinação conservadora de data ArcGIS e hora horária recebe `reconciled`; formatos dia/mês ambíguos ficam `suspect`, sem horário inventado. `coletado_em` nunca é apresentado como se fosse `medido_em`.
+
 ### WhatsApp e double opt-in
 
 | Variável | Default | Obrigatória? | Finalidade |
@@ -147,7 +221,7 @@ A fila mantém semântica at-least-once. Se a Evolution aceitar uma mensagem e a
 
 ## Banco e migrations
 
-O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `2`, registrada na pequena tabela `schema_version`.
+O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `4`, registrada na pequena tabela `schema_version`.
 
 Execute a migration leve explicitamente antes de reiniciar os serviços:
 
@@ -162,6 +236,8 @@ As migrations automáticas são aditivas e idempotentes:
 - adição de `usuarios.status_cadastro TEXT DEFAULT 'ativo'`;
 - adição de `usuarios.confirmado_em TEXT`;
 - criação de tabelas ausentes já suportadas pelo projeto.
+- criação de `radar_frames`, `radar_clusters`, `radar_tracks` e `radar_track_points`, com chaves estrangeiras, índices pequenos e `UNIQUE(path_remoto)`.
+- criação de `regional_stations`, `regional_station_observations` e `regional_station_state`, com catálogo idempotente, índices e `UNIQUE(fingerprint)`.
 
 Não há `DROP`, reconstrução, exclusão, `VACUUM` ou backfill massivo. O default `ativo` preserva o comportamento de linhas antigas sem executar `UPDATE` sobre a tabela. Um rollback de código pode ignorar as colunas e a tabela adicionais.
 
@@ -247,6 +323,35 @@ RETENCAO_AUTOMATICA=true python -m estacao.workers.maintenance --cleanup --batch
 
 Cada lote faz `COMMIT`; a operação pode ser interrompida e retomada. Não há `VACUUM` posterior. `historico_clima`, `historico_diario`, `usuarios`, fila pendente, estado e acumulados não fazem parte da limpeza configurada.
 
+O radar tem retenção separada, também bloqueada por padrão. O dry-run não remove nada:
+
+```bash
+python -m estacao.workers.maintenance --radar-dry-run
+```
+
+| Variável | Default |
+|---|---:|
+| `RADAR_RETENCAO_AUTOMATICA` | `false` |
+| `RADAR_RETENCAO_IMAGENS_DIAS` | `7` |
+| `RADAR_RETENCAO_FRAMES_DIAS` | `30` |
+
+Para executar deliberadamente:
+
+```bash
+RADAR_RETENCAO_AUTOMATICA=true python -m estacao.workers.maintenance --radar-cleanup --batch-size 1000
+```
+
+A limpeza aceita apenas caminhos `.png` registrados no banco que permaneçam dentro de `RADAR_DATA_DIR`; caminhos externos são ignorados. Primeiro os arquivos antigos são removidos e seus campos anulados; depois frames além da retenção são excluídos em lotes, com cascade apenas sobre dados derivados do radar.
+
+A retenção regional também é separada e opt-in:
+
+```bash
+python -m estacao.workers.maintenance --regional-dry-run
+REGIONAL_STATIONS_RETENTION_ENABLED=true python -m estacao.workers.maintenance --regional-cleanup --batch-size 1000
+```
+
+`REGIONAL_STATIONS_RETENTION_DAYS` tem default de 730 dias. A limpeza alcança apenas observações regionais; catálogo e estado das estações são preservados.
+
 ## Execução
 
 Da raiz, os entrypoints por módulo são:
@@ -255,6 +360,10 @@ Da raiz, os entrypoints por módulo são:
 python -m estacao.workers.updater
 python -m estacao.workers.whatsapp_sender
 python -m estacao.workers.health_check --no-whatsapp --fail-on-issues
+RADAR_ENABLED=true python -m estacao.workers.radar_updater --once
+RADAR_ENABLED=true python -m estacao.workers.radar_updater
+REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater --once
+REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater
 ```
 
 Os comandos legados continuam compatíveis:
@@ -264,7 +373,16 @@ cd estacao
 python app.py
 python workers/updater.py
 python workers/whatsapp_sender.py
+python workers/radar_updater.py --once
+python workers/regional_stations_updater.py --once
 ```
+
+No radar, `--once` consulta, deduplica, baixa somente frames novos ou anteriormente
+falhos, analisa, persiste, imprime um resumo e termina. Nas estações regionais,
+`--once` consulta as camadas atual e horária, normaliza, deduplica, persiste, imprime
+o resumo e termina. Para atualização permanente, execute cada worker sem `--once`
+como um serviço separado do updater Ambient Weather; os intervalos são controlados
+por `RADAR_POLL_SECONDS` e `REGIONAL_STATIONS_POLL_SECONDS`.
 
 Gunicorn continua usando:
 
@@ -278,9 +396,32 @@ gunicorn -w 2 -b 127.0.0.1:8080 app:app
 As rotas existentes foram preservadas, incluindo páginas, APIs, administração, cancelamento e `/deploy/python` e `/deploy/php`. Foram adicionadas:
 
 - `GET /signup/confirm`: confirmação do double opt-in;
-- `GET /health`: status externo sem PII/segredos.
+- `GET /health`: status externo sem PII/segredos;
+- `GET /radar`: painel público do último estado persistido;
+- `GET /api/radar/status`: JSON somente leitura, sem chave nem paths internos;
+- `GET /radar/imagem/<frame_id>` e `/radar/imagem/atual`: PNG local registrado e validado.
+- `GET /estacoes-regionais`: seis cards públicos para diagnóstico da coleta;
+- `GET /api/regional-stations`: observações, geografia, freshness e tendências sem payload bruto.
 
-`/health` retorna `200` para banco e leitura recente; retorna `503` para banco indisponível, ausência de leitura ou leitura antiga. A resposta contém somente `status`, `database`, `last_reading_age_seconds` e `queue`. O worker interno continua existindo porque o endpoint não substitui monitoramento fora do servidor.
+`/health` retorna `200` para banco e leitura recente; retorna `503` para banco indisponível, ausência de leitura ou leitura antiga. A resposta contém somente `status`, `database`, `last_reading_age_seconds`, `queue`, `radar` e `regional_stations`. Fontes auxiliares desabilitadas aparecem como `disabled`; ausência/stale quando ativas aparece como `warning`, mas não torna sozinha a saúde principal `DOWN`.
+
+### Regras da observação regional
+
+Slots sem nenhuma variável meteorológica são ignorados. A deduplicação usa SHA-256 determinístico sobre código, camada, `DT_MEDICAO` raw, `HR_MEDICAO` raw, coordenadas e valores meteorológicos normalizados; o horário interpretado não é a única chave. A primeira coleta consulta uma janela limitada, nunca anos inteiros, e pollings posteriores reenviam a mesma janela curta para deduplicação segura.
+
+Freshness usa a observação horária com timestamp confiável, não o instante da consulta. Os estados são `OK`, `ATRASADA`, `MUITO_ATRASADA`, `SEM_DADOS`, `ERRO_FONTE` e `TIMESTAMP_INDEFINIDO`. Uma estação ausente ou com erro não impede persistir as demais.
+
+As tendências incluem deltas de temperatura, umidade e pressão em 1h/3h; delta de vento e rajada em 1h; mudança angular circular do vento; e chuva em 1h/3h/6h. Se a camada não fornecer a variável ou faltar uma referência temporal compatível, o resultado é `null`. Pressões absolutas entre cidades não são comparadas: somente a tendência da própria estação é calculada.
+
+Essa rede é observacional. Não existe inferência de deslocamento meteorológico, frente, tempestade, probabilidade, IA ou previsão; latitude, longitude, bearing, distância e freshness apenas deixam uma futura integração com radar tecnicamente possível.
+
+### Algoritmo e limitações do radar
+
+Cada frame usa os próprios limites `lat_min`, `lat_max`, `lon_min` e `lon_max` e as dimensões reais do PNG. A máscara RGB experimental combina azul/ciano e verde, aplica `MORPH_CLOSE` 3x3 e dilatação configuráveis e extrai componentes conexos de 8 vizinhos. Para cada eco significativo são mantidos centro, caixa, quantidade de pixels, distância geográfica do centro e da borda mais próxima à escola, posição relativa e sinalização de clutter.
+
+O tracking associa frames consecutivos por proximidade, timestamps reais, tamanho compatível e velocidade máxima. A velocidade e o vetor não assumem cadência fixa. ETA só existe com frames mínimos, movimento coerente/plausível, aproximação e interseção projetada com o raio da escola; `distância / velocidade` isolado não é usado.
+
+O MaxCAPPI processado é imagem RGB, não volume bruto calibrado. Portanto o sistema mostra “eco de radar”/“área de refletividade detectada” e não inventa dBZ, mm/h, probabilidade, granizo, severidade ou “tempestade confirmada”. Clutter próximo ao radar é marcado e preservado para análise temporal. A heurística e os parâmetros precisam de validação meteorológica com uma série de casos reais antes de qualquer alerta preventivo.
 
 Webhooks mantêm HMAC SHA-256, `compare_digest`, repositório, branch e comandos fixos. O default é `refs/heads/master`. O processo é destacado da request, stdout/stderr são descartados e `flock` evita execução simultânea no host.
 

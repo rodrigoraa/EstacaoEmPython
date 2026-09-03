@@ -1,0 +1,66 @@
+{% extends "layout.html" %}
+{% block conteudo %}
+<section class="radar-page max-w-7xl mx-auto space-y-6">
+  <header>
+    <div class="flex items-center gap-3">
+      <span class="radar-title-icon"><i class="fa-solid fa-satellite-dish"></i></span>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Radar Meteorológico</h1>
+        <p class="text-slate-500 mt-1">Radar de Jaraguari/MS – REDEMET/DECEA</p>
+      </div>
+    </div>
+  </header>
+
+  {% if not estado.disponivel %}
+  <div class="card radar-unavailable text-center py-12">
+    <i class="fa-solid fa-cloud-circle-exclamation text-4xl text-slate-400"></i>
+    <h2 class="font-bold text-xl text-slate-700 mt-4">Radar temporariamente indisponível.</h2>
+    <p class="text-slate-500 mt-2">A coleta ainda não foi ativada ou nenhum frame válido foi processado.</p>
+  </div>
+  {% else %}
+    {% if estado.stale %}
+    <div class="radar-stale-banner" role="status">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      <strong>DADOS DO RADAR DESATUALIZADOS</strong>
+    </div>
+    {% endif %}
+
+    {% set frame = estado.frame %}
+    {% set cluster = estado.cluster_mais_proximo %}
+    {% set track = estado.tracking %}
+    <div class="radar-grid">
+      <article class="card radar-stat"><span>Última atualização do radar</span><strong>{{ estado.atualizado_em_formatada }}</strong></article>
+      <article class="card radar-stat"><span>Data/hora do frame</span><strong>{{ frame.data_frame_formatada }}</strong></article>
+      <article class="card radar-stat"><span>Idade do frame</span><strong>{{ frame.idade_minutos }} min</strong></article>
+      <article class="card radar-stat"><span>Eco significativo</span><strong>{{ 'Detectado' if cluster else 'Não detectado' }}</strong></article>
+      <article class="card radar-stat"><span>Distância da borda</span><strong>{{ '%.1f km'|format(cluster.distancia_borda_escola_km) if cluster else '—' }}</strong></article>
+      <article class="card radar-stat"><span>Distância do centro</span><strong>{{ '%.1f km'|format(cluster.distancia_centro_escola_km) if cluster else '—' }}</strong></article>
+      <article class="card radar-stat"><span>Posição relativa</span><strong>{{ cluster.direcao_relativa if cluster else '—' }}</strong></article>
+      <article class="card radar-stat"><span>Movimento atual</span><strong>{{ track.direcao_movimento if track and track.direcao_movimento else 'Dados insuficientes' }}</strong></article>
+      <article class="card radar-stat"><span>Velocidade estimada</span><strong>{{ '%.1f km/h'|format(track.velocidade_kmh) if track and track.velocidade_kmh is not none else '—' }}</strong></article>
+      <article class="card radar-stat"><span>Tendência</span><strong>{% if track and track.aproximando is not none %}{{ 'Aproximando' if track.aproximando else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</strong></article>
+      <article class="card radar-stat"><span>ETA tecnicamente válido</span><strong>{{ '%.0f min'|format(track.eta_minutos) if track and track.eta_minutos is not none else '—' }}</strong></article>
+      <article class="card radar-stat radar-stat-wide"><span>Status do tracking</span><strong>{{ track.status|replace('_', ' ') if track else 'DADOS INSUFICIENTES' }}</strong></article>
+    </div>
+
+    {% if cluster and cluster.suspeito_clutter %}
+    <div class="radar-clutter-note"><i class="fa-solid fa-circle-info"></i> Possível eco fixo/clutter próximo ao radar. O eco permanece visível para avaliação temporal.</div>
+    {% endif %}
+    {% if track and not track.trajetoria_compativel and track.quantidade_frames >= radar_track_min_frames %}
+    <div class="radar-trajectory-note">Trajetória atual não indica passagem pela região da escola.</div>
+    {% endif %}
+
+    {% if frame.imagem_disponivel %}
+    <article class="card radar-image-card">
+      <div class="flex flex-wrap justify-between gap-2 mb-4">
+        <div><h2 class="font-bold text-lg text-slate-800">Imagem analisada</h2><p class="text-sm text-slate-500">Áreas marcadas são ecos experimentais de refletividade, não confirmação de tempestade.</p></div>
+        <span class="text-sm text-slate-500">{{ frame.data_frame_formatada }}</span>
+      </div>
+      <img src="{{ url_for('radar.imagem_radar', frame_id=frame.id) }}" alt="Imagem do radar de Jaraguari com a escola e ecos significativos anotados" class="radar-image" loading="lazy">
+    </article>
+    {% endif %}
+  {% endif %}
+
+  <p class="text-xs text-slate-500 text-center">A identificação por cores do MaxCAPPI é experimental. O radar complementa e não substitui previsões e avisos meteorológicos oficiais.</p>
+</section>
+{% endblock %}

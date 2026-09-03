@@ -1,0 +1,42 @@
+{
+  "status": true,
+  "message": 200,
+  "data": {
+    "tipo": "maxcappi",
+    "anima": [],
+    "radar": [
+      [{
+        "id": 14, "nome": "Radar - Jaraguari/MS", "localidade": "jr",
+        "raio": 400, "lat_center": "-20.27855", "lon_center": "-54.47396",
+        "lon_min": "-58.226281", "lon_max": "-50.543479",
+        "lat_min": "-23.830664", "lat_max": "-16.642761",
+        "path": "https://estatico.example/radar-1800.png", "tamanho": 10910,
+        "data": "2026-09-02 18:00:00"
+      }],
+      [{
+        "id": 14, "nome": "Radar - Jaraguari/MS", "localidade": "jr",
+        "raio": 400, "lat_center": "-20.27855", "lon_center": "-54.47396",
+        "lon_min": "-58.226281", "lon_max": "-50.543479",
+        "lat_min": "-23.830664", "lat_max": "-16.642761",
+        "path": "https://estatico.example/radar-1820.png", "tamanho": 10911,
+        "data": "2026-09-02 18:20:00"
+      }],
+      [{
+        "id": 14, "nome": "Radar - Jaraguari/MS", "localidade": "jr",
+        "raio": 400, "lat_center": "-20.27855", "lon_center": "-54.47396",
+        "lon_min": "-58.226281", "lon_max": "-50.543479",
+        "lat_min": "-23.830664", "lat_max": "-16.642761",
+        "path": "https://estatico.example/radar-1830.png", "tamanho": 10912,
+        "data": "2026-09-02 18:30:00"
+      }],
+      [{
+        "id": 14, "nome": "Radar - Jaraguari/MS", "localidade": "jr",
+        "raio": 400, "lat_center": "-20.27855", "lon_center": "-54.47396",
+        "lon_min": "-58.226281", "lon_max": "-50.543479",
+        "lat_min": "-23.830664", "lat_max": "-16.642761",
+        "path": "https://estatico.example/radar-1830.png", "tamanho": 10912,
+        "data": "2026-09-02 18:30:00"
+      }]
+    ]
+  }
+}

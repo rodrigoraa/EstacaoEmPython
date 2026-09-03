@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block conteudo %}
+<section class="regional-page max-w-7xl mx-auto space-y-6">
+  <header class="flex items-start gap-3">
+    <span class="regional-title-icon"><i class="fa-solid fa-tower-broadcast"></i></span>
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Estações meteorológicas regionais</h1>
+      <p class="text-slate-500 mt-1">Rede pública PIN-MS ao redor da EE São José</p>
+    </div>
+  </header>
+
+  {% if not estado.stations %}
+  <div class="card text-center py-12">
+    <i class="fa-solid fa-cloud-circle-exclamation text-4xl text-slate-400"></i>
+    <h2 class="font-bold text-xl text-slate-700 mt-4">Dados regionais temporariamente indisponíveis.</h2>
+    <p class="text-slate-500 mt-2">A coleta ainda não foi executada ou a migration está pendente.</p>
+  </div>
+  {% else %}
+  <div class="regional-grid">
+    {% for station in estado.stations %}
+    {% set obs = station.observation %}
+    {% set trend = station.trend %}
+    <article class="card regional-card">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="font-bold text-xl text-slate-800">{{ station.name }}</h2>
+          <p class="text-xs text-slate-500 mt-1">{{ station.code }} · Dado horário de estação externa</p>
+        </div>
+        <span class="regional-status regional-status--{{ station.status|lower|replace('_', '-') }}">{{ station.status|replace('_', ' ') }}</span>
+      </div>
+
+      <dl class="regional-values">
+        <div><dt>Última observação válida</dt><dd>{{ station.last_valid_hourly or 'Horário indefinido' }}</dd></div>
+        <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(obs.temperature) if obs and obs.temperature is not none else '—' }}</dd></div>
+        <div><dt>Umidade</dt><dd>{{ '%.0f %%'|format(obs.humidity) if obs and obs.humidity is not none else '—' }}</dd></div>
+        <div><dt>Pressão da estação</dt><dd>{{ '%.1f hPa'|format(obs.pressure) if obs and obs.pressure is not none else '—' }}</dd></div>
+        <div><dt>Vento</dt><dd>{{ '%.1f km/h'|format(obs.wind_speed_kmh) if obs and obs.wind_speed_kmh is not none else '—' }}</dd></div>
+        <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(obs.wind_gust_kmh) if obs and obs.wind_gust_kmh is not none else '—' }}</dd></div>
+        <div><dt>Direção do vento</dt><dd>{{ '%.0f°'|format(obs.wind_direction_deg) if obs and obs.wind_direction_deg is not none else '—' }}</dd></div>
+        <div><dt>Chuva horária</dt><dd>{{ '%.1f mm'|format(obs.rain_mm) if obs and obs.rain_mm is not none else '—' }}</dd></div>
+      </dl>
+
+      <div class="regional-trends">
+        <span>Δ temperatura 1h: <strong>{{ '%+.1f °C'|format(trend.temperature_1h) if trend.temperature_1h is not none else 'dados insuficientes' }}</strong></span>
+        <span>Δ pressão 1h: <strong>{{ '%+.1f hPa'|format(trend.pressure_1h) if trend.pressure_1h is not none else 'dados insuficientes' }}</strong></span>
+        <span>Chuva 3h: <strong>{{ '%.1f mm'|format(trend.rain_3h) if trend.rain_3h is not none else 'dados insuficientes' }}</strong></span>
+      </div>
+
+      <footer class="regional-location">
+        <i class="fa-solid fa-location-dot"></i>
+        {{ '%.1f km'|format(station.distance_km) }} · {{ station.relative_position }} da escola
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <p class="text-xs text-slate-500 text-center">Rede externa de observação aproximadamente horária. Não substitui os sensores locais da EE São José, previsões ou avisos oficiais.</p>
+</section>
+{% endblock %}

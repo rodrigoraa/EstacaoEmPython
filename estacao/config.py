@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -28,6 +29,80 @@ def env_float(nome, padrao):
         return float(env_str(nome, str(padrao)))
     except (TypeError, ValueError):
         return float(padrao)
+
+
+def radar_config():
+    """Retorna a configuracao do radar sem exigir a chave na aplicacao web."""
+    base_dir = Path(__file__).resolve().parent
+    data_dir = env_str("RADAR_DATA_DIR") or str(base_dir / "data" / "radar")
+    return {
+        "api_key": env_str("REDEMET_API_KEY", "") or "",
+        "enabled": env_bool("RADAR_ENABLED", False),
+        "area": env_str("RADAR_AREA", "jr") or "jr",
+        "product": env_str("RADAR_PRODUCT", "maxcappi") or "maxcappi",
+        "anima": max(1, env_int("RADAR_ANIMA", 15)),
+        "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
+        "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
+        "poll_seconds": max(30, env_int("RADAR_POLL_SECONDS", 300)),
+        "request_timeout_seconds": max(
+            1, env_int("RADAR_REQUEST_TIMEOUT_SECONDS", 30)
+        ),
+        "min_cluster_pixels": max(1, env_int("RADAR_MIN_CLUSTER_PIXELS", 100)),
+        "morph_close_iterations": max(
+            0, env_int("RADAR_MORPH_CLOSE_ITERATIONS", 2)
+        ),
+        "dilate_iterations": max(0, env_int("RADAR_DILATE_ITERATIONS", 1)),
+        "clutter_radius_km": max(0.0, env_float("RADAR_CLUTTER_RADIUS_KM", 50)),
+        "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),
+        "track_min_duration_minutes": max(
+            1, env_int("RADAR_TRACK_MIN_DURATION_MINUTES", 10)
+        ),
+        "track_max_speed_kmh": max(
+            1.0, env_float("RADAR_TRACK_MAX_SPEED_KMH", 150)
+        ),
+        "intercept_radius_km": max(
+            1.0, env_float("RADAR_INTERCEPT_RADIUS_KM", 25)
+        ),
+        "stale_minutes": max(1, env_int("RADAR_STALE_MINUTES", 45)),
+        "data_dir": str(Path(data_dir).expanduser().resolve()),
+        "alerts_enabled": env_bool("RADAR_ALERTS_ENABLED", False),
+        "retention_enabled": env_bool("RADAR_RETENCAO_AUTOMATICA", False),
+        "retention_images_days": max(
+            1, env_int("RADAR_RETENCAO_IMAGENS_DIAS", 7)
+        ),
+        "retention_frames_days": max(
+            1, env_int("RADAR_RETENCAO_FRAMES_DIAS", 30)
+        ),
+    }
+
+
+def regional_stations_config():
+    """Configuracao da rede regional; nao interfere na estacao local."""
+    return {
+        "enabled": env_bool("REGIONAL_STATIONS_ENABLED", False),
+        "poll_seconds": max(30, env_int("REGIONAL_STATIONS_POLL_SECONDS", 300)),
+        "timeout_seconds": max(
+            1, env_int("REGIONAL_STATIONS_TIMEOUT_SECONDS", 30)
+        ),
+        "bootstrap_hours": min(
+            168, max(6, env_int("REGIONAL_STATIONS_BOOTSTRAP_HOURS", 24))
+        ),
+        "stale_minutes": max(
+            60, env_int("REGIONAL_STATION_STALE_MINUTES", 120)
+        ),
+        "very_stale_minutes": max(
+            120, env_int("REGIONAL_STATION_VERY_STALE_MINUTES", 240)
+        ),
+        "alerts_enabled": env_bool("REGIONAL_STATIONS_ALERTS_ENABLED", False),
+        "target_lat": env_float("REGIONAL_TARGET_LAT", -22.4925326),
+        "target_lon": env_float("REGIONAL_TARGET_LON", -54.4610352),
+        "retention_enabled": env_bool(
+            "REGIONAL_STATIONS_RETENTION_ENABLED", False
+        ),
+        "retention_days": max(
+            30, env_int("REGIONAL_STATIONS_RETENTION_DAYS", 730)
+        ),
+    }
 
 
 def public_base_url():

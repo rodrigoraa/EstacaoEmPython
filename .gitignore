@@ -21,3 +21,6 @@ __pycache__/
 
 *.log
 node_modules/
+
+# Imagens operacionais baixadas/geradas pelo worker de radar
+estacao/data/radar/

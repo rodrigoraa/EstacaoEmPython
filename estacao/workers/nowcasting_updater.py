@@ -51,11 +51,12 @@ def executar_ciclo(config=None):
     ) or "nenhuma"
     logger.info(
         "Nowcasting: track=%s distancia_borda=%s status=%s evidencia=%s "
-        "estacoes_relevantes=%s snapshot=%s",
+        "ameacas=%s estacoes_relevantes=%s snapshot=%s",
         estado["radar"].get("track_id"),
         estado["radar"].get("distancia_borda_km"),
         estado["status"],
         estado["nivel_evidencia"],
+        len(estado.get("ameacas", [])),
         codigos,
         "novo" if snapshot_id else "inalterado",
     )
@@ -75,6 +76,7 @@ def imprimir_resumo(result):
     state = result["snapshot"]
     print(f"Status: {state['status']}")
     print(f"Evidencia: {state['nivel_evidencia']} ({state['indice_evidencia']}/100)")
+    print(f"Ameacas em monitoramento: {len(state.get('ameacas', []))}")
     print(f"Snapshot: {'novo' if result['new'] else 'entrada inalterada'}")
     for evidence in state["evidencias"]:
         print(f"- {evidence}")

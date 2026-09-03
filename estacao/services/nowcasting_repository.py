@@ -55,17 +55,19 @@ def _local_station(config):
         conn.close()
 
 
-def _melhor_track_frame_atual(radar):
+def _tracks_frame_atual(radar):
     frame = radar.get("frame") or {}
     if not frame.get("id"):
-        return None
+        return []
     conn = database.get_db()
     try:
         rows = conn.execute(
             """
             SELECT t.*, c.id AS cluster_id, c.pixels_eco,
                    c.distancia_radar_km, c.direcao_relativa_escola,
-                   c.intensidade_codigo,
+                   c.intensidade_codigo, c.classe_predominante, c.classe_maxima,
+                   c.pixels_refletividade_baixa, c.pixels_refletividade_media,
+                   c.pixels_refletividade_alta, c.pixels_refletividade_muito_alta,
                    c.suspeito_clutter AS cluster_suspeito_clutter,
                    c.indice_persistencia_clutter AS cluster_indice_clutter,
                    c.clutter_amostras AS cluster_clutter_amostras
@@ -77,57 +79,78 @@ def _melhor_track_frame_atual(radar):
             (frame["id"],),
         ).fetchall()
         if not rows:
-            return None
-        return min(
-            rows,
-            key=lambda row: (
-                0 if row["trajetoria_compativel"] else 1,
-                0 if row["aproximando"] else 1,
-                row["distancia_borda_escola_km"]
-                if row["distancia_borda_escola_km"] is not None
-                else 99999,
-            ),
-        )
+            return []
+        resultado = []
+        for row in rows:
+            resultado.append(
+                {
+                    "track": {
+                        "track_id": row["id"],
+                        "status": row["status"],
+                        "quantidade_frames": row["quantidade_frames"],
+                        "duracao_minutos": row["duracao_minutos"],
+                        "velocidade_kmh": row["velocidade_media_kmh"],
+                        "bearing_movimento": row["bearing_movimento"],
+                        "direcao_movimento": row["direcao_movimento"],
+                        "centro_lat": row["centro_lat_atual"],
+                        "centro_lon": row["centro_lon_atual"],
+                        "aproximando": (
+                            None if row["aproximando"] is None else bool(row["aproximando"])
+                        ),
+                        "taxa_aproximacao_kmh": row["taxa_aproximacao_kmh"],
+                        "trajetoria_compativel": bool(row["trajetoria_compativel"]),
+                        "menor_aproximacao_km": row["menor_aproximacao_km"],
+                        "eta_minutos": row["eta_minutos"],
+                        "suspeito_clutter": bool(row["suspeito_clutter"]),
+                        "indice_persistencia_clutter": row["indice_persistencia_clutter"],
+                        "clutter_amostras": row["clutter_amostras"],
+                    },
+                    "cluster": {
+                        "id": row["cluster_id"],
+                        "pixels_eco": row["pixels_eco"],
+                        "distancia_centro_escola_km": row["distancia_centro_escola_km"],
+                        "distancia_borda_escola_km": row["distancia_borda_escola_km"],
+                        "direcao_relativa": row["direcao_relativa_escola"],
+                        "suspeito_clutter": bool(row["cluster_suspeito_clutter"]),
+                        "indice_persistencia_clutter": row["cluster_indice_clutter"],
+                        "clutter_amostras": row["cluster_clutter_amostras"],
+                        "intensidade_codigo": row["intensidade_codigo"],
+                        "classe_predominante": row["classe_predominante"],
+                        "classe_maxima": row["classe_maxima"],
+                        "pixels_refletividade_baixa": row["pixels_refletividade_baixa"],
+                        "pixels_refletividade_media": row["pixels_refletividade_media"],
+                        "pixels_refletividade_alta": row["pixels_refletividade_alta"],
+                        "pixels_refletividade_muito_alta": row["pixels_refletividade_muito_alta"],
+                    },
+                }
+            )
+        return resultado
     finally:
         conn.close()
 
 
 def carregar_entradas_nowcasting(config):
     radar = obter_estado_radar(config["radar_max_age_minutes"])
-    melhor = _melhor_track_frame_atual(radar)
-    if melhor:
-        radar["tracking"] = {
-            "track_id": melhor["id"],
-            "status": melhor["status"],
-            "quantidade_frames": melhor["quantidade_frames"],
-            "duracao_minutos": melhor["duracao_minutos"],
-            "velocidade_kmh": melhor["velocidade_media_kmh"],
-            "bearing_movimento": melhor["bearing_movimento"],
-            "direcao_movimento": melhor["direcao_movimento"],
-            "centro_lat": melhor["centro_lat_atual"],
-            "centro_lon": melhor["centro_lon_atual"],
-            "aproximando": (
-                None if melhor["aproximando"] is None else bool(melhor["aproximando"])
+    tracks_atuais = _tracks_frame_atual(radar)
+    radar["tracks_atuais"] = tracks_atuais
+    if tracks_atuais:
+        preliminar = min(
+            tracks_atuais,
+            key=lambda item: (
+                0 if item["track"].get("trajetoria_compativel") else 1,
+                0 if item["track"].get("aproximando") else 1,
+                0 if item["track"].get("velocidade_kmh") is not None else 1,
+                item["cluster"].get("distancia_borda_escola_km")
+                if item["cluster"].get("distancia_borda_escola_km") is not None
+                else 99999,
+                item["track"].get("eta_minutos")
+                if item["track"].get("eta_minutos") is not None else 99999,
+                item["track"].get("indice_persistencia_clutter")
+                if item["track"].get("indice_persistencia_clutter") is not None else 0,
             ),
-            "taxa_aproximacao_kmh": melhor["taxa_aproximacao_kmh"],
-            "trajetoria_compativel": bool(melhor["trajetoria_compativel"]),
-            "menor_aproximacao_km": melhor["menor_aproximacao_km"],
-            "eta_minutos": melhor["eta_minutos"],
-            "suspeito_clutter": bool(melhor["suspeito_clutter"]),
-            "indice_persistencia_clutter": melhor["indice_persistencia_clutter"],
-            "clutter_amostras": melhor["clutter_amostras"],
-        }
-        radar["cluster_mais_proximo"] = {
-            "id": melhor["cluster_id"],
-            "pixels_eco": melhor["pixels_eco"],
-            "distancia_centro_escola_km": melhor["distancia_centro_escola_km"],
-            "distancia_borda_escola_km": melhor["distancia_borda_escola_km"],
-            "direcao_relativa": melhor["direcao_relativa_escola"],
-            "suspeito_clutter": bool(melhor["cluster_suspeito_clutter"]),
-            "indice_persistencia_clutter": melhor["cluster_indice_clutter"],
-            "clutter_amostras": melhor["cluster_clutter_amostras"],
-            "intensidade_codigo": melhor["intensidade_codigo"],
-        }
+        )
+        radar["tracking"] = preliminar["track"]
+        radar["cluster_mais_proximo"] = preliminar["cluster"]
 
     regional_config = regional_stations_config()
     regional_config["stale_minutes"] = config["regional_max_age_minutes"]
@@ -141,8 +164,17 @@ def carregar_entradas_nowcasting(config):
         "algorithm": config["algorithm_version"],
         "radar_frame": (radar.get("frame") or {}).get("id"),
         "radar_stale": radar.get("stale"),
-        "radar_track": (radar.get("tracking") or {}).get("track_id"),
-        "radar_track_updated": (radar.get("tracking") or {}).get("quantidade_frames"),
+        "radar_tracks": [
+            (
+                item["track"].get("track_id"),
+                item["track"].get("quantidade_frames"),
+                item["track"].get("trajetoria_compativel"),
+                item["track"].get("aproximando"),
+                item["cluster"].get("distancia_borda_escola_km"),
+                item["track"].get("indice_persistencia_clutter"),
+            )
+            for item in tracks_atuais
+        ],
         "regional": [
             (
                 station.get("code"),

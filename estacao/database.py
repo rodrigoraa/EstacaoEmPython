@@ -8,7 +8,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 logger = logging.getLogger(__name__)
 
 
@@ -251,6 +251,7 @@ def garantir_tabelas_radar(conn):
         radar_codigo TEXT NOT NULL,
         produto TEXT NOT NULL,
         data_frame TEXT NOT NULL,
+        data_frame_raw TEXT,
         data_frame_utc TEXT,
         data_frame_local TEXT,
         timestamp_status TEXT NOT NULL DEFAULT 'legacy_unverified',
@@ -267,6 +268,8 @@ def garantir_tabelas_radar(conn):
         lon_max REAL NOT NULL,
         raio_km REAL,
         tamanho INTEGER,
+        coletado_em_utc TEXT,
+        coletado_em_local TEXT,
         baixado_em TEXT,
         processado_em TEXT,
         status_processamento TEXT NOT NULL DEFAULT 'pendente',
@@ -296,6 +299,12 @@ def garantir_tabelas_radar(conn):
         indice_persistencia_clutter REAL,
         clutter_amostras INTEGER NOT NULL DEFAULT 0,
         intensidade_codigo TEXT,
+        pixels_refletividade_baixa INTEGER NOT NULL DEFAULT 0,
+        pixels_refletividade_media INTEGER NOT NULL DEFAULT 0,
+        pixels_refletividade_alta INTEGER NOT NULL DEFAULT 0,
+        pixels_refletividade_muito_alta INTEGER NOT NULL DEFAULT 0,
+        classe_predominante TEXT,
+        classe_maxima TEXT,
         criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(frame_id, cluster_numero),
         FOREIGN KEY(frame_id) REFERENCES radar_frames(id) ON DELETE CASCADE
@@ -355,6 +364,9 @@ def garantir_tabelas_radar(conn):
     """)
     garantir_coluna(conn, "radar_frames", "data_frame_utc", "TEXT")
     garantir_coluna(conn, "radar_frames", "data_frame_local", "TEXT")
+    garantir_coluna(conn, "radar_frames", "data_frame_raw", "TEXT")
+    garantir_coluna(conn, "radar_frames", "coletado_em_utc", "TEXT")
+    garantir_coluna(conn, "radar_frames", "coletado_em_local", "TEXT")
     garantir_coluna(
         conn,
         "radar_frames",
@@ -365,6 +377,24 @@ def garantir_tabelas_radar(conn):
     garantir_coluna(
         conn, "radar_clusters", "clutter_amostras", "INTEGER NOT NULL DEFAULT 0"
     )
+    garantir_coluna(
+        conn, "radar_clusters", "pixels_refletividade_baixa",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    garantir_coluna(
+        conn, "radar_clusters", "pixels_refletividade_media",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    garantir_coluna(
+        conn, "radar_clusters", "pixels_refletividade_alta",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    garantir_coluna(
+        conn, "radar_clusters", "pixels_refletividade_muito_alta",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    garantir_coluna(conn, "radar_clusters", "classe_predominante", "TEXT")
+    garantir_coluna(conn, "radar_clusters", "classe_maxima", "TEXT")
     garantir_coluna(conn, "radar_tracks", "primeiro_frame_em_utc", "TEXT")
     garantir_coluna(conn, "radar_tracks", "primeiro_frame_em_local", "TEXT")
     garantir_coluna(conn, "radar_tracks", "ultimo_frame_em_utc", "TEXT")

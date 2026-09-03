@@ -110,6 +110,35 @@ class RegionalStationsServiceTest(unittest.TestCase):
         self.assertEqual(parsed.status, "suspect")
         self.assertIsNone(parsed.measured_utc)
 
+    def test_virada_utc_para_campo_grande_preserva_dia_correto(self):
+        casos = (
+            ("2026-09-02", "23:00", "2026-09-02T19:00:00-04:00"),
+            ("2026-09-03", "00:00", "2026-09-02T20:00:00-04:00"),
+            ("2026-09-03", "01:00", "2026-09-02T21:00:00-04:00"),
+            ("2026-09-03", "02:00", "2026-09-02T22:00:00-04:00"),
+            ("2026-09-03", "03:00", "2026-09-02T23:00:00-04:00"),
+            ("2026-09-03", "04:00", "2026-09-03T00:00:00-04:00"),
+        )
+        for raw_date, raw_hour, esperado in casos:
+            with self.subTest(raw_hour=raw_hour):
+                parsed = interpretar_timestamp(raw_date, raw_hour)
+                self.assertEqual(parsed.measured_local.isoformat(), esperado)
+                self.assertIn(parsed.status, {"valid", "reconciled"})
+
+    def test_hora_explicita_conflitante_e_futuro_distante_sao_suspect(self):
+        conflitante = interpretar_timestamp(
+            "2026-09-03T05:00:00+00:00", "04:00"
+        )
+        futuro = interpretar_timestamp(
+            "2026-09-03", "08:00",
+            datetime(2026, 9, 3, 4, tzinfo=timezone.utc),
+            max_future_minutes=90,
+        )
+        self.assertEqual(conflitante.status, "suspect")
+        self.assertIsNone(conflitante.measured_utc)
+        self.assertEqual(futuro.status, "suspect")
+        self.assertIsNone(futuro.measured_utc)
+
     def test_sentinela_e_vazio_viram_none_sem_virar_zero(self):
         self.assertIsNone(normalizar_valor_meteorologico(9999))
         self.assertIsNone(normalizar_valor_meteorologico(""))

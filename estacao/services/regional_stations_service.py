@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 import requests
@@ -155,17 +155,45 @@ def _parse_hora(valor: Any) -> time | None:
     return time(int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
 
 
-def interpretar_timestamp(dt_raw: Any, hr_raw: Any) -> ParsedTimestamp:
+def interpretar_timestamp(
+    dt_raw: Any,
+    hr_raw: Any,
+    collected_at: datetime | None = None,
+    max_future_minutes: float = 90.0,
+) -> ParsedTimestamp:
     """Nunca interpreta formatos dia/mes ambiguos nem inventa hora de medicao."""
     base = _parse_dt_fonte(dt_raw)
     hora = _parse_hora(hr_raw)
     if base and hora:
-        combinado = datetime.combine(base.date(), hora, tzinfo=timezone.utc)
-        status = "valid" if base.timetz().replace(tzinfo=None) == hora else "reconciled"
+        base_hora = base.timetz().replace(tzinfo=None)
+        if base_hora == hora:
+            combinado = base
+            status = "valid"
+        elif base_hora == time():
+            combinado = datetime.combine(base.date(), hora, tzinfo=timezone.utc)
+            status = "reconciled"
+        else:
+            return ParsedTimestamp(None, None, "suspect")
+        if collected_at is not None:
+            coletado = collected_at
+            if coletado.tzinfo is None:
+                coletado = coletado.replace(tzinfo=timezone.utc)
+            if combinado > coletado.astimezone(timezone.utc) + timedelta(
+                minutes=max(0.0, float(max_future_minutes))
+            ):
+                return ParsedTimestamp(None, None, "suspect")
         return ParsedTimestamp(combinado, combinado.astimezone(LOCAL_TZ), status)
     if base and not _raw(hr_raw):
         if base.hour == base.minute == base.second == 0:
             return ParsedTimestamp(None, None, "date_only")
+        if collected_at is not None:
+            coletado = collected_at
+            if coletado.tzinfo is None:
+                coletado = coletado.replace(tzinfo=timezone.utc)
+            if base > coletado.astimezone(timezone.utc) + timedelta(
+                minutes=max(0.0, float(max_future_minutes))
+            ):
+                return ParsedTimestamp(None, None, "suspect")
         return ParsedTimestamp(base, base.astimezone(LOCAL_TZ), "valid")
     if base or _raw(hr_raw):
         return ParsedTimestamp(None, None, "suspect")
@@ -194,7 +222,7 @@ def normalizar_registro(
     station = REGIONAL_STATIONS[code]
     collected_at = (collected_at or agora_utc()).astimezone(timezone.utc)
     timestamp = interpretar_timestamp(
-        attributes.get("DT_MEDICAO"), attributes.get("HR_MEDICAO")
+        attributes.get("DT_MEDICAO"), attributes.get("HR_MEDICAO"), collected_at
     )
     vento_raw = normalizar_valor_meteorologico(attributes.get("VEN_VEL"))
     rajada_raw = normalizar_valor_meteorologico(attributes.get("VEN_RAJ"))

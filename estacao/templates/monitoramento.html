@@ -17,13 +17,19 @@
   </article>
   {% else %}
   <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
-    <p class="monitor-kicker">STATUS ATUAL</p>
+    <p class="monitor-kicker">{{ 'AMEAÇA PRINCIPAL' if estado.ameaca_principal else 'STATUS ATUAL' }}</p>
     <h2>{{ estado.status|replace('_', ' ') }}</h2>
     <div class="monitor-evidence-level">
       Evidência {{ estado.nivel_evidencia|replace('_', ' ') }}
       <span>índice interno {{ estado.indice_evidencia }}/100</span>
     </div>
     <p class="text-sm text-slate-500">Última análise: {{ estado.gerado_em }}</p>
+    {% set confirmacao = estado.confirmacao_regional or {} %}
+    <p class="mt-3 text-sm font-semibold">
+      Confirmação de superfície:
+      <span>{{ 'SIM' if confirmacao.confirmada else 'NÃO' }}</span>
+      {% if confirmacao.stations %} · {{ confirmacao.stations|join(', ') }}{% endif %}
+    </p>
     <ul class="monitor-evidence-list">
       {% for evidencia in estado.evidencias %}<li>{{ evidencia }}</li>{% endfor %}
     </ul>
@@ -33,7 +39,7 @@
   <div class="monitor-grid">
     <article class="card monitor-panel">
       <div class="flex items-center justify-between gap-3">
-        <h2><i class="fa-solid fa-satellite-dish"></i> Radar</h2>
+        <h2><i class="fa-solid fa-satellite-dish"></i> Ameaça principal{% if radar.track_id %} · Sistema {{ radar.track_id }}{% endif %}</h2>
         <span class="regional-status">{{ 'DESATUALIZADO' if radar.stale else ('DISPONÍVEL' if radar.disponivel else 'SEM DADOS') }}</span>
       </div>
       <dl class="regional-values">
@@ -64,8 +70,30 @@
     </article>
   </div>
 
+  {% if estado.ameacas and estado.ameacas|length > 1 %}
   <article class="card monitor-panel">
-    <h2><i class="fa-solid fa-route"></i> Estações relevantes para a trajetória atual</h2>
+    <h2><i class="fa-solid fa-layer-group"></i> Outros sistemas em monitoramento</h2>
+    <div class="monitor-stations">
+      {% for ameaca in estado.ameacas[1:] %}
+      <section>
+        <div class="flex justify-between gap-3">
+          <strong>Sistema {{ ameaca.track_id or 'sem tracking' }}</strong>
+          <span>{{ ameaca.status|replace('_', ' ') }}</span>
+        </div>
+        <p>
+          {{ '%.1f km'|format(ameaca.distance_km) if ameaca.distance_km is not none else 'distância indefinida' }}
+          · {{ ameaca.direction or 'direção indefinida' }}
+          · ETA {{ '%.0f min'|format(ameaca.eta_minutes) if ameaca.eta_minutes is not none else 'indisponível' }}
+        </p>
+        <p>Confirmação de superfície: {{ 'SIM' if ameaca.confirmacao_regional.confirmada else 'NÃO' }}</p>
+      </section>
+      {% endfor %}
+    </div>
+  </article>
+  {% endif %}
+
+  <article class="card monitor-panel">
+    <h2><i class="fa-solid fa-route"></i> Confirmação regional da ameaça principal</h2>
     {% if estado.estacoes_relevantes %}
     <div class="monitor-stations">
       {% for station in estado.estacoes_relevantes %}

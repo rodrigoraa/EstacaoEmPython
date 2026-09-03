@@ -169,6 +169,7 @@ Também permanecem os limites `ALERTA_CALOR_*`, `ALERTA_FRIO_*`, `ALERTA_VENTO_*
 | `RADAR_TRACK_TIMEOUT_MINUTES` | `180` | tempo para manter track sem nova associação |
 | `RADAR_INTERCEPT_RADIUS_KM` | `25` | raio da trajetória compatível |
 | `RADAR_STALE_MINUTES` | `45` | idade para aviso visual |
+| `RADAR_MAX_FUTURE_MINUTES` | `30` | tolerância antes de marcar timestamp futuro como `suspect` |
 | `RADAR_DATA_DIR` | `estacao/data/radar` | originais e imagens anotadas |
 | `RADAR_ALERTS_ENABLED` | `false` | reservado; não envia nesta versão |
 
@@ -205,7 +206,7 @@ A fonte fixa é o serviço público `Estacoes_CEMADEN_INMET` do PIN-MS. A camada
 
 A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos aliases. O esquema corresponde aos dados automáticos do INMET, cuja documentação oficial define temperatura em °C, umidade em %, pressão no nível da estação em hPa, vento e rajada em m/s, direção em graus, precipitação em mm e radiação global em kJ/m². Por isso vento/rajada são preservados em valor bruto e m/s, com uma coluna derivada em km/h (`m/s × 3,6`). Nenhuma correção de pressão ao nível do mar é feita.
 
-`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Datas com hora inequívoca produzem timestamps timezone-aware; data sem hora recebe `date_only`; combinação conservadora de data ArcGIS e hora horária recebe `reconciled`; formatos dia/mês ambíguos ficam `suspect`, sem horário inventado. `coletado_em` nunca é apresentado como se fosse `medido_em`.
+`DT_MEDICAO` e `HR_MEDICAO` são sempre preservados como raw. Datas com hora inequívoca produzem timestamps timezone-aware; data sem hora recebe `date_only`; uma data ArcGIS à meia-noite combinada com a hora horária recebe `reconciled`. Hora própria conflitante, futuro incompatível e formatos dia/mês ambíguos ficam `suspect`, sem dia ou hora inventados. Somente `valid`/`reconciled` participam de freshness, tendências e confirmação do nowcasting. Na virada UTC, 00:00–03:00 ainda pertencem ao dia anterior em `America/Campo_Grande`; 04:00 UTC corresponde a 00:00 local. `coletado_em` nunca é apresentado como se fosse `medido_em`.
 
 ### Nowcasting observacional
 
@@ -217,7 +218,9 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_UPSTREAM_CORRIDOR_KM` | `50` | largura lateral do corredor a montante |
 | `NOWCASTING_RADAR_MAX_AGE_MINUTES` | `45` | idade máxima do radar para evidência plena |
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
-| `NOWCASTING_ALGORITHM_VERSION` | `1.0` | versão persistida junto ao snapshot |
+| `NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS` | `2` | sinais independentes mínimos para confirmação |
+| `NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS` | `1` | estações a montante mínimas com sinais |
+| `NOWCASTING_ALGORITHM_VERSION` | `1.1` | versão persistida junto ao snapshot |
 
 Nowcasting aqui não é previsão numérica. É fusão observacional de curtíssimo prazo:
 o radar acompanha ecos, as estações regionais confirmam alterações em superfície e
@@ -247,7 +250,7 @@ A fila mantém semântica at-least-once. Se a Evolution aceitar uma mensagem e a
 
 ## Banco e migrations
 
-O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `5`, registrada na pequena tabela `schema_version`.
+O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `6`, registrada na pequena tabela `schema_version`.
 
 Execute a migration leve explicitamente antes de reiniciar os serviços:
 
@@ -264,13 +267,16 @@ As migrations automáticas são aditivas e idempotentes:
 - criação de tabelas ausentes já suportadas pelo projeto.
 - criação de `radar_frames`, `radar_clusters`, `radar_tracks` e `radar_track_points`, com chaves estrangeiras, índices pequenos e `UNIQUE(path_remoto)`.
 - criação de `regional_stations`, `regional_station_observations` e `regional_station_state`, com catálogo idempotente, índices e `UNIQUE(fingerprint)`.
-- adição das colunas explícitas UTC/local e diagnóstico de clutter às estruturas de radar;
+- adição das colunas UTC/local, timestamp raw, coleta UTC/local, classes relativas de refletividade e diagnóstico de clutter às estruturas de radar;
 - criação de `nowcasting_snapshots`, com `UNIQUE(input_fingerprint)` e versão do algoritmo.
 
 Novos frames de radar são armazenados em `data_frame_utc` com offset `+00:00` e
 em `data_frame_local` com `America/Campo_Grande`. A [página oficial da API REDEMET](https://ajuda.decea.mil.br/base-de-conhecimento/api-redemet-produtos-radar/)
-documenta o formato de `data`, mas não explicita o fuso desse campo. O contrato do
-coletor passa a tratá-lo explicitamente como UTC, coerente com o domínio aeronáutico.
+documenta o formato de `data`, mas não explicita o fuso desse campo. O coletor
+interpreta-o operacionalmente como UTC e marca novos frames `utc_assumed`, nunca
+`utc_confirmed`, até existir confirmação documental inequívoca. O texto original é
+preservado em `data_frame_raw`; futuros além de `RADAR_MAX_FUTURE_MINUTES` são
+persistidos como `suspect`, mas não entram em tracking nem ETA.
 Linhas antigas não recebem backfill: permanecem com `data_frame_utc` nulo e
 `timestamp_status=legacy_unverified`; para cálculos, o valor legado é assumido UTC e
 continua preservado byte a byte na coluna original.
@@ -398,8 +404,11 @@ python -m estacao.workers.whatsapp_sender
 python -m estacao.workers.health_check --no-whatsapp --fail-on-issues
 RADAR_ENABLED=true python -m estacao.workers.radar_updater --once
 RADAR_ENABLED=true python -m estacao.workers.radar_updater
+python -m estacao.workers.radar_updater --diagnose-palette
+python -m estacao.workers.radar_updater --diagnose-time
 REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater --once
 REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater
+REGIONAL_STATIONS_ENABLED=true python -m estacao.workers.regional_stations_updater --once --verbose-time
 NOWCASTING_ENABLED=true python -m estacao.workers.nowcasting_updater --once
 NOWCASTING_ENABLED=true python -m estacao.workers.nowcasting_updater
 ```
@@ -424,6 +433,8 @@ como um serviço separado do updater Ambient Weather; os intervalos são control
 por `RADAR_POLL_SECONDS`, `REGIONAL_STATIONS_POLL_SECONDS` e
 `NOWCASTING_POLL_SECONDS`. Execute o nowcasting depois que os coletores já tiverem
 gravado dados; ele nunca substitui ou reúne os outros workers em um único processo.
+O updater Ambient Weather legado permanece contínuo e não possui `--once`; os três
+workers novos aceitam `--once` sem alterar os limites existentes de chuva de 30/50 mm.
 
 Gunicorn continua usando:
 
@@ -444,7 +455,7 @@ As rotas existentes foram preservadas, incluindo páginas, APIs, administração
 - `GET /estacoes-regionais`: seis cards públicos para diagnóstico da coleta;
 - `GET /api/regional-stations`: observações, geografia, freshness e tendências sem payload bruto.
 - `GET /monitoramento`: painel unificado do último snapshot observacional;
-- `GET /api/nowcasting/status`: último snapshot, sem coleta externa ou payload bruto.
+- `GET /api/nowcasting/status`: último snapshot com campos compatíveis, `ameaca_principal`, `ameacas` e `confirmacao_regional`, sem coleta externa ou payload bruto.
 
 `/health` retorna `200` para banco e leitura recente; retorna `503` para banco indisponível, ausência de leitura ou leitura antiga. A resposta contém somente `status`, `database`, `last_reading_age_seconds`, `queue`, `radar`, `regional_stations` e `nowcasting`. Fontes auxiliares desabilitadas aparecem como `disabled`; ausência/stale quando ativas aparece como `warning`, mas não torna sozinha a saúde principal `DOWN`.
 
@@ -460,7 +471,11 @@ Essa rede é observacional. Não existe inferência de deslocamento meteorológi
 
 ### Algoritmo e limitações do radar
 
-Cada frame usa os próprios limites `lat_min`, `lat_max`, `lon_min` e `lon_max` e as dimensões reais do PNG. A máscara RGB original combina azul/ciano e verde; uma segunda máscara recebe `MORPH_CLOSE` 3x3 e dilatação para conectar fragmentos. Componentes são encontrados na máscara processada, mas `RADAR_MIN_CLUSTER_PIXELS`, centro e intensidade contam somente pixels reais da máscara original. Pixels criados pela morfologia nunca viram refletividade observada.
+Cada frame usa os próprios limites `lat_min`, `lat_max`, `lon_min`/`lon_max`, raio informado e dimensões reais do PNG. A paleta foi levantada em 42 PNGs MaxCAPPI reais de Jaraguari, todos 750×750 RGBA: foram observadas 49 cores opacas, agrupadas sem equivalência dBZ em `REFLETIVIDADE_BAIXA` (cinza/azul), `REFLETIVIDADE_MEDIA` (verde), `REFLETIVIDADE_ALTA` (amarelo/laranja) e `REFLETIVIDADE_MUITO_ALTA` (vermelho). A classificação aceita somente essas cores confirmadas.
+
+A área meteorologicamente válida é a interseção entre pixels não transparentes e o círculo de cobertura geográfica do radar. Assim, barras/legendas nas margens e cores fora do raio não viram clusters. A máscara original recebe somente pixels reais da paleta; uma segunda máscara recebe `MORPH_CLOSE` 3×3 e dilatação para conectar fragmentos. Connected components usam a processada, mas tamanho, centro, classe predominante, classe máxima e distribuição por classe usam exclusivamente a original. Um núcleo pequeno de classe superior não desaparece atrás da classe predominante.
+
+`python -m estacao.workers.radar_updater --diagnose-palette [PNG]` usa o PNG original mais recente quando o caminho é omitido, mostra dimensões, RGB/HSV, contagens, grupos, descartes e percentual de eco, e grava `mask_original.png`/`mask_classes.png` sob `RADAR_DATA_DIR/diagnosticos` (diretório operacional ignorado pelo Git). `--diagnose-time` consulta somente os metadados atuais e mostra raw, UTC assumido, horário local, agora UTC, diferença e status sem exibir a chave.
 
 O tracking faz matching 1:1 global por custo guloso ordenado. O custo usa 70% de distância (posição prevista com peso padrão 0,65 mais posição anterior), 20% de razão logarítmica de tamanho e 10% de continuidade direcional. Antes do custo, o gating rejeita tempo não positivo, timeout, velocidade impossível, razão de tamanho excessiva, distância prevista incompatível e mudança de direção excessiva. Tracks sem associação sobrevivem até o timeout; células sem associação criam um ID novo. ETA só existe com frames mínimos, movimento coerente/plausível, aproximação e interseção projetada com o raio da escola; `distância / velocidade` isolado não é usado.
 
@@ -477,14 +492,26 @@ do movimento, até 300 km, e a distância perpendicular ao eixo é menor que o c
 Quando o alvo é fornecido, o vetor também precisa apontar para a região da escola.
 Direção do vento de superfície nunca é usada como direção da célula.
 
-O índice de evidência é auditável: eco +10, tracking válido +18, aproximação +14,
-trajetória compatível +20 e faixa de distância +2/+5/+8. Cada estação fresca a
+Na versão 1.1 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A principal é ordenada por trajetória compatível, aproximação, tracking válido, menor distância de borda, menor ETA válido e menor clutter. As demais permanecem em `ameacas` e no painel.
+
+O índice por ameaça é auditável: eco +8, tracking válido +12, aproximação +12,
+trajetória compatível +15 e faixa de distância +2/+5/+8. O radar sozinho chega no
+máximo a aproximadamente 55, abaixo da atenção preventiva. Cada estação fresca a
 montante pode contribuir no máximo 25 pontos por chuva horária, aumento de rajada ou
 vento, queda de temperatura, aumento de umidade e queda da pressão da própria
-estação. Chuva/rajada local contribuem +8/+5. Clutter persistente desconta 20 e
+estação. Clutter persistente desconta 20 e
 suspeita simples desconta 5. Radar stale limita o total a 24. As faixas são
 `SEM_EVIDENCIA`, `BAIXA`, `MODERADA`, `ELEVADA` e `MUITO_ELEVADA`; nunca são
 apresentadas como probabilidade.
+
+`ATENCAO_PREVENTIVA` não depende apenas do score: exige radar fresco, tracking
+suficiente, aproximação, trajetória compatível e confirmação regional. Por padrão,
+essa confirmação requer ao menos dois sinais independentes distribuídos em uma ou
+mais estações frescas a montante. Alteração fora do corredor ou estação stale não
+confirma a ameaça. Chuva local gera a evidência separada “Evento já observado na
+estação local”, sem aumentar o score preventivo. `confirmacao_regional`, `radar_only`,
+`ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria. Mesmo assim,
+`NOWCASTING_ALERTS_ENABLED=true` continua retornando zero e não grava filas.
 
 O MaxCAPPI processado é imagem RGB, não volume bruto calibrado. Portanto o sistema mostra “eco de radar”/“área de refletividade detectada” e não inventa dBZ, mm/h, probabilidade, granizo, severidade ou “tempestade confirmada”. Estações externas são aproximadamente horárias, o radar pode conter clutter, o ETA depende da continuidade e células podem nascer ou desaparecer rapidamente. Nowcasting não substitui avisos oficiais. As regras precisam rodar em observação por dias/semanas e ser comparadas com a chegada real à escola antes de qualquer alerta preventivo.
 

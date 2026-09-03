@@ -77,6 +77,9 @@ def radar_config():
             1.0, env_float("RADAR_INTERCEPT_RADIUS_KM", 25)
         ),
         "stale_minutes": max(1, env_int("RADAR_STALE_MINUTES", 45)),
+        "max_future_minutes": max(
+            0, env_int("RADAR_MAX_FUTURE_MINUTES", 30)
+        ),
         "data_dir": str(Path(data_dir).expanduser().resolve()),
         "alerts_enabled": env_bool("RADAR_ALERTS_ENABLED", False),
         "retention_enabled": env_bool("RADAR_RETENCAO_AUTOMATICA", False),
@@ -133,10 +136,16 @@ def nowcasting_config():
         "regional_max_age_minutes": max(
             30, env_int("NOWCASTING_REGIONAL_MAX_AGE_MINUTES", 180)
         ),
+        "regional_confirm_min_signals": max(
+            1, env_int("NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS", 2)
+        ),
+        "regional_confirm_min_stations": max(
+            1, env_int("NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS", 1)
+        ),
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.0") or "1.0",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.1") or "1.1",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),

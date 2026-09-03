@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw
 
 
@@ -13,12 +14,16 @@ sys.path.insert(0, str(ROOT / "estacao"))
 from services.radar_analysis import (  # noqa: E402
     DetectionConfig,
     GeoBounds,
+    REFLECTIVITY_CLASS_NAMES,
+    REFLECTIVITY_PALETTE,
     TrackPoint,
     analisar_track,
     abrir_imagem_png,
     criar_mascaras_eco,
+    classificar_pixels_refletividade,
     custo_associacao,
     detectar_clusters,
+    diagnosticar_paleta,
     direcao_cardinal,
     haversine_km,
     latlon_para_pixel,
@@ -57,53 +62,105 @@ class RadarAnalysisTest(unittest.TestCase):
 
     def test_ruido_de_um_pixel_nao_vira_cluster(self):
         imagem = Image.new("RGB", (100, 100), "black")
-        imagem.putpixel((50, 50), (0, 180, 0))
+        imagem.putpixel((50, 50), (43, 185, 0))
         clusters = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)
         self.assertEqual(clusters, [])
 
     def test_cluster_maior_que_limite_e_detectado(self):
         imagem = Image.new("RGB", (100, 100), "black")
-        ImageDraw.Draw(imagem).rectangle((40, 40, 55, 55), fill=(0, 180, 0))
+        ImageDraw.Draw(imagem).rectangle((40, 40, 55, 55), fill=(43, 185, 0))
         clusters = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)
         self.assertEqual(len(clusters), 1)
         self.assertGreaterEqual(clusters[0].pixels_eco, 100)
 
     def test_dilatacao_nao_infla_manchinha_abaixo_do_limite(self):
         imagem = Image.new("RGB", (100, 100), "black")
-        ImageDraw.Draw(imagem).rectangle((40, 40, 47, 47), fill=(0, 180, 0))
+        ImageDraw.Draw(imagem).rectangle((40, 40, 47, 47), fill=(43, 185, 0))
         clusters = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)
         self.assertEqual(clusters, [])
 
     def test_cluster_real_de_cem_pixels_preserva_contagem(self):
         imagem = Image.new("RGB", (100, 100), "black")
-        ImageDraw.Draw(imagem).rectangle((40, 40, 49, 49), fill=(0, 180, 0))
+        ImageDraw.Draw(imagem).rectangle((40, 40, 49, 49), fill=(43, 185, 0))
         cluster = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)[0]
         self.assertEqual(cluster.pixels_eco, 100)
 
     def test_fragmentos_agrupados_contam_so_pixels_originais_e_intensidade(self):
         imagem = Image.new("RGB", (100, 100), "black")
         draw = ImageDraw.Draw(imagem)
-        draw.rectangle((40, 40, 45, 49), fill=(0, 180, 0))
-        draw.rectangle((47, 40, 52, 49), fill=(0, 180, 220))
-        rgb = __import__("numpy").asarray(imagem)
+        draw.rectangle((40, 40, 45, 49), fill=(43, 185, 0))
+        draw.rectangle((47, 40, 52, 49), fill=(57, 170, 223))
+        rgb = np.asarray(imagem)
         original, processada = criar_mascaras_eco(rgb, self.config)
         self.assertGreater(processada.sum(), original.sum())
         cluster = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)[0]
         self.assertEqual(cluster.pixels_eco, 120)
-        self.assertEqual(cluster.intensidade_codigo, "MISTO")
+        self.assertEqual(cluster.pixels_refletividade_baixa, 60)
+        self.assertEqual(cluster.pixels_refletividade_media, 60)
+        self.assertEqual(cluster.classe_maxima, "REFLETIVIDADE_MEDIA")
 
     def test_distancia_da_borda_e_menor_que_do_centro(self):
         imagem = Image.new("RGB", (100, 100), "black")
-        ImageDraw.Draw(imagem).rectangle((40, 40, 60, 60), fill=(0, 180, 0))
+        ImageDraw.Draw(imagem).rectangle((40, 40, 60, 60), fill=(43, 185, 0))
         cluster = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)[0]
         self.assertLess(cluster.distancia_borda_escola_km, cluster.distancia_centro_escola_km)
 
     def test_cluster_perto_radar_marcado_e_nao_excluido(self):
         imagem = Image.new("RGB", (100, 100), "black")
-        ImageDraw.Draw(imagem).rectangle((45, 45, 55, 55), fill=(0, 180, 0))
+        ImageDraw.Draw(imagem).rectangle((45, 45, 55, 55), fill=(43, 185, 0))
         clusters = detectar_clusters(imagem, self.bounds, -0.8, -0.8, 0, 0, self.config)
         self.assertEqual(len(clusters), 1)
         self.assertTrue(clusters[0].suspeito_clutter)
+
+    def test_todas_as_49_cores_reais_recebem_classe_confirmada(self):
+        cores = [cor for grupo in REFLECTIVITY_PALETTE.values() for cor in grupo]
+        rgb = np.asarray(cores, dtype=np.uint8).reshape(1, len(cores), 3)
+        classes = classificar_pixels_refletividade(rgb)
+        self.assertEqual(len(cores), 49)
+        self.assertTrue(np.all(classes > 0))
+        self.assertEqual(set(classes.flatten()), set(REFLECTIVITY_CLASS_NAMES))
+
+    def test_legenda_colorida_fora_do_raio_nao_vira_cluster(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        draw = ImageDraw.Draw(imagem)
+        draw.rectangle((0, 0, 4, 19), fill=(254, 0, 0))
+        draw.rectangle((5, 0, 9, 19), fill=(255, 230, 0))
+        draw.rectangle((40, 40, 59, 59), fill=(43, 185, 0))
+        config = DetectionConfig(
+            min_cluster_pixels=20, close_iterations=0, dilate_iterations=0,
+            valid_radius_km=80,
+        )
+        clusters = detectar_clusters(imagem, self.bounds, 0, 0, 0, 0, config)
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(clusters[0].pixels_eco, 400)
+        self.assertEqual(clusters[0].classe_maxima, "REFLETIVIDADE_MEDIA")
+
+    def test_nucleo_pequeno_de_classe_maxima_nao_some_na_predominante(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        draw = ImageDraw.Draw(imagem)
+        draw.rectangle((30, 30, 69, 69), fill=(43, 185, 0))
+        draw.rectangle((45, 45, 54, 54), fill=(254, 0, 0))
+        cluster = detectar_clusters(
+            imagem, self.bounds, 0, 0, 0, 0,
+            DetectionConfig(min_cluster_pixels=20, close_iterations=0, dilate_iterations=0),
+        )[0]
+        self.assertEqual(cluster.classe_predominante, "REFLETIVIDADE_MEDIA")
+        self.assertEqual(cluster.classe_maxima, "REFLETIVIDADE_MUITO_ALTA")
+        self.assertEqual(cluster.pixels_refletividade_muito_alta, 100)
+
+    def test_diagnostico_informa_cores_descartes_e_mascaras(self):
+        imagem = Image.new("RGBA", (20, 20), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(imagem)
+        draw.rectangle((8, 8, 11, 11), fill=(43, 185, 0, 255))
+        draw.point((10, 10), fill=(254, 0, 0, 255))
+        resumo, original, classes = diagnosticar_paleta(
+            imagem, self.bounds, 0, 0, radius_km=100
+        )
+        self.assertEqual(resumo["dimensoes"], [20, 20])
+        self.assertEqual(resumo["pixels_eco"], 16)
+        self.assertEqual(resumo["classes"]["REFLETIVIDADE_MUITO_ALTA"], 1)
+        self.assertEqual(original.mode, "L")
+        self.assertEqual(classes.mode, "RGBA")
 
     def _ponto(self, minuto, lat, lon=0):
         return TrackPoint(

@@ -55,20 +55,50 @@ class NowcastingIntegrationTest(unittest.TestCase):
                 "indice_persistencia_clutter": None, "imagem_disponivel": False,
             },
             "estacoes_relevantes": [], "escola": None,
+            "ameaca_principal": None, "ameacas": [],
+            "confirmacao_regional": {
+                "confirmada": False, "stations": [], "evidence_count": 0,
+            },
+            "radar_only": False, "evento_local_observado": False,
             "evidencias": ["Sem evidencia observacional relevante no momento"],
             "gerado_em": "2026-09-03T09:20:00-04:00",
             "gerado_em_utc": "2026-09-03T13:20:00+00:00",
-            "versao_algoritmo": "1.0",
+            "versao_algoritmo": "1.1",
         }
 
-    def test_migration_aditiva_idempotente_cria_snapshot_schema_5(self):
+    def test_migration_aditiva_idempotente_cria_snapshot_schema_6(self):
         self.database.init_db()
         conn = self.database.get_db()
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
         conn.close()
         self.assertIn("nowcasting_snapshots", tables)
-        self.assertEqual(version, 5)
+        self.assertEqual(version, 6)
+        conn = self.database.get_db()
+        frame_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_frames)")}
+        cluster_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_clusters)")}
+        conn.close()
+        self.assertTrue({"data_frame_raw", "coletado_em_utc"} <= frame_columns)
+        self.assertTrue({"classe_predominante", "classe_maxima"} <= cluster_columns)
+
+    def test_migration_5_para_6_preserva_snapshot_existente(self):
+        from services.nowcasting_repository import salvar_snapshot
+
+        self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-5"))
+        conn = self.database.get_db()
+        conn.execute("UPDATE schema_version SET versao=5 WHERE id=1")
+        conn.commit()
+        conn.close()
+        self.database.init_db()
+        conn = self.database.get_db()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM nowcasting_snapshots WHERE input_fingerprint=?",
+            ("snapshot-schema-5",),
+        ).fetchone()[0]
+        version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 1)
+        self.assertEqual(version, 6)
 
     def test_pagina_e_api_antes_do_primeiro_snapshot(self):
         page = self.client.get("/monitoramento")
@@ -91,6 +121,23 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "temperature": 25, "humidity": 60, "pressure": 965,
             "wind_speed": 5, "wind_gust": 9, "rain_rate": 0,
         }
+        state["radar"].update({"distancia_borda_km": 60})
+        state["ameaca_principal"] = {"track_id": 12}
+        state["ameacas"] = [
+            {
+                "track_id": 12, "status": "TRAJETORIA_RELEVANTE",
+                "distance_km": 60, "direction": "N", "eta_minutes": 75,
+                "confirmacao_regional": {"confirmada": True},
+            },
+            {
+                "track_id": 18, "status": "SISTEMA_EM_MOVIMENTO",
+                "distance_km": 90, "direction": "L", "eta_minutes": None,
+                "confirmacao_regional": {"confirmada": False},
+            },
+        ]
+        state["confirmacao_regional"] = {
+            "confirmada": True, "stations": ["A749"], "evidence_count": 2,
+        }
         self.assertIsNotNone(salvar_snapshot(state, "entrada-1"))
         self.assertIsNone(salvar_snapshot(state, "entrada-1"))
         conn = self.database.get_db()
@@ -100,8 +147,13 @@ class NowcastingIntegrationTest(unittest.TestCase):
         page = self.client.get("/monitoramento")
         self.assertEqual(count, 1)
         self.assertEqual(page.status_code, 200)
-        self.assertIn(b"STATUS ATUAL", page.data)
-        self.assertEqual(payload["versao_algoritmo"], "1.0")
+        self.assertIn("AMEAÇA PRINCIPAL".encode(), page.data)
+        self.assertIn(b"Outros sistemas em monitoramento", page.data)
+        self.assertEqual(payload["versao_algoritmo"], "1.1")
+        self.assertIn("ameaca_principal", payload)
+        self.assertIn("ameacas", payload)
+        self.assertIn("confirmacao_regional", payload)
+        self.assertEqual(len(payload["ameacas"]), 2)
         self.assertNotIn("estado_json", json.dumps(payload))
         self.assertNotIn("input_fingerprint", json.dumps(payload))
 
@@ -142,12 +194,42 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertTrue(result["new"])
         self.assertEqual(result["snapshot"]["escola"]["temperature"], 25)
 
+    def test_repository_carrega_todos_os_tracks_do_frame_atual(self):
+        from config import nowcasting_config
+        from services.nowcasting_repository import carregar_entradas_nowcasting
+        from services.radar_analysis import RadarCluster
+        from services.radar_repository import atualizar_tracking, salvar_resultado_frame
+        from services.radar_service import RadarFrame
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        frame = RadarFrame(
+            "jr", "maxcappi", now, "https://example.test/multi.png",
+            -20.27855, -54.47396, -23.830664, -16.642761,
+            -58.226281, -50.543479, 400, 1000,
+        )
+        clusters = [
+            RadarCluster(1, 200, 300, 400, -22.0, -54.5, 290, 390, 20, 20,
+                         60, 50, 190, "N", False, "REFLETIVIDADE_MEDIA"),
+            RadarCluster(2, 180, 350, 420, -21.8, -54.8, 340, 410, 20, 20,
+                         90, 80, 170, "NO", False, "REFLETIVIDADE_BAIXA"),
+        ]
+        frame_id, _ = salvar_resultado_frame(frame, None, None, 750, 750, clusters)
+        atualizar_tracking(frame_id, -22.4925326, -54.4610352, 3, 10, 150, 25)
+        radar, _regional, _local, _fingerprint = carregar_entradas_nowcasting(
+            nowcasting_config()
+        )
+        self.assertEqual(len(radar["tracks_atuais"]), 2)
+        self.assertEqual(
+            len({item["track"]["track_id"] for item in radar["tracks_atuais"]}), 2
+        )
+
     def test_alerts_true_continua_sem_enfileirar(self):
         from workers.nowcasting_updater import enfileirar_alertas_nowcasting
 
         self.assertEqual(enfileirar_alertas_nowcasting({"alerts_enabled": True}, {}), 0)
         conn = self.database.get_db()
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)
         conn.close()
 
     def test_health_auxiliar_desabilitado(self):

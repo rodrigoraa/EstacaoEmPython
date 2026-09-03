@@ -38,8 +38,13 @@ def salvar_resultado_frame(
     clusters: Sequence[RadarCluster],
     status: str = "processado",
     erro: str | None = None,
+    coletado_em_utc: datetime | None = None,
 ) -> tuple[int, bool]:
     """Insere/reprocessa um frame numa unica transacao SQLite curta."""
+    coletado = coletado_em_utc or datetime.now(timezone.utc)
+    if coletado.tzinfo is None:
+        coletado = coletado.replace(tzinfo=timezone.utc)
+    coletado = coletado.astimezone(timezone.utc)
     conn = database.get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -61,8 +66,9 @@ def salvar_resultado_frame(
             conn.execute(
                 """
                 UPDATE radar_frames SET
-                    radar_codigo=?, produto=?, data_frame=?, data_frame_utc=?,
-                    data_frame_local=?, timestamp_status='utc_explicit', arquivo_local=?,
+                    radar_codigo=?, produto=?, data_frame=?, data_frame_raw=?,
+                    data_frame_utc=?, data_frame_local=?, timestamp_status=?,
+                    coletado_em_utc=?, coletado_em_local=?, arquivo_local=?,
                     arquivo_analisado=?, largura=?, altura=?, lat_center=?, lon_center=?,
                     lat_min=?, lat_max=?, lon_min=?, lon_max=?, raio_km=?, tamanho=?,
                     baixado_em=CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE baixado_em END,
@@ -74,8 +80,12 @@ def salvar_resultado_frame(
                     frame.radar_codigo,
                     frame.produto,
                     frame.data_texto,
+                    frame.data_frame_raw,
                     frame.data_utc_texto,
                     frame.data_local_texto,
+                    frame.timestamp_status,
+                    iso_utc(coletado),
+                    iso_local(coletado),
                     arquivo_local,
                     arquivo_analisado,
                     largura,
@@ -99,14 +109,15 @@ def salvar_resultado_frame(
             cursor = conn.execute(
                 """
                 INSERT INTO radar_frames (
-                    radar_codigo, produto, data_frame, data_frame_utc,
-                    data_frame_local, timestamp_status, path_remoto,
+                    radar_codigo, produto, data_frame, data_frame_raw,
+                    data_frame_utc, data_frame_local, timestamp_status,
+                    coletado_em_utc, coletado_em_local, path_remoto,
                     arquivo_local, arquivo_analisado, largura, altura,
                     lat_center, lon_center, lat_min, lat_max, lon_min, lon_max,
                     raio_km, tamanho, baixado_em, processado_em,
                     status_processamento, erro_processamento
                 ) VALUES (
-                    ?, ?, ?, ?, ?, 'utc_explicit', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP END,
                     CASE WHEN ? = 'processado' THEN CURRENT_TIMESTAMP END, ?, ?
                 )
@@ -115,8 +126,12 @@ def salvar_resultado_frame(
                     frame.radar_codigo,
                     frame.produto,
                     frame.data_texto,
+                    frame.data_frame_raw,
                     frame.data_utc_texto,
                     frame.data_local_texto,
+                    frame.timestamp_status,
+                    iso_utc(coletado),
+                    iso_local(coletado),
                     frame.path_remoto,
                     arquivo_local,
                     arquivo_analisado,
@@ -146,8 +161,11 @@ def salvar_resultado_frame(
                     centro_lat, centro_lon, bbox_x, bbox_y, bbox_width, bbox_height,
                     distancia_centro_escola_km, distancia_borda_escola_km,
                     distancia_radar_km, direcao_relativa_escola,
-                    suspeito_clutter, intensidade_codigo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    suspeito_clutter, intensidade_codigo,
+                    pixels_refletividade_baixa, pixels_refletividade_media,
+                    pixels_refletividade_alta, pixels_refletividade_muito_alta,
+                    classe_predominante, classe_maxima
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     frame_id,
@@ -167,6 +185,12 @@ def salvar_resultado_frame(
                     cluster.direcao_relativa_escola,
                     int(cluster.suspeito_clutter),
                     cluster.intensidade_codigo,
+                    cluster.pixels_refletividade_baixa,
+                    cluster.pixels_refletividade_media,
+                    cluster.pixels_refletividade_alta,
+                    cluster.pixels_refletividade_muito_alta,
+                    cluster.classe_predominante,
+                    cluster.classe_maxima,
                 ),
             )
         _atualizar_clutter_frame(conn, frame_id)
@@ -322,13 +346,16 @@ def atualizar_tracking(
         conn.execute("BEGIN IMMEDIATE")
         frame = conn.execute(
             """
-            SELECT data_frame, data_frame_utc, data_frame_local
+            SELECT data_frame, data_frame_utc, data_frame_local, timestamp_status
             FROM radar_frames WHERE id=?
             """,
             (frame_id,),
         ).fetchone()
         if not frame:
             raise ValueError("Frame inexistente para tracking")
+        if frame["timestamp_status"] == "suspect":
+            conn.commit()
+            return []
         momento = parse_datetime(frame["data_frame_utc"], assume_utc=True) or parse_datetime(
             frame["data_frame"], assume_utc=True
         )
@@ -557,8 +584,9 @@ def listar_frames_recentes(limite: int = 15) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT id, radar_codigo, produto, data_frame, data_frame_utc,
-                   data_frame_local, timestamp_status, largura, altura,
+            SELECT id, radar_codigo, produto, data_frame, data_frame_raw,
+                   data_frame_utc, data_frame_local, timestamp_status,
+                   coletado_em_utc, coletado_em_local, largura, altura,
                    status_processamento, processado_em
             FROM radar_frames
             ORDER BY COALESCE(data_frame_utc, data_frame) DESC LIMIT ?
@@ -579,7 +607,10 @@ def listar_clusters_frame(frame_id: int) -> list[dict]:
                    distancia_centro_escola_km, distancia_borda_escola_km,
                    distancia_radar_km, direcao_relativa_escola, suspeito_clutter,
                    indice_persistencia_clutter, clutter_amostras,
-                   intensidade_codigo
+                   intensidade_codigo, pixels_refletividade_baixa,
+                   pixels_refletividade_media, pixels_refletividade_alta,
+                   pixels_refletividade_muito_alta, classe_predominante,
+                   classe_maxima
             FROM radar_clusters WHERE frame_id=?
             ORDER BY distancia_borda_escola_km
             """,
@@ -659,9 +690,12 @@ def obter_estado_radar(stale_minutes: int) -> dict:
             "radar_codigo": frame["radar_codigo"],
             "produto": frame["produto"],
             "data_frame": frame["data_frame"],
+            "data_frame_raw": frame["data_frame_raw"],
             "data_frame_utc": frame_utc,
             "data_frame_local": frame_local,
             "timestamp_status": frame["timestamp_status"],
+            "coletado_em_utc": frame["coletado_em_utc"],
+            "coletado_em_local": frame["coletado_em_local"],
             "largura": frame["largura"],
             "altura": frame["altura"],
             "idade_minutos": idade,
@@ -683,6 +717,12 @@ def obter_estado_radar(stale_minutes: int) -> dict:
                 "indice_persistencia_clutter": cluster["indice_persistencia_clutter"],
                 "clutter_amostras": cluster["clutter_amostras"],
                 "intensidade_codigo": cluster["intensidade_codigo"],
+                "pixels_refletividade_baixa": cluster["pixels_refletividade_baixa"],
+                "pixels_refletividade_media": cluster["pixels_refletividade_media"],
+                "pixels_refletividade_alta": cluster["pixels_refletividade_alta"],
+                "pixels_refletividade_muito_alta": cluster["pixels_refletividade_muito_alta"],
+                "classe_predominante": cluster["classe_predominante"],
+                "classe_maxima": cluster["classe_maxima"],
             }
         tracking = None
         if track:

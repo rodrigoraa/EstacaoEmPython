@@ -62,6 +62,7 @@ def executar_ciclo(client=None, config=None):
         return {
             "disabled": True, "configured": 6, "found": 0, "with_current_data": 0,
             "new": 0, "duplicates": 0, "empty": 0, "errors": 0, "state": None,
+            "time_diagnostics": [],
         }
     database.init_db()
     client = client or PinMsRegionalClient(
@@ -70,6 +71,24 @@ def executar_ciclo(client=None, config=None):
     )
     collected_at = agora_utc()
     atuais = {}
+    diagnosticos_tempo = {}
+
+    def registrar_diagnostico(observacao):
+        if not observacao:
+            return
+        chave = (observacao.station_code, observacao.source_layer)
+        atual = diagnosticos_tempo.get(chave)
+        candidato = observacao.medido_em_utc or ""
+        if atual is None or candidato > (atual.get("resolved_utc") or ""):
+            diagnosticos_tempo[chave] = {
+                "code": observacao.station_code,
+                "layer": observacao.source_layer,
+                "raw_date": observacao.source_dt_medicao_raw,
+                "raw_hour": observacao.source_hr_medicao_raw,
+                "resolved_utc": observacao.medido_em_utc,
+                "resolved_local": observacao.medido_em_local,
+                "timestamp_status": observacao.timestamp_status,
+            }
     encontrados = set()
     erros = 0
     current_error = None
@@ -82,6 +101,7 @@ def executar_ciclo(client=None, config=None):
             encontrados.add(code)
             try:
                 atuais[code] = normalizar_registro(raw, 0, collected_at)
+                registrar_diagnostico(atuais[code])
             except RegionalStationsError:
                 atuais[code] = None
     except RegionalStationsError as erro:
@@ -108,6 +128,7 @@ def executar_ciclo(client=None, config=None):
                 if observacao is None:
                     vazios += 1
                     continue
+                registrar_diagnostico(observacao)
                 historico_valido = True
                 if salvar_observacao(observacao):
                     novos += 1
@@ -140,6 +161,9 @@ def executar_ciclo(client=None, config=None):
         "empty": vazios,
         "errors": erros,
         "state": estado,
+        "time_diagnostics": [
+            diagnosticos_tempo[chave] for chave in sorted(diagnosticos_tempo)
+        ],
     }
     logger.info(
         "Coleta PIN-MS: configuradas=%s retornadas=%s atuais=%s novas=%s "
@@ -150,7 +174,7 @@ def executar_ciclo(client=None, config=None):
     return resultado
 
 
-def imprimir_resumo(resultado):
+def imprimir_resumo(resultado, verbose_time=False):
     print("Estações regionais PIN-MS")
     print("==========================")
     if resultado["disabled"]:
@@ -176,6 +200,16 @@ def imprimir_resumo(resultado):
         ("errors", "erros HTTP/fonte"),
     ):
         print(f"{resultado[key]} {label}")
+    if verbose_time:
+        print("\nDiagnóstico temporal:")
+        for item in resultado.get("time_diagnostics", []):
+            print(
+                f"{item['code']} layer={item['layer']} "
+                f"raw_date={item['raw_date'] or '-'} raw_hour={item['raw_hour'] or '-'} "
+                f"utc={item['resolved_utc'] or '-'} "
+                f"local={item['resolved_local'] or '-'} "
+                f"status={item['timestamp_status']}"
+            )
 
 
 def _valor(value, unit):
@@ -185,6 +219,11 @@ def _valor(value, unit):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Coleta estações regionais do PIN-MS")
     parser.add_argument("--once", action="store_true", help="Executa um ciclo e termina")
+    parser.add_argument(
+        "--verbose-time",
+        action="store_true",
+        help="Exibe campos temporais brutos e resolvidos sem alterar a coleta",
+    )
     return parser.parse_args(argv)
 
 
@@ -193,14 +232,14 @@ def main(argv=None):
     configurar_logging()
     config = regional_stations_config()
     if args.once:
-        imprimir_resumo(executar_ciclo(config=config))
+        imprimir_resumo(executar_ciclo(config=config), args.verbose_time)
         return 0
     if not config["enabled"]:
-        imprimir_resumo(executar_ciclo(config=config))
+        imprimir_resumo(executar_ciclo(config=config), args.verbose_time)
         return 0
     while True:
         try:
-            imprimir_resumo(executar_ciclo(config=config))
+            imprimir_resumo(executar_ciclo(config=config), args.verbose_time)
         except Exception as erro:
             logger.error("Ciclo PIN-MS falhou: %s", erro_externo_seguro(erro))
         time.sleep(config["poll_seconds"])

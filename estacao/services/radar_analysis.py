@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import colorsys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
@@ -14,6 +15,46 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 EARTH_RADIUS_KM = 6371.0088
+
+# Paleta observada em 42 PNGs MaxCAPPI reais de Jaraguari em 03/09/2026.
+# Os grupos representam somente níveis relativos de refletividade: não há aqui
+# conversão para dBZ, taxa de chuva ou severidade meteorológica.
+REFLECTIVITY_CLASS_NAMES = {
+    1: "REFLETIVIDADE_BAIXA",
+    2: "REFLETIVIDADE_MEDIA",
+    3: "REFLETIVIDADE_ALTA",
+    4: "REFLETIVIDADE_MUITO_ALTA",
+}
+REFLECTIVITY_PALETTE = {
+    1: (
+        (148, 148, 148), (141, 141, 141),
+        (85, 253, 253), (76, 227, 245), (67, 199, 234),
+        (57, 170, 223), (48, 142, 213), (38, 114, 202),
+        (29, 85, 191), (19, 57, 181), (10, 29, 170), (0, 0, 159),
+    ),
+    2: (
+        (84, 253, 0), (79, 245, 0), (73, 235, 0), (67, 225, 0),
+        (61, 215, 0), (55, 205, 0), (49, 195, 0), (43, 185, 0),
+        (37, 175, 0), (31, 165, 0), (25, 155, 0), (19, 145, 0),
+        (13, 135, 0), (7, 125, 0), (0, 115, 0),
+    ),
+    3: (
+        (255, 254, 0), (255, 242, 0), (255, 230, 0), (255, 218, 0),
+        (255, 206, 0), (255, 194, 0), (255, 182, 0), (255, 169, 0),
+        (255, 157, 0), (255, 145, 0), (255, 133, 0), (255, 121, 0),
+        (255, 109, 0), (255, 97, 0), (255, 84, 0),
+    ),
+    4: (
+        (254, 0, 0), (246, 0, 0), (228, 0, 0),
+        (201, 0, 0), (193, 0, 0), (184, 0, 0), (175, 0, 0),
+    ),
+}
+CLASS_DIAGNOSTIC_COLORS = {
+    1: (29, 85, 191, 255),
+    2: (43, 185, 0, 255),
+    3: (255, 169, 0, 255),
+    4: (254, 0, 0, 255),
+}
 
 
 @dataclass(frozen=True)
@@ -30,6 +71,7 @@ class DetectionConfig:
     close_iterations: int = 2
     dilate_iterations: int = 1
     clutter_radius_km: float = 50.0
+    valid_radius_km: float | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +92,12 @@ class RadarCluster:
     direcao_relativa_escola: str
     suspeito_clutter: bool
     intensidade_codigo: str
+    pixels_refletividade_baixa: int = 0
+    pixels_refletividade_media: int = 0
+    pixels_refletividade_alta: int = 0
+    pixels_refletividade_muito_alta: int = 0
+    classe_predominante: str | None = None
+    classe_maxima: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,15 +192,64 @@ def _distancias_vetorizadas(
     return 2 * EARTH_RADIUS_KM * np.arcsin(np.minimum(1.0, np.sqrt(a)))
 
 
+def classificar_pixels_refletividade(rgb: np.ndarray) -> np.ndarray:
+    """Classifica somente cores confirmadas na paleta real do MaxCAPPI."""
+    if rgb.ndim != 3 or rgb.shape[2] < 3:
+        raise ValueError("Array RGB invalido")
+    packed = (
+        rgb[:, :, 0].astype(np.uint32) << 16
+        | rgb[:, :, 1].astype(np.uint32) << 8
+        | rgb[:, :, 2].astype(np.uint32)
+    )
+    classes = np.zeros(rgb.shape[:2], dtype=np.uint8)
+    for codigo, cores in REFLECTIVITY_PALETTE.items():
+        valores = np.asarray(
+            [(r << 16) | (g << 8) | b for r, g, b in cores], dtype=np.uint32
+        )
+        classes[np.isin(packed, valores)] = codigo
+    return classes
+
+
+def criar_mascara_area_valida(
+    bounds: GeoBounds,
+    width: int,
+    height: int,
+    radar_lat: float,
+    radar_lon: float,
+    radius_km: float | None = None,
+    alpha: np.ndarray | None = None,
+) -> np.ndarray:
+    """Retorna a cobertura geográfica circular, opcionalmente limitada pelo alfa."""
+    if radius_km is None:
+        radius_km = min(
+            haversine_km(radar_lat, radar_lon, bounds.lat_min, radar_lon),
+            haversine_km(radar_lat, radar_lon, bounds.lat_max, radar_lon),
+            haversine_km(radar_lat, radar_lon, radar_lat, bounds.lon_min),
+            haversine_km(radar_lat, radar_lon, radar_lat, bounds.lon_max),
+        )
+    xs = np.arange(width, dtype=np.float64)
+    ys = np.arange(height, dtype=np.float64)
+    lons = bounds.lon_min + xs / max(1, width - 1) * (bounds.lon_max - bounds.lon_min)
+    lats = bounds.lat_max - ys / max(1, height - 1) * (bounds.lat_max - bounds.lat_min)
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    cobertura = _distancias_vetorizadas(
+        lat_grid, lon_grid, radar_lat, radar_lon
+    ) <= float(radius_km)
+    if alpha is not None:
+        cobertura &= alpha > 0
+    return cobertura
+
+
 def criar_mascaras_eco(
-    rgb: np.ndarray, config: DetectionConfig
+    rgb: np.ndarray,
+    config: DetectionConfig,
+    mascara_valida: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    r = rgb[:, :, 0].astype(np.int16)
-    g = rgb[:, :, 1].astype(np.int16)
-    b = rgb[:, :, 2].astype(np.int16)
-    azul_ciano = (b >= 140) & (r <= 110) & ((b - r) >= 50)
-    verde = (g >= 120) & (r <= 110) & (b <= 140) & ((g - r) >= 50)
-    original = ((azul_ciano | verde).astype(np.uint8)) * 255
+    classes = classificar_pixels_refletividade(rgb)
+    eco = classes > 0
+    if mascara_valida is not None:
+        eco &= mascara_valida.astype(bool)
+    original = eco.astype(np.uint8) * 255
     processada = original.copy()
     kernel = np.ones((3, 3), np.uint8)
     if config.close_iterations:
@@ -185,9 +282,22 @@ def detectar_clusters(
 ) -> list[RadarCluster]:
     """Detecta areas coloridas; o resultado e eco experimental, nao chuva confirmada."""
     config = config or DetectionConfig()
-    rgb = np.asarray(imagem.convert("RGB"))
+    rgba = np.asarray(imagem.convert("RGBA"))
+    rgb = rgba[:, :, :3]
     height, width = rgb.shape[:2]
-    mascara_original, mascara_processada = criar_mascaras_eco(rgb, config)
+    mascara_valida = criar_mascara_area_valida(
+        bounds,
+        width,
+        height,
+        radar_lat,
+        radar_lon,
+        radius_km=config.valid_radius_km,
+        alpha=rgba[:, :, 3],
+    )
+    classes_refletividade = classificar_pixels_refletividade(rgb)
+    mascara_original, mascara_processada = criar_mascaras_eco(
+        rgb, config, mascara_valida
+    )
     total, labels, stats, centroids = cv2.connectedComponentsWithStats(
         mascara_processada, connectivity=8
     )
@@ -221,18 +331,16 @@ def detectar_clusters(
             centro_lat, centro_lon, radar_lat, radar_lon
         )
 
-        pixels_rgb = rgb[componente_original]
-        verdes = np.count_nonzero(
-            (pixels_rgb[:, 1] >= 120)
-            & (pixels_rgb[:, 0] <= 110)
-            & (pixels_rgb[:, 2] <= 140)
-        )
-        azuis = np.count_nonzero(
-            (pixels_rgb[:, 2] >= 140)
-            & (pixels_rgb[:, 0] <= 110)
-            & ((pixels_rgb[:, 2].astype(np.int16) - pixels_rgb[:, 0]) >= 50)
-        )
-        intensidade = "MISTO" if verdes and azuis else ("VERDE" if verdes else "AZUL_CIANO")
+        classes_cluster = classes_refletividade[componente_original]
+        contagens = {
+            codigo: int(np.count_nonzero(classes_cluster == codigo))
+            for codigo in REFLECTIVITY_CLASS_NAMES
+        }
+        presentes = [codigo for codigo, total_classe in contagens.items() if total_classe]
+        predominante_codigo = max(contagens, key=lambda codigo: contagens[codigo])
+        maxima_codigo = max(presentes)
+        classe_predominante = REFLECTIVITY_CLASS_NAMES[predominante_codigo]
+        classe_maxima = REFLECTIVITY_CLASS_NAMES[maxima_codigo]
         clusters.append(
             RadarCluster(
                 numero=len(clusters) + 1,
@@ -252,10 +360,78 @@ def detectar_clusters(
                     bearing_graus(target_lat, target_lon, centro_lat, centro_lon)
                 ) or "-",
                 suspeito_clutter=distancia_radar <= config.clutter_radius_km,
-                intensidade_codigo=intensidade,
+                intensidade_codigo=classe_predominante,
+                pixels_refletividade_baixa=contagens[1],
+                pixels_refletividade_media=contagens[2],
+                pixels_refletividade_alta=contagens[3],
+                pixels_refletividade_muito_alta=contagens[4],
+                classe_predominante=classe_predominante,
+                classe_maxima=classe_maxima,
             )
         )
     return sorted(clusters, key=lambda item: item.distancia_borda_escola_km)
+
+
+def diagnosticar_paleta(
+    imagem: Image.Image,
+    bounds: GeoBounds,
+    radar_lat: float,
+    radar_lon: float,
+    radius_km: float | None = None,
+) -> tuple[dict, Image.Image, Image.Image]:
+    """Produz métricas e máscaras locais sem inferência meteorológica."""
+    rgba = np.asarray(imagem.convert("RGBA"))
+    rgb = rgba[:, :, :3]
+    height, width = rgb.shape[:2]
+    cobertura = criar_mascara_area_valida(
+        bounds, width, height, radar_lat, radar_lon, radius_km=radius_km
+    )
+    visivel = rgba[:, :, 3] > 0
+    classes = classificar_pixels_refletividade(rgb)
+    eco = (classes > 0) & cobertura & visivel
+    cores, totais = np.unique(rgb[visivel], axis=0, return_counts=True)
+    principais = []
+    for cor, total in sorted(
+        zip(cores.tolist(), totais.tolist()), key=lambda item: item[1], reverse=True
+    ):
+        r, g, b = cor
+        hue, saturation, value = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        codigo = int(classificar_pixels_refletividade(
+            np.asarray([[[r, g, b]]], dtype=np.uint8)
+        )[0, 0])
+        principais.append(
+            {
+                "rgb": [r, g, b],
+                "hsv": [round(hue * 360, 1), round(saturation * 100, 1), round(value * 100, 1)],
+                "pixels": total,
+                "classe": REFLECTIVITY_CLASS_NAMES.get(codigo, "DESCARTADO"),
+            }
+        )
+    total_pixels = width * height
+    contagens_classes = {
+        REFLECTIVITY_CLASS_NAMES[codigo]: int(np.count_nonzero((classes == codigo) & eco))
+        for codigo in REFLECTIVITY_CLASS_NAMES
+    }
+    mascara_original = Image.fromarray(eco.astype(np.uint8) * 255, mode="L")
+    classes_rgba = np.zeros((height, width, 4), dtype=np.uint8)
+    for codigo, cor in CLASS_DIAGNOSTIC_COLORS.items():
+        classes_rgba[(classes == codigo) & eco] = cor
+    mascara_classes = Image.fromarray(classes_rgba, mode="RGBA")
+    resumo = {
+        "dimensoes": [width, height],
+        "modo": imagem.mode,
+        "pixels_totais": total_pixels,
+        "pixels_visiveis": int(np.count_nonzero(visivel)),
+        "pixels_area_geografica_valida": int(np.count_nonzero(cobertura)),
+        "pixels_eco": int(np.count_nonzero(eco)),
+        "pixels_descartados_visiveis": int(np.count_nonzero(visivel & ~eco)),
+        "percentual_imagem_eco": float(
+            round(np.count_nonzero(eco) * 100 / total_pixels, 4)
+        ),
+        "classes": contagens_classes,
+        "principais_cores": principais,
+    }
+    return resumo, mascara_original, mascara_classes
 
 
 def pode_associar(
@@ -517,7 +693,7 @@ def abrir_imagem_png(conteudo: bytes) -> Image.Image:
         original = Image.open(BytesIO(conteudo))
         formato = original.format
         original.verify()
-        imagem = Image.open(BytesIO(conteudo)).convert("RGB")
+        imagem = Image.open(BytesIO(conteudo)).convert("RGBA")
     except Exception as erro:
         raise ValueError("Arquivo recebido nao e uma imagem PNG valida") from erro
     if (formato or "").upper() != "PNG":

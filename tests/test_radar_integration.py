@@ -175,10 +175,62 @@ class RadarIntegrationTest(unittest.TestCase):
         conn.close()
         self.assertEqual(row["data_frame_utc"], "2026-09-03T00:30:00+00:00")
         self.assertEqual(row["data_frame_local"], "2026-09-02T20:30:00-04:00")
-        self.assertEqual(row["timestamp_status"], "utc_explicit")
+        self.assertEqual(row["data_frame_raw"], "2026-09-03 00:30:00")
+        self.assertEqual(row["timestamp_status"], "utc_assumed")
         self.assertEqual(legado["data_frame"], "2020-01-01 00:00:00")
         self.assertIsNone(legado["data_frame_utc"])
         self.assertEqual(legado["timestamp_status"], "legacy_unverified")
+
+    def test_frame_suspect_e_persistido_mas_nao_produz_tracking_ou_eta(self):
+        from services.radar_repository import atualizar_tracking, salvar_resultado_frame
+
+        frame = RadarFrame(
+            "jr", "maxcappi", datetime(2026, 9, 3, 18, tzinfo=timezone.utc),
+            "https://estatico.example/suspect.png", -20.27855, -54.47396,
+            -23.830664, -16.642761, -58.226281, -50.543479, 400, 1000,
+            "2026-09-03 18:00:00", "suspect",
+        )
+        frame_id, _ = salvar_resultado_frame(
+            frame, None, None, 20, 20, [self.cluster()]
+        )
+        self.assertEqual(
+            atualizar_tracking(frame_id, -22.4925326, -54.4610352, 3, 10, 150, 25),
+            [],
+        )
+        conn = self.database.get_db()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM radar_track_points").fetchone()[0], 0)
+        row = conn.execute("SELECT timestamp_status FROM radar_frames WHERE id=?", (frame_id,)).fetchone()
+        conn.close()
+        self.assertEqual(row["timestamp_status"], "suspect")
+
+    def test_worker_finaliza_frame_suspect_sem_criar_track(self):
+        from config import radar_config
+        from workers.radar_updater import processar_frame
+
+        coletado = datetime(2026, 9, 3, 14, tzinfo=timezone.utc)
+        frame = self.frame("2026-09-03 18:00:00", "worker-suspect")
+        png = BytesIO()
+        imagem = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        ImageDraw.Draw(imagem).rectangle((40, 40, 55, 55), fill=(43, 185, 0, 255))
+        imagem.save(png, "PNG")
+
+        class Client:
+            def baixar_imagem(self, _frame):
+                return png.getvalue()
+
+        frame_id, _clusters, _alterado = processar_frame(
+            Client(), frame, radar_config(), coletado
+        )
+        conn = self.database.get_db()
+        row = conn.execute(
+            "SELECT timestamp_status, status_processamento FROM radar_frames WHERE id=?",
+            (frame_id,),
+        ).fetchone()
+        points = conn.execute("SELECT COUNT(*) FROM radar_track_points").fetchone()[0]
+        conn.close()
+        self.assertEqual(row["timestamp_status"], "suspect")
+        self.assertEqual(row["status_processamento"], "processado")
+        self.assertEqual(points, 0)
 
     def test_tracking_atravessa_meia_noite_utc(self):
         from services.radar_repository import atualizar_tracking, obter_estado_radar, salvar_resultado_frame
@@ -316,7 +368,7 @@ class RadarIntegrationTest(unittest.TestCase):
         fetch = normalizar_resposta(payload)
         png = BytesIO()
         imagem = Image.new("RGB", (100, 100), "black")
-        ImageDraw.Draw(imagem).rectangle((40, 40, 55, 55), fill=(0, 180, 0))
+        ImageDraw.Draw(imagem).rectangle((40, 40, 55, 55), fill=(43, 185, 0))
         imagem.save(png, "PNG")
 
         class Client:
@@ -360,6 +412,8 @@ class RadarIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(resultado.returncode, 0, resultado.stderr)
         self.assertIn("--once", resultado.stdout)
+        self.assertIn("--diagnose-palette", resultado.stdout)
+        self.assertIn("--diagnose-time", resultado.stdout)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Iterable
 from urllib.parse import urlsplit
@@ -32,12 +32,20 @@ class RadarFrame:
     lon_max: float
     raio_km: float | None = None
     tamanho: int | None = None
+    data_frame_raw: str | None = None
+    timestamp_status: str = "utc_assumed"
 
     def __post_init__(self):
         momento = self.data_frame
         if momento.tzinfo is None:
             momento = momento.replace(tzinfo=timezone.utc)
         object.__setattr__(self, "data_frame", momento.astimezone(timezone.utc))
+        if self.data_frame_raw is None:
+            object.__setattr__(
+                self,
+                "data_frame_raw",
+                momento.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            )
 
     @property
     def data_frame_utc(self) -> datetime:
@@ -60,6 +68,29 @@ class RadarFrame:
     @property
     def data_local_texto(self) -> str:
         return self.data_frame_local.replace(microsecond=0).isoformat()
+
+
+def avaliar_timestamp_frame(
+    frame: RadarFrame,
+    coletado_em_utc: datetime,
+    max_future_minutes: float = 30.0,
+) -> RadarFrame:
+    """Marca como suspeito somente um futuro além da tolerância operacional.
+
+    A REDEMET não documenta inequivocamente o fuso do campo ``data``. Enquanto
+    isso não mudar, a interpretação UTC continua sendo uma hipótese explícita.
+    """
+    coletado = coletado_em_utc
+    if coletado.tzinfo is None:
+        coletado = coletado.replace(tzinfo=timezone.utc)
+    coletado = coletado.astimezone(timezone.utc)
+    diferenca_minutos = (frame.data_frame_utc - coletado).total_seconds() / 60
+    status = (
+        "suspect"
+        if diferenca_minutos > max(0.0, float(max_future_minutes))
+        else "utc_assumed"
+    )
+    return replace(frame, timestamp_status=status)
 
 
 @dataclass(frozen=True)
@@ -97,9 +128,10 @@ def normalizar_frame(frame: dict[str, Any], produto_padrao: str) -> RadarFrame:
     partes = urlsplit(path)
     if partes.scheme not in {"http", "https"} or not partes.netloc:
         raise RadarServiceError("Frame REDEMET possui URL de imagem invalida")
+    data_frame_raw = str(frame["data"])
     try:
         data_frame = datetime.strptime(
-            str(frame["data"]).strip(), "%Y-%m-%d %H:%M:%S"
+            data_frame_raw.strip(), "%Y-%m-%d %H:%M:%S"
         ).replace(tzinfo=timezone.utc)
     except ValueError as erro:
         raise RadarServiceError("Frame REDEMET possui timestamp invalido") from erro
@@ -130,6 +162,8 @@ def normalizar_frame(frame: dict[str, Any], produto_padrao: str) -> RadarFrame:
         lon_max=lon_max,
         raio_km=raio,
         tamanho=tamanho,
+        data_frame_raw=data_frame_raw,
+        timestamp_status="utc_assumed",
     )
 
 

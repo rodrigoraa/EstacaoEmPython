@@ -123,7 +123,11 @@ def _observation_publica(row):
 
 
 def _ultima_observacao(conn, code, layer, exigir_timestamp=False):
-    timestamp = "AND medido_em_utc IS NOT NULL" if exigir_timestamp else ""
+    timestamp = (
+        "AND medido_em_utc IS NOT NULL "
+        "AND timestamp_status IN ('valid', 'reconciled')"
+        if exigir_timestamp else ""
+    )
     ordem = "medido_em_utc DESC, id DESC" if exigir_timestamp else "coletado_em_utc DESC, id DESC"
     return conn.execute(
         f"SELECT * FROM regional_station_observations "
@@ -155,7 +159,9 @@ def obter_estado_rede(config):
             historico = conn.execute(
                 """
                 SELECT * FROM regional_station_observations
-                WHERE station_code=? AND source_layer=2 AND medido_em_utc IS NOT NULL
+                WHERE station_code=? AND source_layer=2
+                  AND medido_em_utc IS NOT NULL
+                  AND timestamp_status IN ('valid', 'reconciled')
                 ORDER BY medido_em_utc DESC LIMIT 12
                 """,
                 (code,),

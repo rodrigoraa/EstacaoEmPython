@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import requests
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "estacao"))
 from services.radar_service import (  # noqa: E402
     RadarServiceError,
     RedemetRadarClient,
+    avaliar_timestamp_frame,
     normalizar_resposta,
 )
 
@@ -50,6 +51,26 @@ class RadarServiceTest(unittest.TestCase):
         resultado = normalizar_resposta(payload).frames[0]
         self.assertEqual(resultado.data_frame_utc.utcoffset(), timezone.utc.utcoffset(None))
         self.assertEqual(resultado.data_frame_local.isoformat(), "2026-09-02T20:30:00-04:00")
+        self.assertEqual(resultado.data_frame_raw, "2026-09-03 00:30:00")
+        self.assertEqual(resultado.timestamp_status, "utc_assumed")
+
+    def test_sanity_check_tolera_passado_e_futuro_curto(self):
+        frame = normalizar_resposta(self.payload).frames[-1]
+        self.assertEqual(
+            avaliar_timestamp_frame(frame, frame.data_frame + timedelta(minutes=5)).timestamp_status,
+            "utc_assumed",
+        )
+        self.assertEqual(
+            avaliar_timestamp_frame(frame, frame.data_frame - timedelta(minutes=20)).timestamp_status,
+            "utc_assumed",
+        )
+
+    def test_sanity_check_marca_futuro_distante_como_suspect(self):
+        frame = normalizar_resposta(self.payload).frames[-1]
+        coletado = frame.data_frame - timedelta(hours=4)
+        avaliado = avaliar_timestamp_frame(frame, coletado, max_future_minutes=30)
+        self.assertEqual(avaliado.timestamp_status, "suspect")
+        self.assertEqual(avaliado.data_frame_raw, frame.data_frame_raw)
 
     def test_status_de_erro_rejeitado(self):
         with self.assertRaises(RadarServiceError):

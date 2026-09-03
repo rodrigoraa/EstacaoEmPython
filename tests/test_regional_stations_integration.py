@@ -126,6 +126,11 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(primeiro["with_current_data"], 6)
         self.assertEqual(primeiro["new"], 24)
         self.assertEqual(primeiro["empty"], 12)
+        self.assertTrue(primeiro["time_diagnostics"])
+        self.assertTrue(
+            all("raw_date" in item and "timestamp_status" in item
+                for item in primeiro["time_diagnostics"])
+        )
         self.assertEqual(segundo["new"], 0)
         self.assertGreater(segundo["duplicates"], 0)
 
@@ -188,6 +193,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertEqual(direto.returncode, 0, direto.stderr)
         self.assertEqual(modular.returncode, 0, modular.stderr)
         self.assertIn("--once", direto.stdout)
+        self.assertIn("--verbose-time", direto.stdout)
 
 
 if __name__ == "__main__":

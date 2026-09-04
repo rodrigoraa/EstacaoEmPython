@@ -8,10 +8,8 @@ from admin_auth import admin_api_required, admin_page_required
 from config import nowcasting_config
 from services.nowcasting_repository import obter_ultimo_snapshot
 from services.nowcasting_service import (
-    janela_snapshot_operacional_minutos,
-    snapshot_operacionalmente_atual,
+    preparar_estado_nowcasting_admin,
 )
-from services.preventive_alerts import criar_alerta_preventivo
 from services.nowcasting_test_alerts import obter_status_alerta_teste_admin
 
 
@@ -30,36 +28,16 @@ def _estado_seguro():
 @nowcasting_routes.route("/admin/monitoramento")
 @admin_page_required
 def monitoramento_admin():
-    estado = _estado_seguro()
+    snapshot = _estado_seguro()
     config = nowcasting_config()
-    test_alert = obter_status_alerta_teste_admin(estado, config)
-    monitoramento_atual = snapshot_operacionalmente_atual(
-        estado, config
-    )
-    ultimo_nivel_calculado = None
-    if estado and not monitoramento_atual:
-        estado = dict(estado)
-        alerta_anterior = estado.get("alerta_preventivo") or {}
-        ultimo_nivel_calculado = alerta_anterior.get("nivel")
-        alerta_indisponivel = criar_alerta_preventivo(
-            None,
-            radar_atualizado=False,
-            evento_local=False,
-        )
-        alerta_indisponivel["message"] = (
-            "Monitoramento desatualizado. O último alerta calculado não deve ser "
-            "interpretado como situação atual."
-        )
-        estado["alerta_preventivo"] = alerta_indisponivel
+    preparado = preparar_estado_nowcasting_admin(snapshot, config)
     return render_template(
         "monitoramento.html",
-        estado=estado,
-        monitoramento_atual=monitoramento_atual,
-        ultimo_nivel_calculado=ultimo_nivel_calculado,
-        janela_snapshot_minutos=janela_snapshot_operacional_minutos(
-            config
-        ),
-        test_alert=test_alert,
+        estado=preparado["estado"],
+        monitoramento_atual=preparado["monitoramento_atual"],
+        ultimo_nivel_calculado=preparado["ultimo_nivel_calculado"],
+        janela_snapshot_minutos=preparado["janela_snapshot_minutos"],
+        test_alert=obter_status_alerta_teste_admin(snapshot, config),
         titulo="Monitoramento Regional",
         aba_ativa="monitoramento",
     )
@@ -74,10 +52,19 @@ def monitoramento_legacy():
 @nowcasting_routes.route("/admin/api/nowcasting/status")
 @admin_api_required
 def api_nowcasting_status_admin():
-    estado = _estado_seguro()
+    snapshot = _estado_seguro()
     config = nowcasting_config()
+    preparado = preparar_estado_nowcasting_admin(snapshot, config)
+    estado = preparado["estado"]
     payload = dict(estado) if estado else {"status": "SEM_DADOS", "snapshot": None}
-    payload["test_alert"] = obter_status_alerta_teste_admin(estado, config)
+    for campo in (
+        "monitoramento_atual",
+        "snapshot_desatualizado",
+        "janela_snapshot_minutos",
+        "ultimo_nivel_calculado",
+    ):
+        payload[campo] = preparado[campo]
+    payload["test_alert"] = obter_status_alerta_teste_admin(snapshot, config)
     return jsonify(payload)
 
 

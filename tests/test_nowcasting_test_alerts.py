@@ -136,6 +136,56 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         sender.assert_not_called()
         self.assertFalse(status["enabled"])
 
+    def test_status_admin_usa_somente_leitura(self):
+        conn = mock.Mock()
+        conn.execute.return_value.fetchone.return_value = None
+        with mock.patch.object(
+            self.service.database, "get_db_readonly", return_value=conn
+        ):
+            status = self.service.obter_status_alerta_teste_admin(
+                None, self.config(enabled=False), now=self.base
+            )
+
+        self.assertEqual(status["reason"], "disabled")
+        sql = conn.execute.call_args.args[0]
+        self.assertTrue(sql.lstrip().upper().startswith("SELECT"))
+        self.assertNotIn("BEGIN", sql.upper())
+        conn.commit.assert_not_called()
+        conn.rollback.assert_not_called()
+        conn.close.assert_called_once()
+
+    def test_status_admin_falha_de_leitura_retorna_fallback_seguro(self):
+        telefone = "67999999999"
+        os.environ["ADMIN_ALERT_PHONE"] = telefone
+        with (
+            mock.patch.object(
+                self.service.database,
+                "get_db_readonly",
+                side_effect=OSError(f"falha privada {telefone}"),
+            ),
+            self.assertLogs(
+                "services.nowcasting_test_alerts", level="WARNING"
+            ) as logs,
+        ):
+            status = self.service.obter_status_alerta_teste_admin(
+                self.snapshot(), self.config(), now=self.base
+            )
+
+        self.assertEqual(
+            status,
+            {
+                "enabled": True,
+                "eligible": False,
+                "sent_for_current_episode": False,
+                "event_key": None,
+                "last_sent_at": None,
+                "cooldown_active": False,
+                "rearm_pending": False,
+                "reason": "status_unavailable",
+            },
+        )
+        self.assertNotIn(telefone, "\n".join(logs.output))
+
     def test_flag_habilitada_sem_admin_phone_nao_envia_nem_quebra(self):
         sender = mock.Mock()
         status = self.processar(sender=sender)

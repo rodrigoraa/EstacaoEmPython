@@ -32,6 +32,7 @@ class RadarIntegrationTest(unittest.TestCase):
                 "RADAR_DATA_DIR": str(self.raiz / "radar"),
                 "RADAR_ENABLED": "false",
                 "RADAR_ALERTS_ENABLED": "false",
+                "NOWCASTING_TEST_ALERTS_ENABLED": "false",
                 "RATELIMIT_ENABLED": "false",
                 "SECRET_KEY": "teste",
             }
@@ -59,6 +60,7 @@ class RadarIntegrationTest(unittest.TestCase):
             "RADAR_RETENCAO_AUTOMATICA", "RADAR_RETENCAO_IMAGENS_DIAS",
             "RADAR_RETENCAO_FRAMES_DIAS", "REDEMET_API_KEY", "RATELIMIT_ENABLED",
             "SECRET_KEY",
+            "NOWCASTING_TEST_ALERTS_ENABLED", "ADMIN_ALERT_PHONE",
         ):
             os.environ.pop(chave, None)
 
@@ -245,6 +247,52 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertIn("Último nível calculado".encode(), pagina.data)
         self.assertNotIn(b"preventive-alert--vermelho", pagina.data)
         self.assertNotIn(b"ALERTA VELHO DO MESMO FRAME", pagina.data)
+
+    def test_radar_stale_sem_snapshot_vira_indisponivel(self):
+        from services.radar_repository import salvar_resultado_frame
+
+        horario = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+        salvar_resultado_frame(
+            self.frame(horario, "stale-sem-snapshot"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        self.autenticar_admin()
+        with mock.patch("routes.radar.obter_ultimo_snapshot", return_value=None):
+            pagina = self.client.get("/admin/radar")
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertIn("INDISPONÍVEL".encode(), pagina.data)
+        self.assertIn("Dados operacionais do radar desatualizados".encode(), pagina.data)
+        self.assertNotIn("AGUARDANDO ANÁLISE".encode(), pagina.data)
+
+    def test_radar_stale_snapshot_de_outro_frame_vira_indisponivel(self):
+        from services.radar_repository import salvar_resultado_frame
+
+        horario = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+        frame_id, _ = salvar_resultado_frame(
+            self.frame(horario, "stale-outro-frame"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        self.autenticar_admin()
+        with mock.patch(
+            "routes.radar.obter_ultimo_snapshot",
+            return_value={
+                "radar": {"frame_id": frame_id + 1},
+                "alerta_preventivo": {
+                    "nivel": "VERMELHO", "message": "ALERTA DE OUTRO FRAME"
+                },
+            },
+        ):
+            pagina = self.client.get("/admin/radar")
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertIn("INDISPONÍVEL".encode(), pagina.data)
+        self.assertNotIn("AGUARDANDO ANÁLISE".encode(), pagina.data)
+        self.assertNotIn(b"ALERTA DE OUTRO FRAME", pagina.data)
 
     def test_salvar_atomico_publica_png_legivel_pelo_grupo(self):
         from workers import radar_updater

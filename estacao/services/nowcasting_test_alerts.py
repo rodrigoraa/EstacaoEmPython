@@ -44,6 +44,10 @@ ESTADO_CAMPOS = (
 )
 
 
+class EstadoAlertaTesteInvalido(ValueError):
+    """Indica que o estado opcional persistido nao pode ser interpretado."""
+
+
 def estado_alerta_teste_padrao():
     return {
         "active": False,
@@ -79,9 +83,13 @@ def _normalizar_estado(valor):
     return estado
 
 
-def carregar_estado_alerta_teste(conn=None):
+def carregar_estado_alerta_teste(
+    conn=None, *, estrito=False, somente_leitura=False
+):
     proprio = conn is None
-    conn = conn or database.get_db()
+    conn = conn or (
+        database.get_db_readonly() if somente_leitura else database.get_db()
+    )
     try:
         row = conn.execute(
             "SELECT mensagem FROM health_check_estado WHERE chave = ?",
@@ -90,9 +98,18 @@ def carregar_estado_alerta_teste(conn=None):
         if not row or not row["mensagem"]:
             return estado_alerta_teste_padrao()
         try:
-            return _normalizar_estado(json.loads(row["mensagem"]))
-        except (TypeError, json.JSONDecodeError):
+            valor = json.loads(row["mensagem"])
+            if not isinstance(valor, dict):
+                raise EstadoAlertaTesteInvalido(
+                    "Estado persistido do alerta de teste invalido"
+                )
+            return _normalizar_estado(valor)
+        except (TypeError, json.JSONDecodeError, EstadoAlertaTesteInvalido):
             logger.warning("Nowcasting teste admin: estado persistido inválido")
+            if estrito:
+                raise EstadoAlertaTesteInvalido(
+                    "Estado persistido do alerta de teste invalido"
+                )
             return estado_alerta_teste_padrao()
     finally:
         if proprio:
@@ -450,32 +467,58 @@ def _finalizar_tentativa(*, enviado, erro, now):
 def obter_status_alerta_teste_admin(snapshot=None, config=None, *, now=None):
     """Retorna somente metadados seguros para telas e API administrativas."""
     config = config or {}
-    agora = (now or agora_utc()).astimezone(timezone.utc)
-    estado = carregar_estado_alerta_teste()
-    avaliacao = avaliar_alerta_teste_admin(
-        snapshot,
-        config,
-        admin_phone=obter_admin_alert_phone(),
-        now=agora,
-    )
-    cooldown = _cooldown_ativo(estado, config, agora)
-    rearm_pending = bool(estado["active"] and estado.get("clear_since"))
-    eligible = bool(
-        avaliacao["eligible"]
-        and not estado["sent_for_current_episode"]
-        and not estado["suppressed_for_current_episode"]
-        and not cooldown
-    )
-    reason = estado["last_result"] if config.get("test_alerts_enabled") else "disabled"
-    if not avaliacao["eligible"]:
-        reason = avaliacao["reason"]
-    return {
-        "enabled": config.get("test_alerts_enabled") is True,
-        "eligible": eligible,
-        "sent_for_current_episode": bool(estado["sent_for_current_episode"]),
-        "event_key": estado["event_key"] or avaliacao.get("event_key"),
-        "last_sent_at": estado["last_sent_at"],
-        "cooldown_active": cooldown,
-        "rearm_pending": rearm_pending,
-        "reason": reason,
+    try:
+        enabled = config.get("test_alerts_enabled") is True
+    except Exception:
+        enabled = False
+
+    fallback = {
+        "enabled": enabled,
+        "eligible": False,
+        "sent_for_current_episode": False,
+        "event_key": None,
+        "last_sent_at": None,
+        "cooldown_active": False,
+        "rearm_pending": False,
+        "reason": "status_unavailable",
     }
+    try:
+        agora = (now or agora_utc()).astimezone(timezone.utc)
+        estado = carregar_estado_alerta_teste(
+            estrito=True, somente_leitura=True
+        )
+        avaliacao = avaliar_alerta_teste_admin(
+            snapshot,
+            config,
+            admin_phone=obter_admin_alert_phone(),
+            now=agora,
+        )
+        cooldown = _cooldown_ativo(estado, config, agora)
+        rearm_pending = bool(estado["active"] and estado.get("clear_since"))
+        eligible = bool(
+            avaliacao["eligible"]
+            and not estado["sent_for_current_episode"]
+            and not estado["suppressed_for_current_episode"]
+            and not cooldown
+        )
+        reason = estado["last_result"] if enabled else "disabled"
+        if not avaliacao["eligible"]:
+            reason = avaliacao["reason"]
+        return {
+            "enabled": enabled,
+            "eligible": eligible,
+            "sent_for_current_episode": bool(
+                estado["sent_for_current_episode"]
+            ),
+            "event_key": estado["event_key"] or avaliacao.get("event_key"),
+            "last_sent_at": estado["last_sent_at"],
+            "cooldown_active": cooldown,
+            "rearm_pending": rearm_pending,
+            "reason": reason,
+        }
+    except Exception as erro:
+        logger.warning(
+            "Nowcasting teste admin: status indisponivel (%s)",
+            _erro_resumido(erro),
+        )
+        return fallback

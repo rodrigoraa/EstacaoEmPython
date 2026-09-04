@@ -182,7 +182,11 @@ class NowcastingIntegrationTest(unittest.TestCase):
         api = self.client.get("/admin/api/nowcasting/status")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Aguardando a primeira análise".encode(), page.data)
-        self.assertEqual(api.get_json()["status"], "SEM_DADOS")
+        payload = api.get_json()
+        self.assertEqual(payload["status"], "SEM_DADOS")
+        self.assertFalse(payload["monitoramento_atual"])
+        self.assertFalse(payload["snapshot_desatualizado"])
+        self.assertIsNone(payload["ultimo_nivel_calculado"])
 
     def test_monitoramento_snapshot_antigo_vira_historico_sem_apagar_snapshot(self):
         from services.nowcasting_repository import salvar_snapshot
@@ -195,6 +199,8 @@ class NowcastingIntegrationTest(unittest.TestCase):
 
         self.autenticar_admin()
         page = self.client.get("/admin/monitoramento")
+        api = self.client.get("/admin/api/nowcasting/status")
+        payload = api.get_json()
 
         self.assertEqual(page.status_code, 200)
         self.assertIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
@@ -202,6 +208,11 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertIn("Último nível calculado".encode(), page.data)
         self.assertNotIn(b"preventive-alert--vermelho", page.data)
         self.assertNotIn(b"ALERTA OPERACIONAL ANTIGO", page.data)
+        self.assertEqual(api.status_code, 200)
+        self.assertFalse(payload["monitoramento_atual"])
+        self.assertTrue(payload["snapshot_desatualizado"])
+        self.assertEqual(payload["alerta_preventivo"]["nivel"], "INDISPONIVEL")
+        self.assertEqual(payload["ultimo_nivel_calculado"], "VERMELHO")
         conn = self.database.get_db()
         row = conn.execute(
             "SELECT estado_json FROM nowcasting_snapshots WHERE input_fingerprint=?",
@@ -223,11 +234,16 @@ class NowcastingIntegrationTest(unittest.TestCase):
 
         self.autenticar_admin()
         page = self.client.get("/admin/monitoramento")
+        payload = self.client.get("/admin/api/nowcasting/status").get_json()
 
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"preventive-alert--vermelho", page.data)
         self.assertIn(b"ALERTA RECENTE VIS", page.data)
         self.assertNotIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
+        self.assertTrue(payload["monitoramento_atual"])
+        self.assertFalse(payload["snapshot_desatualizado"])
+        self.assertEqual(payload["alerta_preventivo"]["nivel"], "VERMELHO")
+        self.assertIsNone(payload["ultimo_nivel_calculado"])
 
     def test_monitoramento_timestamp_invalido_ou_ausente_nao_quebra(self):
         self.autenticar_admin()
@@ -242,9 +258,98 @@ class NowcastingIntegrationTest(unittest.TestCase):
                     "routes.nowcasting._estado_seguro", return_value=state
                 ):
                     page = self.client.get("/admin/monitoramento")
+                    payload = self.client.get(
+                        "/admin/api/nowcasting/status"
+                    ).get_json()
                 self.assertEqual(page.status_code, 200)
                 self.assertIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
                 self.assertNotIn(b"preventive-alert--vermelho", page.data)
+                self.assertFalse(payload["monitoramento_atual"])
+                self.assertTrue(payload["snapshot_desatualizado"])
+                self.assertEqual(
+                    payload["alerta_preventivo"]["nivel"], "INDISPONIVEL"
+                )
+                self.assertEqual(payload["ultimo_nivel_calculado"], "VERMELHO")
+
+    def test_telas_admin_com_alerta_desabilitado_ou_sem_telefone(self):
+        self.autenticar_admin()
+        os.environ.pop("ADMIN_ALERT_PHONE", None)
+
+        for habilitado in (False, True):
+            os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = (
+                "true" if habilitado else "false"
+            )
+            for caminho in ("/admin/radar", "/admin/monitoramento"):
+                with self.subTest(habilitado=habilitado, caminho=caminho):
+                    resposta = self.client.get(caminho)
+                    self.assertEqual(resposta.status_code, 200)
+
+    def test_json_experimental_invalido_nao_derruba_telas(self):
+        conn = self.database.get_db()
+        conn.execute(
+            """
+            INSERT INTO health_check_estado (chave, status, mensagem)
+            VALUES ('nowcasting_test_alert', 'active', '{json-invalido')
+            """
+        )
+        conn.commit()
+        conn.close()
+        self.autenticar_admin()
+
+        with self.assertLogs(
+            "services.nowcasting_test_alerts", level="WARNING"
+        ) as logs:
+            radar = self.client.get("/admin/radar")
+            monitoramento = self.client.get("/admin/monitoramento")
+            api = self.client.get("/admin/api/nowcasting/status")
+
+        self.assertEqual(radar.status_code, 200)
+        self.assertEqual(monitoramento.status_code, 200)
+        self.assertEqual(api.status_code, 200)
+        self.assertEqual(api.get_json()["test_alert"]["reason"], "status_unavailable")
+        self.assertNotIn("{json-invalido", "\n".join(logs.output))
+
+    def test_tabela_experimental_ausente_nao_derruba_telas(self):
+        conn = self.database.get_db()
+        conn.execute("DROP TABLE health_check_estado")
+        conn.commit()
+        conn.close()
+        self.autenticar_admin()
+
+        radar = self.client.get("/admin/radar")
+        monitoramento = self.client.get("/admin/monitoramento")
+
+        self.assertEqual(radar.status_code, 200)
+        self.assertEqual(monitoramento.status_code, 200)
+        self.assertIn(b"Status experimental temporariamente indispon", radar.data)
+        self.assertIn(
+            b"Status experimental temporariamente indispon", monitoramento.data
+        )
+
+    def test_falha_sqlite_experimental_nao_derruba_telas(self):
+        import sqlite3
+
+        telefone = "67999999999"
+        os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
+        os.environ["ADMIN_ALERT_PHONE"] = telefone
+        self.autenticar_admin()
+
+        with (
+            mock.patch(
+                "services.nowcasting_test_alerts.database.get_db_readonly",
+                side_effect=sqlite3.OperationalError("database is locked"),
+            ),
+            self.assertLogs(
+                "services.nowcasting_test_alerts", level="WARNING"
+            ) as logs,
+        ):
+            radar = self.client.get("/admin/radar")
+            monitoramento = self.client.get("/admin/monitoramento")
+
+        self.assertEqual(radar.status_code, 200)
+        self.assertEqual(monitoramento.status_code, 200)
+        self.assertIn(b"Status experimental temporariamente indispon", radar.data)
+        self.assertNotIn(telefone, "\n".join(logs.output))
 
     def test_snapshot_idempotente_e_api_sem_payload_bruto(self):
         from services.nowcasting_repository import salvar_snapshot
@@ -336,7 +441,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
     def test_snapshot_persiste_ids_distintos_da_ameaca_e_do_eco_de_proximidade(self):
         from services.nowcasting_repository import salvar_snapshot
 
-        state = self.state()
+        state = self.state_vermelho()
         state["ameaca_principal"] = {
             "cluster_id": 202, "track_id": 22, "distance_km": 60,
         }

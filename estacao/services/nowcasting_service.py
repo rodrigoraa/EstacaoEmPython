@@ -44,7 +44,7 @@ def janela_snapshot_operacional_minutos(config):
 
 def snapshot_operacionalmente_atual(snapshot, config, now=None):
     """Valida se um snapshot ainda pode representar a situação operacional."""
-    if not snapshot:
+    if not isinstance(snapshot, dict) or not snapshot:
         return False
     gerado_em = parse_datetime(snapshot.get("gerado_em_utc"), assume_utc=True)
     if not gerado_em:
@@ -59,12 +59,50 @@ def snapshot_operacionalmente_atual(snapshot, config, now=None):
         return False
 
     radar = snapshot.get("radar") or {}
+    if not isinstance(radar, dict):
+        return False
     if radar.get("stale") is True:
         return False
     alerta = snapshot.get("alerta_preventivo") or {}
+    if not isinstance(alerta, dict):
+        return False
     if alerta.get("nivel") in {"NORMAL", "AMARELO", "LARANJA", "VERMELHO"}:
         return radar.get("operacional") is True
     return True
+
+
+def preparar_estado_nowcasting_admin(snapshot, config, now=None):
+    """Aplica a mesma semantica fail-safe ao painel e a API administrativos."""
+    janela = janela_snapshot_operacional_minutos(config)
+    estado = dict(snapshot) if isinstance(snapshot, dict) else None
+    monitoramento_atual = snapshot_operacionalmente_atual(
+        estado, config, now=now
+    )
+    snapshot_desatualizado = bool(snapshot) and not monitoramento_atual
+    ultimo_nivel_calculado = None
+
+    if estado and snapshot_desatualizado:
+        alerta_anterior = estado.get("alerta_preventivo") or {}
+        if isinstance(alerta_anterior, dict):
+            ultimo_nivel_calculado = alerta_anterior.get("nivel")
+        alerta_indisponivel = criar_alerta_preventivo(
+            None,
+            radar_atualizado=False,
+            evento_local=False,
+        )
+        alerta_indisponivel["message"] = (
+            "Monitoramento desatualizado. O último alerta calculado não deve ser "
+            "interpretado como situação atual."
+        )
+        estado["alerta_preventivo"] = alerta_indisponivel
+
+    return {
+        "estado": estado,
+        "monitoramento_atual": monitoramento_atual,
+        "snapshot_desatualizado": snapshot_desatualizado,
+        "janela_snapshot_minutos": janela,
+        "ultimo_nivel_calculado": ultimo_nivel_calculado,
+    }
 
 
 def _xy_local(lat, lon, ref_lat, ref_lon):

@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import sqlite3
+from pathlib import Path
 
 from config import env_str
 
@@ -27,6 +28,15 @@ def get_db():
     conn.row_factory = sqlite3.Row
     configurar_conexao(conn)
 
+    return conn
+
+
+def get_db_readonly():
+    """Abre o banco existente sem permitir escrita ou criacao de arquivo."""
+    uri = f"{Path(DATABASE).resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 5000;")
     return conn
 
 

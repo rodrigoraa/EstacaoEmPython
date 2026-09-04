@@ -55,6 +55,11 @@ def radar_admin():
         if estado.get("frame")
         else _alerta_indisponivel("Dados operacionais do radar indisponíveis.")
     )
+    if estado.get("frame") and estado.get("stale"):
+        alerta_preventivo = _alerta_indisponivel(
+            "Dados operacionais do radar desatualizados. O último alerta "
+            "calculado não deve ser interpretado como situação atual."
+        )
     ameaca_principal = None
     ultimo_nivel_calculado = None
     if estado.get("frame"):

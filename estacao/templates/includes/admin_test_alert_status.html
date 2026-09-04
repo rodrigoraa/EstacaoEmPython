@@ -8,6 +8,8 @@
     <span>Alerta de teste já processado; aguardando rearm/cooldown.</span>
     {% elif test_alert.enabled and test_alert.reason == 'admin_phone_missing' %}
     <span>Destinatário administrativo não configurado.</span>
+    {% elif test_alert.reason == 'status_unavailable' %}
+    <span>Status experimental temporariamente indisponível; o monitoramento principal continua ativo.</span>
     {% else %}
     <span>Somente situações vermelhas elegíveis podem gerar um teste administrativo.</span>
     {% endif %}

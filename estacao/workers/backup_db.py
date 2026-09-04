@@ -34,10 +34,10 @@ def criar_backup(destino):
         conn_destino = sqlite3.connect(destino, timeout=30)
         try:
             with conn_origem, conn_destino:
-                conn_origem.backup(conn_destino, pages=1000, sleep=0.05)
-                resultado = conn_destino.execute("PRAGMA integrity_check").fetchone()[0]
+                conn_origem.backup(conn_destino, pages=1000, sleep=0.10)
+                resultado = conn_destino.execute("PRAGMA quick_check").fetchone()[0]
                 if resultado != "ok":
-                    raise RuntimeError(f"Backup criado, mas integrity_check retornou: {resultado}")
+                    raise RuntimeError(f"Backup criado, mas quick_check retornou: {resultado}")
         finally:
             conn_destino.close()
             conn_origem.close()

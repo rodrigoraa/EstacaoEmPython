@@ -842,6 +842,13 @@ body.modal-open {
 .preventive-alert-details dd { margin-top: .15rem; font-size: .8rem; font-weight: 800; }
 .preventive-alert-content .preventive-simulation-note { display: flex; align-items: center; gap: .4rem; margin-top: .75rem; font-size: .76rem; font-weight: 700; }
 .preventive-history-note { margin-top: .65rem !important; padding: .6rem .7rem; border: 1px solid #cbd5e1; border-radius: .55rem; background: #fff; color: #475569; font-size: .75rem !important; }
+.admin-test-alert-status { display: flex; align-items: flex-start; gap: .7rem; padding: .8rem 1rem; border: 1px solid #cbd5e1; border-radius: .8rem; background: rgba(255, 255, 255, .94); color: #475569; }
+.admin-test-alert-status > i { margin-top: .15rem; color: #64748b; }
+.admin-test-alert-status div { display: grid; gap: .15rem; }
+.admin-test-alert-status strong { color: #334155; font-size: .82rem; }
+.admin-test-alert-status span { font-size: .76rem; }
+.admin-test-alert-status--enabled { border-color: #fbbf24; background: #fffbeb; }
+.admin-test-alert-status--enabled > i, .admin-test-alert-status--enabled strong { color: #92400e; }
 .proximity-levels {
     padding: 1rem 1.15rem;
     border: 1px solid #dbe4ef;

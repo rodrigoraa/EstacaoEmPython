@@ -1,0 +1,15 @@
+<aside class="admin-test-alert-status {{ 'admin-test-alert-status--enabled' if test_alert.enabled else 'admin-test-alert-status--disabled' }}" aria-label="Modo de alerta preventivo de teste">
+  <i class="fa-solid fa-flask"></i>
+  <div>
+    <strong>Alertas de teste ao administrador: {{ 'ATIVADOS' if test_alert.enabled else 'DESATIVADOS' }}</strong>
+    {% if test_alert.enabled and test_alert.sent_for_current_episode %}
+    <span>Teste enviado ao administrador neste episódio.</span>
+    {% elif test_alert.enabled and (test_alert.cooldown_active or test_alert.rearm_pending) %}
+    <span>Alerta de teste já processado; aguardando rearm/cooldown.</span>
+    {% elif test_alert.enabled and test_alert.reason == 'admin_phone_missing' %}
+    <span>Destinatário administrativo não configurado.</span>
+    {% else %}
+    <span>Somente situações vermelhas elegíveis podem gerar um teste administrativo.</span>
+    {% endif %}
+  </div>
+</aside>

@@ -136,6 +136,15 @@ def nowcasting_config():
         "enabled": env_bool("NOWCASTING_ENABLED", False),
         "poll_seconds": max(60, env_int("NOWCASTING_POLL_SECONDS", 300)),
         "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", False),
+        "test_alerts_enabled": env_bool(
+            "NOWCASTING_TEST_ALERTS_ENABLED", False
+        ),
+        "test_alert_cooldown_minutes": max(
+            1, env_int("NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES", 60)
+        ),
+        "test_alert_rearm_minutes": max(
+            1, env_int("NOWCASTING_TEST_ALERT_REARM_MINUTES", 30)
+        ),
         "upstream_corridor_km": max(
             5.0, env_float("NOWCASTING_UPSTREAM_CORRIDOR_KM", 50)
         ),

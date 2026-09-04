@@ -25,6 +25,7 @@ from services.nowcasting_repository import (
     salvar_snapshot,
 )
 from services.nowcasting_service import analisar_nowcasting
+from services.nowcasting_test_alerts import processar_alerta_teste_admin
 
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ def executar_ciclo(config=None):
     estado = analisar_nowcasting(radar, regional, local, config)
     snapshot_id = salvar_snapshot(estado, fingerprint)
     enfileirar_alertas_nowcasting(config, estado)
+    test_alert = processar_alerta_teste_admin(estado, config)
     codigos = ",".join(
         station["code"] for station in estado["estacoes_relevantes"]
     ) or "nenhuma"
@@ -68,6 +70,7 @@ def executar_ciclo(config=None):
         "snapshot": estado,
         "new": snapshot_id is not None,
         "snapshot_id": snapshot_id,
+        "test_alert": test_alert,
     }
 
 

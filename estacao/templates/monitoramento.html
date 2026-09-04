@@ -12,6 +12,8 @@
     <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>
   </header>
 
+  {% include "includes/admin_test_alert_status.html" %}
+
   {% if not estado %}
   <article class="card text-center py-12">
     <i class="fa-solid fa-chart-area text-4xl text-slate-400"></i>
@@ -39,7 +41,7 @@
     <div class="preventive-alert-content">
       <div class="preventive-alert-heading">
         <div><small>Alerta de proximidade · nível operacional interno</small><h2 id="monitor-alerta-titulo">{{ rotulo_nivel_alerta }}</h2></div>
-        <span class="preventive-simulation-badge">Envio preventivo: DESATIVADO</span>
+        <span class="preventive-simulation-badge">Envio preventivo a usuários: DESATIVADO</span>
       </div>
       <p>{{ alerta.get('message', 'Aguardando cálculo do nível preventivo.') }}</p>
       {% if ultimo_nivel_calculado %}
@@ -56,7 +58,7 @@
         <div><dt>Qualidade do tracking</dt><dd>{{ alerta.get('tracking_quality', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
         <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.get('regional_confirmation') else 'Ainda não disponível' }}</dd></div>
       </dl>
-      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.get('simulation_message', 'Nenhum alerta preventivo será enviado por esta versão.') }}</p>
+      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.get('simulation_message', 'Nenhum alerta preventivo será enviado aos usuários por esta versão.') }}</p>
       {% endif %}
     </div>
   </section>

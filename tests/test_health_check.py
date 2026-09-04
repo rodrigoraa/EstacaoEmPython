@@ -118,6 +118,30 @@ class HealthCheckTest(unittest.TestCase):
         self.assertEqual(len(envios), 1)
         self.assertEqual(envios[0][0], "67999999999")
 
+    def test_estado_nowcasting_nao_interfere_no_cooldown_do_health_check(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        self.health_check = importlib.reload(self.health_check)
+        self.inserir_coleta(minutos_atras=20)
+        conn = self.abrir_banco()
+        conn.execute(
+            """
+            INSERT INTO health_check_estado (
+                chave, status, assinatura, mensagem, notificado_em
+            ) VALUES ('nowcasting_test_alert', 'active', 'track:27', '{}', CURRENT_TIMESTAMP)
+            """
+        )
+        conn.commit()
+        conn.close()
+        envios = []
+        self.health_check.enviar_mensagem_admin = (
+            lambda telefone, mensagem: envios.append((telefone, mensagem))
+        )
+
+        resultado = self.health_check.executar_health_check()
+
+        self.assertTrue(resultado["notificado"])
+        self.assertEqual(len(envios), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

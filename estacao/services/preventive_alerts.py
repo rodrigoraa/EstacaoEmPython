@@ -278,8 +278,8 @@ def criar_alerta_preventivo(
         "would_send": would_send,
         "preventive_sending": "DESATIVADO",
         "simulation_message": (
-            "Este evento seria candidato a alerta por WhatsApp, mas o envio está desativado."
+            "Este evento é candidato preventivo; o envio está desativado para usuários."
             if would_send
-            else "Nenhum alerta preventivo será enviado por esta versão."
+            else "Nenhum alerta preventivo será enviado aos usuários por esta versão."
         ),
     }

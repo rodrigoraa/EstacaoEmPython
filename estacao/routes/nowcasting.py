@@ -12,6 +12,7 @@ from services.nowcasting_service import (
     snapshot_operacionalmente_atual,
 )
 from services.preventive_alerts import criar_alerta_preventivo
+from services.nowcasting_test_alerts import obter_status_alerta_teste_admin
 
 
 nowcasting_routes = Blueprint("nowcasting", __name__)
@@ -31,6 +32,7 @@ def _estado_seguro():
 def monitoramento_admin():
     estado = _estado_seguro()
     config = nowcasting_config()
+    test_alert = obter_status_alerta_teste_admin(estado, config)
     monitoramento_atual = snapshot_operacionalmente_atual(
         estado, config
     )
@@ -57,6 +59,7 @@ def monitoramento_admin():
         janela_snapshot_minutos=janela_snapshot_operacional_minutos(
             config
         ),
+        test_alert=test_alert,
         titulo="Monitoramento Regional",
         aba_ativa="monitoramento",
     )
@@ -72,7 +75,10 @@ def monitoramento_legacy():
 @admin_api_required
 def api_nowcasting_status_admin():
     estado = _estado_seguro()
-    return jsonify(estado or {"status": "SEM_DADOS", "snapshot": None})
+    config = nowcasting_config()
+    payload = dict(estado) if estado else {"status": "SEM_DADOS", "snapshot": None}
+    payload["test_alert"] = obter_status_alerta_teste_admin(estado, config)
+    return jsonify(payload)
 
 
 @nowcasting_routes.route("/api/nowcasting/status")

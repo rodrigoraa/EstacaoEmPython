@@ -66,6 +66,7 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
                     "Níveis de proximidade", "ALERTA PREVENTIVO",
                     "Alerta de proximidade", "Ameaça principal do nowcasting",
                     "Envio preventivo",
+                    "Alertas de teste ao administrador",
                 ):
                     self.assertNotIn(experimental_text.encode(), response.data)
         home = self.client.get("/").data

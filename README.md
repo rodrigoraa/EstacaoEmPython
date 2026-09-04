@@ -218,6 +218,9 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_ENABLED` | `false` | ativa o worker de fusão persistida |
 | `NOWCASTING_POLL_SECONDS` | `300` | intervalo entre análises |
 | `NOWCASTING_ALERTS_ENABLED` | `false` | reservado; sempre ignorado nesta versão |
+| `NOWCASTING_TEST_ALERTS_ENABLED` | `false` | envia testes vermelhos elegíveis somente ao administrador |
+| `NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES` | `60` | proteção global mínima entre testes enviados |
+| `NOWCASTING_TEST_ALERT_REARM_MINUTES` | `30` | tempo contínuo fora do vermelho para encerrar um episódio |
 | `NOWCASTING_UPSTREAM_CORRIDOR_KM` | `50` | largura lateral do corredor a montante |
 | `NOWCASTING_RADAR_MAX_AGE_MINUTES` | `45` | idade máxima do radar para evidência plena |
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
@@ -563,6 +566,24 @@ ausência de clutter forte; tracking, aproximação e trajetória não bloqueiam
 simulação, para que uma célula confiável recém-detectada perto da escola não seja
 ocultada. `preventive_sending` permanece `DESATIVADO` e não cria registros em
 `alertas_fila` nem em `alertas_eventos`.
+
+### Alertas preventivos de teste para o administrador
+
+`NOWCASTING_TEST_ALERTS_ENABLED=false` mantém o modo experimental desligado. Quando
+habilitado, somente alertas `VERMELHO` atuais, confiáveis e marcados como candidatos
+podem ser enviados diretamente para `ADMIN_ALERT_PHONE`. Usuários cadastrados não
+recebem essas mensagens, e o teste não usa `alertas_fila` nem `alertas_eventos`.
+`NOWCASTING_ALERTS_ENABLED` permanece bloqueado e não habilita alertas públicos nesta
+versão.
+
+O episódio é persistido na chave isolada `nowcasting_test_alert` da estrutura genérica
+`health_check_estado`, sem armazenar telefone, credenciais ou texto enviado. Um track
+gera uma chave como `track:27`; sem tracking, usa-se um episódio vermelho global para
+impedir spam por mudanças de cluster. A troca posterior para um track também não
+repete o teste enquanto o episódio estiver ativo. O rearm padrão exige 30 minutos
+contínuos fora do vermelho e o cooldown global padrão exige 60 minutos desde o último
+envio. Falhas no WhatsApp não derrubam o worker e uma nova tentativa respeita o mesmo
+cooldown de segurança.
 
 O MaxCAPPI processado é imagem RGB, não volume bruto calibrado. Portanto o sistema mostra “eco de radar”/“área de refletividade detectada” e não inventa dBZ, mm/h, probabilidade, granizo, severidade ou “tempestade confirmada”. Estações externas são aproximadamente horárias, o radar pode conter clutter, o ETA depende da continuidade e células podem nascer ou desaparecer rapidamente. Nowcasting não substitui avisos oficiais. As regras precisam rodar em observação por dias/semanas e ser comparadas com a chegada real à escola antes de qualquer alerta preventivo.
 

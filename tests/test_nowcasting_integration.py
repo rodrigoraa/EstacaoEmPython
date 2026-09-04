@@ -23,6 +23,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "ESTACAO_DB": str(Path(self.tmp.name) / "teste.db"),
             "NOWCASTING_ENABLED": "false",
             "NOWCASTING_ALERTS_ENABLED": "false",
+            "NOWCASTING_TEST_ALERTS_ENABLED": "false",
             "RATELIMIT_ENABLED": "false",
             "SECRET_KEY": "teste",
         })
@@ -44,7 +45,9 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.tmp.cleanup()
         for key in (
             "ESTACAO_DB", "NOWCASTING_ENABLED", "NOWCASTING_ALERTS_ENABLED",
-            "RATELIMIT_ENABLED", "SECRET_KEY",
+            "NOWCASTING_TEST_ALERTS_ENABLED", "ADMIN_ALERT_PHONE",
+            "NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES",
+            "NOWCASTING_TEST_ALERT_REARM_MINUTES", "RATELIMIT_ENABLED", "SECRET_KEY",
         ):
             os.environ.pop(key, None)
 
@@ -88,7 +91,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
                 "local_event": False,
                 "message": "Dados operacionais do radar indisponíveis.",
                 "would_send": False, "preventive_sending": "DESATIVADO",
-                "simulation_message": "Nenhum alerta preventivo será enviado por esta versão.",
+                "simulation_message": "Nenhum alerta preventivo será enviado aos usuários por esta versão.",
             },
             "historico_regional_em_formacao": False,
             "evidencias": ["Sem evidencia observacional relevante no momento"],
@@ -291,7 +294,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertIn("Índice interno de evidência".encode(), page.data)
         self.assertIn("Ameaça principal do nowcasting".encode(), page.data)
         self.assertIn("Níveis de proximidade".encode(), page.data)
-        self.assertIn("Envio preventivo: DESATIVADO".encode(), page.data)
+        self.assertIn("Envio preventivo a usuários: DESATIVADO".encode(), page.data)
         self.assertIn("INDISPONÍVEL".encode(), page.data)
         self.assertIn("Nenhum eco confiável dentro de 100 km".encode(), page.data)
         self.assertIn("Glossário do monitoramento".encode(), page.data)
@@ -481,6 +484,127 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)
         conn.close()
+
+    def test_worker_modo_teste_envia_direto_so_ao_admin_sem_fila(self):
+        from config import nowcasting_config
+        from workers import nowcasting_updater
+
+        telefone = "67987654321"
+        os.environ["NOWCASTING_ENABLED"] = "true"
+        os.environ["NOWCASTING_ALERTS_ENABLED"] = "true"
+        os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
+        os.environ["ADMIN_ALERT_PHONE"] = telefone
+        estado = self.state_vermelho()
+        estado["alerta_preventivo"].update({
+            "tracking_valid": False,
+            "clutter": False,
+            "low_confidence": False,
+        })
+        with (
+            mock.patch.object(
+                nowcasting_updater,
+                "carregar_entradas_nowcasting",
+                return_value=({}, {"stations": []}, None, "teste-admin-vermelho"),
+            ),
+            mock.patch.object(
+                nowcasting_updater, "analisar_nowcasting", return_value=estado
+            ),
+            mock.patch(
+                "services.nowcasting_test_alerts.enviar_mensagem_admin"
+            ) as enviar_admin,
+        ):
+            resultado = nowcasting_updater.executar_ciclo(nowcasting_config())
+
+        enviar_admin.assert_called_once()
+        self.assertEqual(enviar_admin.call_args.args[0], telefone)
+        self.assertTrue(resultado["test_alert"]["sent_for_current_episode"])
+        conn = self.database.get_db()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)
+        estado_teste = conn.execute(
+            "SELECT mensagem FROM health_check_estado WHERE chave='nowcasting_test_alert'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertNotIn(telefone, estado_teste)
+
+    def test_falha_whatsapp_do_teste_nao_derruba_worker(self):
+        from config import nowcasting_config
+        from workers import nowcasting_updater
+
+        os.environ["NOWCASTING_ENABLED"] = "true"
+        os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
+        os.environ["ADMIN_ALERT_PHONE"] = "67987654321"
+        estado = self.state_vermelho()
+        estado["alerta_preventivo"].update({
+            "tracking_valid": False,
+            "clutter": False,
+            "low_confidence": False,
+        })
+        with (
+            mock.patch.object(
+                nowcasting_updater,
+                "carregar_entradas_nowcasting",
+                return_value=({}, {"stations": []}, None, "teste-admin-falha"),
+            ),
+            mock.patch.object(
+                nowcasting_updater, "analisar_nowcasting", return_value=estado
+            ),
+            mock.patch(
+                "services.nowcasting_test_alerts.enviar_mensagem_admin",
+                side_effect=RuntimeError("Evolution indisponível"),
+            ),
+        ):
+            resultado = nowcasting_updater.executar_ciclo(nowcasting_config())
+
+        self.assertFalse(resultado["disabled"])
+        self.assertEqual(resultado["test_alert"]["reason"], "send_failed")
+        conn = self.database.get_db()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)
+        conn.close()
+
+    def test_telas_e_api_admin_exibem_modo_sem_expor_telefone(self):
+        from services.nowcasting_repository import salvar_snapshot
+
+        telefone = "67987654321"
+        os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
+        os.environ["ADMIN_ALERT_PHONE"] = telefone
+        self.assertIsNotNone(salvar_snapshot(self.state_vermelho(), "modo-teste-ui"))
+        self.autenticar_admin()
+
+        monitoramento = self.client.get("/admin/monitoramento")
+        radar = self.client.get("/admin/radar")
+        api = self.client.get("/admin/api/nowcasting/status")
+        conteudo = monitoramento.data + radar.data + api.data
+
+        self.assertEqual(monitoramento.status_code, 200)
+        self.assertEqual(radar.status_code, 200)
+        self.assertEqual(api.status_code, 200)
+        self.assertIn("Alertas de teste ao administrador: ATIVADOS".encode(), conteudo)
+        self.assertNotIn(telefone.encode(), conteudo)
+        test_alert = api.get_json()["test_alert"]
+        self.assertTrue(test_alert["enabled"])
+        self.assertTrue(test_alert["eligible"])
+        self.assertEqual(test_alert["event_key"], "track:12")
+        self.assertEqual(
+            set(test_alert),
+            {
+                "enabled", "eligible", "sent_for_current_episode",
+                "event_key", "last_sent_at", "cooldown_active",
+                "rearm_pending", "reason",
+            },
+        )
+
+    def test_rotas_publicas_nao_expoem_modo_nem_telefone(self):
+        telefone = "67987654321"
+        os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
+        os.environ["ADMIN_ALERT_PHONE"] = telefone
+        for path in ("/", "/historico", "/previsao", "/sobre"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn(b"Alertas de teste ao administrador", response.data)
+                self.assertNotIn(telefone.encode(), response.data)
 
     def test_health_auxiliar_desabilitado(self):
         response = self.client.get("/health")

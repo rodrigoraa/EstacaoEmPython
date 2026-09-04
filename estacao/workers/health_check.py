@@ -8,8 +8,11 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 import database
+from services.admin_notification_service import (
+    enviar_mensagem_admin as _enviar_mensagem_admin,
+    obter_admin_alert_phone,
+)
 from time_utils import agora_local, formatar_local, iso_utc, minutos_desde
-from unsubscribe_tokens import telefone_com_codigo_pais
 
 
 ESTADO_CHAVE = "health_check"
@@ -33,7 +36,7 @@ def obter_config():
         "enviando_expirado_minutos": env_int("WHATSAPP_ENVIANDO_EXPIRADO_MINUTOS", 10),
         "falhas_minimas": env_int("HEALTH_FALHAS_MINIMAS", 1),
         "cooldown_minutos": env_int("HEALTH_ALERT_COOLDOWN_MINUTOS", 60),
-        "admin_phone": os.environ.get("ADMIN_ALERT_PHONE", "").strip(),
+        "admin_phone": obter_admin_alert_phone(),
     }
 
 
@@ -245,9 +248,8 @@ def salvar_estado(conn, status, assinatura=None, mensagem=None, notificou=False)
 
 
 def enviar_mensagem_admin(telefone, mensagem):
-    from services.whatsapp_service import enviar_whatsapp
-
-    enviar_whatsapp(telefone_com_codigo_pais(telefone), mensagem)
+    """Wrapper preservado para compatibilidade e testes do health check."""
+    _enviar_mensagem_admin(telefone, mensagem)
 
 
 def processar_resultado(conn, problemas, config, permitir_whatsapp=True):

@@ -9,6 +9,7 @@ from admin_auth import admin_api_required, admin_page_required
 from config import nowcasting_config, radar_config
 from services.nowcasting_repository import obter_ultimo_snapshot
 from services.nowcasting_service import snapshot_operacionalmente_atual
+from services.nowcasting_test_alerts import obter_status_alerta_teste_admin
 from services.preventive_alerts import criar_alerta_preventivo
 from services.radar_repository import obter_arquivo_frame, obter_estado_radar
 from time_utils import formatar_local
@@ -47,6 +48,8 @@ def _estado_seguro():
 @admin_page_required
 def radar_admin():
     estado = _estado_seguro()
+    config_nowcasting = nowcasting_config()
+    snapshot_contextual = None
     alerta_preventivo = (
         None
         if estado.get("frame")
@@ -70,11 +73,12 @@ def radar_admin():
                 and (snapshot.get("radar") or {}).get("frame_id")
                 == estado["frame"]["id"]
             ):
+                snapshot_contextual = snapshot
                 alerta_snapshot = snapshot.get("alerta_preventivo") or {}
                 if (
                     not estado.get("stale")
                     and snapshot_operacionalmente_atual(
-                        snapshot, nowcasting_config()
+                        snapshot, config_nowcasting
                     )
                 ):
                     alerta_preventivo = snapshot.get("alerta_preventivo")
@@ -100,6 +104,9 @@ def radar_admin():
         alerta_preventivo=alerta_preventivo,
         ameaca_principal=ameaca_principal,
         ultimo_nivel_calculado=ultimo_nivel_calculado,
+        test_alert=obter_status_alerta_teste_admin(
+            snapshot_contextual, config_nowcasting
+        ),
         titulo="Radar Meteorológico",
         radar_track_min_frames=radar_config()["track_min_frames"],
         aba_ativa="radar",

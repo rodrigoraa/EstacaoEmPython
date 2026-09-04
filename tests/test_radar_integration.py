@@ -175,7 +175,7 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertIn(b"Eco usado no alerta e deslocamento", pagina.data)
         self.assertIn(b"Como interpretar", pagina.data)
         self.assertIn("Níveis de proximidade".encode(), pagina.data)
-        self.assertIn("Envio preventivo: DESATIVADO".encode(), pagina.data)
+        self.assertIn("Envio preventivo a usuários: DESATIVADO".encode(), pagina.data)
         self.assertIn("Glossário do radar".encode(), pagina.data)
         self.assertIn("Velocidade estimada do eco".encode(), pagina.data)
         self.assertIn(b"Alerta visual de teste", pagina.data)

@@ -17,12 +17,14 @@
     <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>
   </header>
 
+  {% include "includes/admin_test_alert_status.html" %}
+
   <section class="preventive-alert preventive-alert--{{ classe_alerta }}" aria-live="polite" aria-labelledby="radar-alerta-titulo">
     <span class="preventive-alert-icon"><i class="fa-solid fa-shield-halved"></i></span>
     <div class="preventive-alert-content">
       <div class="preventive-alert-heading">
         <div><small>Alerta de proximidade · nível operacional interno</small><h2 id="radar-alerta-titulo">{{ rotulo_nivel_alerta }}</h2></div>
-        <span class="preventive-simulation-badge">Envio preventivo: DESATIVADO</span>
+        <span class="preventive-simulation-badge">Envio preventivo a usuários: DESATIVADO</span>
       </div>
       <p>{{ alerta.get('message', 'Aguardando o snapshot preventivo correspondente ao frame atual.') }}</p>
       {% if ultimo_nivel_calculado %}
@@ -39,7 +41,7 @@
         <div><dt>Qualidade do tracking</dt><dd>{{ alerta.get('tracking_quality', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
         <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.get('regional_confirmation') else 'Ainda não disponível' }}</dd></div>
       </dl>
-      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.get('simulation_message', 'Nenhum alerta preventivo será enviado por esta versão.') }}</p>
+      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.get('simulation_message', 'Nenhum alerta preventivo será enviado aos usuários por esta versão.') }}</p>
       {% endif %}
     </div>
   </section>

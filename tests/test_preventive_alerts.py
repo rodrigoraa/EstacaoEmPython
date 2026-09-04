@@ -120,6 +120,54 @@ class PreventiveAlertsTest(unittest.TestCase):
         self.assertEqual(alerta["nivel"], "LARANJA")
         self.assertFalse(alerta["low_confidence"])
 
+    def test_clutter_proximo_aparece_quando_confiavel_esta_fora_de_100_km(self):
+        clutter = self.ameaca(15, clutter=0.96)
+        clutter.update({"track_id": 1, "cluster_id": 101})
+        confiavel = self.ameaca(180)
+        confiavel.update({"track_id": 2, "cluster_id": 102})
+
+        selecionado = selecionar_eco_alerta_proximidade([confiavel, clutter])
+        alerta = criar_alerta_preventivo(
+            selecionado, radar_atualizado=True, evento_local=False
+        )
+
+        self.assertEqual(selecionado["cluster_id"], 101)
+        self.assertEqual(alerta["nivel"], "AMARELO")
+        self.assertEqual(alerta["distance_km"], 15)
+        self.assertTrue(alerta["low_confidence"])
+        self.assertFalse(alerta["would_send"])
+
+    def test_clutter_e_confiavel_fora_de_100_km_resultam_normal(self):
+        clutter = self.ameaca(120, clutter=0.96)
+        confiavel = self.ameaca(180)
+        selecionado = selecionar_eco_alerta_proximidade([clutter, confiavel])
+        alerta = criar_alerta_preventivo(
+            selecionado, radar_atualizado=True, evento_local=False
+        )
+        self.assertEqual(alerta["nivel"], "NORMAL")
+        self.assertFalse(alerta["would_send"])
+
+    def test_confiavel_na_faixa_sempre_vence_clutter_mais_proximo(self):
+        casos = (
+            (5, 20, "VERMELHO", True),
+            (5, 90, "AMARELO", False),
+        )
+        for distancia_clutter, distancia_confiavel, nivel, candidato in casos:
+            with self.subTest(distancia_confiavel=distancia_confiavel):
+                clutter = self.ameaca(distancia_clutter, clutter=0.96)
+                clutter.update({"track_id": 1, "cluster_id": 101})
+                confiavel = self.ameaca(distancia_confiavel)
+                confiavel.update({"track_id": 2, "cluster_id": 102})
+                selecionado = selecionar_eco_alerta_proximidade(
+                    [clutter, confiavel]
+                )
+                alerta = criar_alerta_preventivo(
+                    selecionado, radar_atualizado=True, evento_local=False
+                )
+                self.assertEqual(selecionado["cluster_id"], 102)
+                self.assertEqual(alerta["nivel"], nivel)
+                self.assertEqual(alerta["would_send"], candidato)
+
     def test_somente_clutter_proximo_fica_amarelo_diagnostico(self):
         selecionado = selecionar_eco_alerta_proximidade(
             [self.ameaca(10, clutter=0.96)]

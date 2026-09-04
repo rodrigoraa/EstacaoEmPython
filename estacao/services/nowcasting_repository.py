@@ -291,5 +291,6 @@ def status_health_nowcasting(config):
         return "warning"
     if snapshot.get("status") in {"SEM_DADOS", "DADOS_INSUFICIENTES"}:
         return "warning"
-    age = minutos_desde(snapshot.get("gerado_em_utc"), assume_utc=True)
-    return "ok" if age is not None and age <= max(10, config["poll_seconds"] // 30) else "warning"
+    from services.nowcasting_service import snapshot_operacionalmente_atual
+
+    return "ok" if snapshot_operacionalmente_atual(snapshot, config) else "warning"

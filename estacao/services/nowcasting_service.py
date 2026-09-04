@@ -12,7 +12,7 @@ from services.preventive_alerts import (
     qualidade_tracking,
     selecionar_eco_alerta_proximidade,
 )
-from time_utils import agora_utc, iso_local, iso_utc
+from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
 
 
 NOWCASTING_ALGORITHM_VERSION = "1.4"
@@ -31,6 +31,40 @@ THREAT_STATUS_PRIORITY = {
     "SISTEMA_EM_MOVIMENTO": 4,
     "ECO_EM_MONITORAMENTO": 5,
 }
+
+
+def janela_snapshot_operacional_minutos(config):
+    """Aceita ao menos 10 minutos ou dois ciclos completos do nowcasting."""
+    try:
+        poll_seconds = max(60.0, float((config or {}).get("poll_seconds", 300)))
+    except (TypeError, ValueError):
+        poll_seconds = 300.0
+    return max(10.0, (2.0 * poll_seconds) / 60.0)
+
+
+def snapshot_operacionalmente_atual(snapshot, config, now=None):
+    """Valida se um snapshot ainda pode representar a situação operacional."""
+    if not snapshot:
+        return False
+    gerado_em = parse_datetime(snapshot.get("gerado_em_utc"), assume_utc=True)
+    if not gerado_em:
+        return False
+    agora = (now or agora_utc()).astimezone(timezone.utc)
+    idade_minutos = (
+        agora - gerado_em.astimezone(timezone.utc)
+    ).total_seconds() / 60.0
+    if idade_minutos < -1.0:
+        return False
+    if idade_minutos > janela_snapshot_operacional_minutos(config):
+        return False
+
+    radar = snapshot.get("radar") or {}
+    if radar.get("stale") is True:
+        return False
+    alerta = snapshot.get("alerta_preventivo") or {}
+    if alerta.get("nivel") in {"NORMAL", "AMARELO", "LARANJA", "VERMELHO"}:
+        return radar.get("operacional") is True
+    return True
 
 
 def _xy_local(lat, lon, ref_lat, ref_lon):

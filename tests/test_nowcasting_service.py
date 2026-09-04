@@ -1,7 +1,7 @@
 import sys
 import unittest
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -11,6 +11,8 @@ sys.path.insert(0, str(ROOT / "estacao"))
 from services.nowcasting_service import (  # noqa: E402
     analisar_nowcasting,
     classificar_estacao_montante,
+    janela_snapshot_operacional_minutos,
+    snapshot_operacionalmente_atual,
 )
 
 
@@ -27,6 +29,56 @@ class NowcastingServiceTest(unittest.TestCase):
             "regional_confirm_min_stations": 1,
         }
         self.now = datetime(2026, 9, 3, 13, 20, tzinfo=timezone.utc)
+
+    def snapshot(self, gerado_em_utc=None):
+        return {
+            "gerado_em_utc": gerado_em_utc or self.now.isoformat(),
+            "radar": {"stale": False, "operacional": True},
+            "alerta_preventivo": {"nivel": "VERMELHO"},
+        }
+
+    def test_janela_snapshot_usa_minimo_ou_dois_ciclos(self):
+        self.assertEqual(janela_snapshot_operacional_minutos({"poll_seconds": 60}), 10)
+        self.assertEqual(janela_snapshot_operacional_minutos({"poll_seconds": 600}), 20)
+
+    def test_snapshot_recente_operacional_e_atual(self):
+        snapshot = self.snapshot((self.now - timedelta(minutes=9)).isoformat())
+        self.assertTrue(
+            snapshot_operacionalmente_atual(
+                snapshot, {"poll_seconds": 300}, now=self.now
+            )
+        )
+
+    def test_snapshot_velho_stale_ou_sem_radar_operacional_nao_e_atual(self):
+        casos = (
+            self.snapshot((self.now - timedelta(minutes=11)).isoformat()),
+            self.snapshot(),
+            self.snapshot(),
+        )
+        casos[1]["radar"]["stale"] = True
+        casos[2]["radar"]["operacional"] = False
+        for snapshot in casos:
+            with self.subTest(snapshot=snapshot):
+                self.assertFalse(
+                    snapshot_operacionalmente_atual(
+                        snapshot, {"poll_seconds": 300}, now=self.now
+                    )
+                )
+
+    def test_snapshot_sem_timestamp_invalido_ou_futuro_nao_e_atual(self):
+        casos = (
+            self.snapshot("timestamp-invalido"),
+            self.snapshot((self.now + timedelta(minutes=2)).isoformat()),
+            self.snapshot(),
+        )
+        casos[2].pop("gerado_em_utc")
+        for snapshot in casos:
+            with self.subTest(snapshot=snapshot):
+                self.assertFalse(
+                    snapshot_operacionalmente_atual(
+                        snapshot, {"poll_seconds": 300}, now=self.now
+                    )
+                )
 
     def radar(self, trajectory=True, approaching=True, stale=False, clutter=None):
         return {

@@ -25,6 +25,9 @@
         <span class="preventive-simulation-badge">Envio preventivo: DESATIVADO</span>
       </div>
       <p>{{ alerta.get('message', 'Aguardando o snapshot preventivo correspondente ao frame atual.') }}</p>
+      {% if ultimo_nivel_calculado %}
+      <p class="preventive-history-note"><i class="fa-solid fa-clock-rotate-left"></i> Último nível calculado: <strong>{{ 'INDISPONÍVEL' if ultimo_nivel_calculado == 'INDISPONIVEL' else ultimo_nivel_calculado }}</strong> — dado histórico, não representa a situação atual.</p>
+      {% endif %}
       {% if alerta %}
       <dl class="preventive-alert-details">
         <div><dt>Eco selecionado</dt><dd>{% if alerta.get('track_id') %}Sistema {{ alerta.get('track_id') }}{% elif alerta.get('cluster_id') %}Cluster {{ alerta.get('cluster_id') }} sem tracking{% else %}Nenhum eco operacional{% endif %}</dd></div>

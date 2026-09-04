@@ -841,6 +841,7 @@ body.modal-open {
 .preventive-alert-details dt { font-size: .65rem; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; opacity: .75; }
 .preventive-alert-details dd { margin-top: .15rem; font-size: .8rem; font-weight: 800; }
 .preventive-alert-content .preventive-simulation-note { display: flex; align-items: center; gap: .4rem; margin-top: .75rem; font-size: .76rem; font-weight: 700; }
+.preventive-history-note { margin-top: .65rem !important; padding: .6rem .7rem; border: 1px solid #cbd5e1; border-radius: .55rem; background: #fff; color: #475569; font-size: .75rem !important; }
 .proximity-levels {
     padding: 1rem 1.15rem;
     border: 1px solid #dbe4ef;

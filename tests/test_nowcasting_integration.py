@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -49,6 +49,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
             os.environ.pop(key, None)
 
     def state(self):
+        agora = datetime.now(timezone.utc).replace(microsecond=0)
         return {
             "status": "NORMAL", "nivel_evidencia": "SEM_EVIDENCIA",
             "indice_evidencia": 0,
@@ -91,10 +92,39 @@ class NowcastingIntegrationTest(unittest.TestCase):
             },
             "historico_regional_em_formacao": False,
             "evidencias": ["Sem evidencia observacional relevante no momento"],
-            "gerado_em": "2026-09-03T09:20:00-04:00",
-            "gerado_em_utc": "2026-09-03T13:20:00+00:00",
+            "gerado_em": agora.isoformat(),
+            "gerado_em_utc": agora.isoformat(),
             "versao_algoritmo": "1.4",
         }
+
+    def state_vermelho(self, gerado_em_utc=None):
+        state = self.state()
+        state["gerado_em_utc"] = gerado_em_utc or datetime.now(
+            timezone.utc
+        ).replace(microsecond=0).isoformat()
+        state["radar"].update({
+            "disponivel": True,
+            "operacional": True,
+            "stale": False,
+            "frame_id": None,
+            "distancia_borda_km": 20,
+        })
+        state["alerta_preventivo"].update({
+            "nivel": "VERMELHO",
+            "nivel_base": "VERMELHO",
+            "cor": "vermelho",
+            "cluster_id": 101,
+            "track_id": 12,
+            "distance_km": 20,
+            "message": "ALERTA OPERACIONAL ANTIGO",
+            "would_send": True,
+        })
+        state["eco_alerta_proximidade"] = {
+            "cluster_id": 101,
+            "track_id": 12,
+            "distance_km": 20,
+        }
+        return state
 
     def test_migration_aditiva_idempotente_cria_snapshot_schema_8(self):
         self.database.init_db()
@@ -150,6 +180,68 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("Aguardando a primeira análise".encode(), page.data)
         self.assertEqual(api.get_json()["status"], "SEM_DADOS")
+
+    def test_monitoramento_snapshot_antigo_vira_historico_sem_apagar_snapshot(self):
+        from services.nowcasting_repository import salvar_snapshot
+
+        antigo = (
+            datetime.now(timezone.utc) - timedelta(minutes=20)
+        ).replace(microsecond=0).isoformat()
+        state = self.state_vermelho(antigo)
+        self.assertIsNotNone(salvar_snapshot(state, "snapshot-antigo"))
+
+        self.autenticar_admin()
+        page = self.client.get("/admin/monitoramento")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
+        self.assertIn("INDISPONÍVEL".encode(), page.data)
+        self.assertIn("Último nível calculado".encode(), page.data)
+        self.assertNotIn(b"preventive-alert--vermelho", page.data)
+        self.assertNotIn(b"ALERTA OPERACIONAL ANTIGO", page.data)
+        conn = self.database.get_db()
+        row = conn.execute(
+            "SELECT estado_json FROM nowcasting_snapshots WHERE input_fingerprint=?",
+            ("snapshot-antigo",),
+        ).fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(
+            json.loads(row["estado_json"])["alerta_preventivo"]["nivel"],
+            "VERMELHO",
+        )
+
+    def test_monitoramento_snapshot_recente_exibe_alerta_normalmente(self):
+        from services.nowcasting_repository import salvar_snapshot
+
+        state = self.state_vermelho()
+        state["alerta_preventivo"]["message"] = "ALERTA RECENTE VISÍVEL"
+        self.assertIsNotNone(salvar_snapshot(state, "snapshot-recente"))
+
+        self.autenticar_admin()
+        page = self.client.get("/admin/monitoramento")
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"preventive-alert--vermelho", page.data)
+        self.assertIn(b"ALERTA RECENTE VIS", page.data)
+        self.assertNotIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
+
+    def test_monitoramento_timestamp_invalido_ou_ausente_nao_quebra(self):
+        self.autenticar_admin()
+        for timestamp in ("invalido", None):
+            with self.subTest(timestamp=timestamp):
+                state = self.state_vermelho()
+                if timestamp is None:
+                    state.pop("gerado_em_utc")
+                else:
+                    state["gerado_em_utc"] = timestamp
+                with mock.patch(
+                    "routes.nowcasting._estado_seguro", return_value=state
+                ):
+                    page = self.client.get("/admin/monitoramento")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
+                self.assertNotIn(b"preventive-alert--vermelho", page.data)
 
     def test_snapshot_idempotente_e_api_sem_payload_bruto(self):
         from services.nowcasting_repository import salvar_snapshot

@@ -6,8 +6,9 @@ from pathlib import Path
 from flask import Blueprint, abort, jsonify, redirect, render_template, send_file, url_for
 
 from admin_auth import admin_api_required, admin_page_required
-from config import radar_config
+from config import nowcasting_config, radar_config
 from services.nowcasting_repository import obter_ultimo_snapshot
+from services.nowcasting_service import snapshot_operacionalmente_atual
 from services.preventive_alerts import criar_alerta_preventivo
 from services.radar_repository import obter_arquivo_frame, obter_estado_radar
 from time_utils import formatar_local
@@ -15,6 +16,16 @@ from time_utils import formatar_local
 
 radar_routes = Blueprint("radar", __name__)
 logger = logging.getLogger(__name__)
+
+
+def _alerta_indisponivel(mensagem):
+    alerta = criar_alerta_preventivo(
+        None,
+        radar_atualizado=False,
+        evento_local=False,
+    )
+    alerta["message"] = mensagem
+    return alerta
 
 
 def _estado_seguro():
@@ -39,13 +50,10 @@ def radar_admin():
     alerta_preventivo = (
         None
         if estado.get("frame")
-        else criar_alerta_preventivo(
-            None,
-            radar_atualizado=False,
-            evento_local=False,
-        )
+        else _alerta_indisponivel("Dados operacionais do radar indisponíveis.")
     )
     ameaca_principal = None
+    ultimo_nivel_calculado = None
     if estado.get("frame"):
         estado["frame"]["data_frame_formatada"] = formatar_local(
             estado["frame"].get("data_frame_local")
@@ -62,8 +70,25 @@ def radar_admin():
                 and (snapshot.get("radar") or {}).get("frame_id")
                 == estado["frame"]["id"]
             ):
-                alerta_preventivo = snapshot.get("alerta_preventivo")
-                ameaca_principal = snapshot.get("ameaca_principal")
+                alerta_snapshot = snapshot.get("alerta_preventivo") or {}
+                if (
+                    not estado.get("stale")
+                    and snapshot_operacionalmente_atual(
+                        snapshot, nowcasting_config()
+                    )
+                ):
+                    alerta_preventivo = snapshot.get("alerta_preventivo")
+                    ameaca_principal = snapshot.get("ameaca_principal")
+                else:
+                    ultimo_nivel_calculado = alerta_snapshot.get("nivel")
+                    mensagem = (
+                        "Dados operacionais do radar desatualizados. O último "
+                        "alerta calculado não deve ser interpretado como situação atual."
+                        if estado.get("stale")
+                        else "O último alerta calculado está desatualizado e não deve "
+                        "ser interpretado como situação atual."
+                    )
+                    alerta_preventivo = _alerta_indisponivel(mensagem)
         except Exception as erro:
             logger.warning(
                 "Alerta preventivo persistido indisponivel no radar: %s",
@@ -74,6 +99,7 @@ def radar_admin():
         estado=estado,
         alerta_preventivo=alerta_preventivo,
         ameaca_principal=ameaca_principal,
+        ultimo_nivel_calculado=ultimo_nivel_calculado,
         titulo="Radar Meteorológico",
         radar_track_min_frames=radar_config()["track_min_frames"],
         aba_ativa="radar",

@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
@@ -147,7 +147,12 @@ class RadarIntegrationTest(unittest.TestCase):
         with mock.patch(
             "routes.radar.obter_ultimo_snapshot",
             return_value={
-                "radar": {"frame_id": frame_id},
+                "gerado_em_utc": datetime.now(timezone.utc).isoformat(),
+                "radar": {
+                    "frame_id": frame_id,
+                    "stale": False,
+                    "operacional": True,
+                },
                 "alerta_preventivo": alerta,
                 "ameaca_principal": {
                     "cluster_id": 2, "track_id": 12,
@@ -203,6 +208,43 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertEqual(pagina.status_code, 200)
         self.assertIn("AGUARDANDO ANÁLISE".encode(), pagina.data)
         self.assertNotIn(b"ALERTA ANTIGO", pagina.data)
+
+    def test_radar_snapshot_do_mesmo_frame_stale_vira_indisponivel(self):
+        from services.radar_repository import salvar_resultado_frame
+
+        horario = (
+            datetime.now(timezone.utc) - timedelta(hours=2)
+        ).replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+        frame_id, _ = salvar_resultado_frame(
+            self.frame(horario, "frame-stale"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        self.autenticar_admin()
+        with mock.patch(
+            "routes.radar.obter_ultimo_snapshot",
+            return_value={
+                "gerado_em_utc": datetime.now(timezone.utc).isoformat(),
+                "radar": {
+                    "frame_id": frame_id,
+                    "stale": False,
+                    "operacional": True,
+                },
+                "alerta_preventivo": {
+                    "nivel": "VERMELHO",
+                    "message": "ALERTA VELHO DO MESMO FRAME",
+                },
+            },
+        ):
+            pagina = self.client.get("/admin/radar")
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertIn("INDISPONÍVEL".encode(), pagina.data)
+        self.assertIn(
+            "Dados operacionais do radar desatualizados".encode(), pagina.data
+        )
+        self.assertIn("Último nível calculado".encode(), pagina.data)
+        self.assertNotIn(b"preventive-alert--vermelho", pagina.data)
+        self.assertNotIn(b"ALERTA VELHO DO MESMO FRAME", pagina.data)
 
     def test_salvar_atomico_publica_png_legivel_pelo_grupo(self):
         from workers import radar_updater

@@ -59,8 +59,9 @@ def selecionar_eco_alerta_proximidade(ameacas):
 
     A seleção é deliberadamente independente da ordenação meteorológica da
     ameaça principal. Tracking não é requisito: células recém-detectadas ainda
-    precisam aparecer na faixa de proximidade. Clutter forte só é escolhido
-    quando não existe nenhum eco confiável no frame atual.
+    precisam aparecer na faixa de proximidade. Um eco confiável dentro de
+    100 km sempre vence clutter forte. Sem eco confiável nessa faixa, clutter
+    dentro de 100 km é selecionado apenas para o aviso amarelo diagnóstico.
     """
     candidatos = []
     for ameaca in ameacas or []:
@@ -71,7 +72,15 @@ def selecionar_eco_alerta_proximidade(ameacas):
     if not candidatos:
         return None
     confiaveis = [item for item in candidatos if not possui_clutter_forte(item[0])]
-    universo = confiaveis or candidatos
+    clutter = [item for item in candidatos if possui_clutter_forte(item[0])]
+    confiaveis_na_faixa = [item for item in confiaveis if item[1] <= 100]
+    clutter_na_faixa = [item for item in clutter if item[1] <= 100]
+    universo = (
+        confiaveis_na_faixa
+        or clutter_na_faixa
+        or confiaveis
+        or clutter
+    )
     return min(
         universo,
         key=lambda item: (

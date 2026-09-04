@@ -505,15 +505,24 @@ Direção do vento de superfície nunca é usada como direção da célula.
 Na versão 1.4 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A `ameaca_principal` continua sendo ordenada pela relevância meteorológica: status explícito (`ATENCAO_PREVENTIVA`, `EVIDENCIA_REGIONAL`, `TRAJETORIA_RELEVANTE`, `SISTEMA_SE_APROXIMANDO`, `SISTEMA_EM_MOVIMENTO`, `ECO_EM_MONITORAMENTO`), confirmação regional, trajetória, aproximação, tracking, distância, ETA e clutter. As demais ameaças permanecem em `ameacas` e no painel. Estações com valores estagnados continuam excluídas da confirmação regional.
 
 O estado `alerta_preventivo` é somente visual e é independente da ameaça principal.
-Ele seleciona o eco sem clutter forte com a menor distância válida da borda no frame
-operacional: `NORMAL` acima de 100 km, `AMARELO` até 100 km, `LARANJA` até 50 km e
-`VERMELHO` até 25 km, com limites inclusivos. Tracking não é obrigatório para mostrar
-a faixa. Se não existir eco confiável, clutter forte permanece visível e auditável,
-mas dentro de 100 km produz apenas `AMARELO` diagnóstico. Se o radar estiver stale ou
-sem frame operacional válido, o estado é `INDISPONIVEL`, nunca `NORMAL` verde.
+Ele seleciona o eco sem clutter forte com a menor distância válida da borda dentro de
+100 km: `AMARELO` até 100 km, `LARANJA` até 50 km e `VERMELHO` até 25 km, com limites
+inclusivos. Tracking não é obrigatório para mostrar a faixa. Sem eco confiável nessa
+faixa, clutter forte dentro de 100 km permanece visível como `AMARELO` diagnóstico,
+mesmo que exista eco confiável mais distante; clutter nunca produz laranja ou vermelho
+sozinho. Sem nenhum retorno relevante na faixa, o estado é `NORMAL`. Se o radar estiver
+stale ou sem frame operacional válido, o estado é `INDISPONIVEL`, nunca `NORMAL` verde.
 Confirmação regional aumenta a confiança textual, mas não é exigida para mostrar uma
 faixa. Se houver chuva local fresca, a mensagem passa a informar que a chuva já foi
 observada na EE São José.
+
+As telas administrativas só tratam o último snapshot como atual quando
+`gerado_em_utc` é válido, o radar do snapshot não está stale e qualquer nível
+operacional colorido declara radar operacional. A validade é o maior valor entre 10
+minutos e dois ciclos de `NOWCASTING_POLL_SECONDS`; com o polling padrão de 300
+segundos, a janela é de 10 minutos. Depois disso, o snapshot continua persistido e
+pode ser mostrado como histórico/diagnóstico, mas o alerta atual passa a
+`INDISPONIVEL`.
 
 Frames processados com `timestamp_status='suspect'` continuam persistidos para
 auditoria, porém são excluídos da seleção operacional, do tracking e do histórico

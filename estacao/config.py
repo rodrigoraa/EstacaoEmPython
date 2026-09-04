@@ -154,10 +154,16 @@ def nowcasting_config():
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.2") or "1.2",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.3") or "1.3",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),
+        "track_min_duration_minutes": max(
+            1.0, env_float("RADAR_TRACK_MIN_DURATION_MINUTES", 10.0)
+        ),
+        "track_max_speed_kmh": max(
+            10.0, env_float("RADAR_TRACK_MAX_SPEED_KMH", 150.0)
+        ),
     }
 
 

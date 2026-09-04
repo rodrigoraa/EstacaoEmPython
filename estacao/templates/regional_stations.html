@@ -62,6 +62,22 @@
     <div><strong>Tendências</strong><span>comparam períodos anteriores; “em formação” significa base insuficiente.</span></div>
   </aside>
 
+  <details class="admin-glossary">
+    <summary><i class="fa-solid fa-book-open"></i> Glossário das estações regionais</summary>
+    <dl>
+      <div><dt>Fonte atual</dt><dd>Indica se os dados recentes da estação estão disponíveis e atualizados.</dd></div>
+      <div><dt>Valores sem alteração</dt><dd>Tempo em que a estação repetiu exatamente os mesmos valores.</dd></div>
+      <div><dt>Dados estagnados</dt><dd>Valores permaneceram iguais por tempo anormalmente longo e podem estar travados.</dd></div>
+      <div><dt>Qualidade das tendências</dt><dd>Indica se existe histórico suficiente para analisar mudanças ao longo do tempo.</dd></div>
+      <div><dt>Origem das tendências</dt><dd>Fonte usada para calcular variações históricas.</dd></div>
+      <div><dt>Temperatura 1h</dt><dd>Quanto a temperatura mudou na última hora.</dd></div>
+      <div><dt>Pressão 1h</dt><dd>Quanto a pressão mudou na última hora.</dd></div>
+      <div><dt>Vento 1h</dt><dd>Quanto a velocidade do vento mudou na última hora.</dd></div>
+      <div><dt>Rajada 1h</dt><dd>Quanto o pico de vento mudou na última hora.</dd></div>
+      <div><dt>Chuva 1h / 3h / 6h</dt><dd>Precipitação observada dentro do respectivo período.</dd></div>
+    </dl>
+  </details>
+
   <div class="regional-grid">
     {% for station in estado.stations %}
     {% set obs = station.observation %}

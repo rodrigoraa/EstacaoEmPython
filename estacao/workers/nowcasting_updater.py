@@ -51,11 +51,14 @@ def executar_ciclo(config=None):
     ) or "nenhuma"
     logger.info(
         "Nowcasting: track=%s distancia_borda=%s status=%s evidencia=%s "
-        "ameacas=%s estacoes_relevantes=%s snapshot=%s",
+        "alerta_visual=%s candidato_simulado=%s ameacas=%s "
+        "estacoes_relevantes=%s snapshot=%s",
         estado["radar"].get("track_id"),
         estado["radar"].get("distancia_borda_km"),
         estado["status"],
         estado["nivel_evidencia"],
+        estado["alerta_preventivo"]["nivel"],
+        estado["alerta_preventivo"]["would_send"],
         len(estado.get("ameacas", [])),
         codigos,
         "novo" if snapshot_id else "inalterado",
@@ -76,6 +79,11 @@ def imprimir_resumo(result):
     state = result["snapshot"]
     print(f"Status: {state['status']}")
     print(f"Evidencia: {state['nivel_evidencia']} ({state['indice_evidencia']}/100)")
+    print(
+        "Alerta visual: "
+        f"{state['alerta_preventivo']['nivel']} "
+        "(envio preventivo desativado)"
+    )
     print(f"Ameacas em monitoramento: {len(state.get('ameacas', []))}")
     print(f"Snapshot: {'novo' if result['new'] else 'entrada inalterada'}")
     for evidence in state["evidencias"]:

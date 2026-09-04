@@ -82,6 +82,17 @@ def _tracks_frame_atual(radar):
             return []
         resultado = []
         for row in rows:
+            historico_borda = conn.execute(
+                """
+                SELECT COALESCE(data_frame_utc, data_frame) AS data_frame,
+                       distancia_borda_escola_km
+                FROM radar_track_points
+                WHERE track_id=?
+                ORDER BY COALESCE(data_frame_utc, data_frame) DESC
+                LIMIT 8
+                """,
+                (row["id"],),
+            ).fetchall()
             resultado.append(
                 {
                     "track": {
@@ -104,6 +115,15 @@ def _tracks_frame_atual(radar):
                         "suspeito_clutter": bool(row["suspeito_clutter"]),
                         "indice_persistencia_clutter": row["indice_persistencia_clutter"],
                         "clutter_amostras": row["clutter_amostras"],
+                        "historico_borda": [
+                            {
+                                "data_frame": ponto["data_frame"],
+                                "distancia_borda_km": ponto[
+                                    "distancia_borda_escola_km"
+                                ],
+                            }
+                            for ponto in reversed(historico_borda)
+                        ],
                     },
                     "cluster": {
                         "id": row["cluster_id"],
@@ -172,6 +192,13 @@ def carregar_entradas_nowcasting(config):
                 item["track"].get("aproximando"),
                 item["cluster"].get("distancia_borda_escola_km"),
                 item["track"].get("indice_persistencia_clutter"),
+                tuple(
+                    (
+                        ponto.get("data_frame"),
+                        ponto.get("distancia_borda_km"),
+                    )
+                    for ponto in item["track"].get("historico_borda", [])
+                ),
             )
             for item in tracks_atuais
         ],

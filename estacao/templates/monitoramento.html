@@ -21,6 +21,39 @@
   {% else %}
   {% set radar = estado.radar %}
   {% set confirmacao = estado.confirmacao_regional or {} %}
+  {% set alerta = estado.alerta_preventivo or {} %}
+  {% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO') %}
+
+  <section class="preventive-alert preventive-alert--{{ nivel_alerta|lower }}" aria-live="polite" aria-labelledby="monitor-alerta-titulo">
+    <span class="preventive-alert-icon"><i class="fa-solid fa-shield-halved"></i></span>
+    <div class="preventive-alert-content">
+      <div class="preventive-alert-heading">
+        <div><small>Nível operacional interno</small><h2 id="monitor-alerta-titulo">{{ nivel_alerta }}</h2></div>
+        <span class="preventive-simulation-badge">Envio preventivo: DESATIVADO</span>
+      </div>
+      <p>{{ alerta.message if alerta else 'Aguardando cálculo do nível preventivo.' }}</p>
+      {% if alerta %}
+      <dl class="preventive-alert-details">
+        <div><dt>Tendência</dt><dd>{% if alerta.approaching is not none %}{{ 'Aproximando' if alerta.approaching else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
+        <div><dt>Velocidade do eco</dt><dd>{{ '%.1f km/h'|format(alerta.speed_kmh) if alerta.speed_kmh is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(alerta.eta_minutes) if alerta.eta_minutes is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(alerta.eta_border_minutes) if alerta.eta_border_minutes is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Qualidade do tracking</dt><dd>{{ alerta.tracking_quality|replace('_', ' ') }}</dd></div>
+        <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.regional_confirmation else 'Ainda não disponível' }}</dd></div>
+      </dl>
+      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.simulation_message }}</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="proximity-levels" aria-labelledby="monitor-niveis-titulo">
+    <div class="proximity-levels-heading"><h2 id="monitor-niveis-titulo">Níveis de proximidade</h2><p>Os níveis usam a distância da borda do eco e não representam probabilidade de chuva.</p></div>
+    <div class="proximity-levels-grid">
+      <div class="proximity-level proximity-level--yellow"><strong>AMARELO — até 100 km</strong><span>Eco meteorológico em monitoramento.</span></div>
+      <div class="proximity-level proximity-level--orange"><strong>LARANJA — até 50 km</strong><span>Eco mais próximo da região; atenção aumentada.</span></div>
+      <div class="proximity-level proximity-level--red"><strong>VERMELHO — até 25 km</strong><span>Possível chuva próxima da escola.</span></div>
+    </div>
+  </section>
 
   <section aria-labelledby="monitor-resumo-titulo">
     <div class="admin-section-title">
@@ -49,10 +82,22 @@
 
   <aside class="admin-explainer" aria-label="Como interpretar o monitoramento">
     <div class="admin-explainer-title"><i class="fa-solid fa-circle-info"></i><strong>Como interpretar</strong></div>
-    <div><strong>Índice de evidência</strong><span>organiza sinais observados; não é probabilidade de chuva.</span></div>
-    <div><strong>ETA</strong><span>só existe com deslocamento e trajetória tecnicamente compatíveis.</span></div>
-    <div><strong>Confirmação de superfície</strong><span>exige alterações coerentes em estações frescas a montante.</span></div>
+    <div><strong>Índice de evidência</strong><span>Pontuação interna que soma sinais observados; não é porcentagem de chance de chuva.</span></div>
+    <div><strong>ETA conservador</strong><span>Só aparece quando trajetória e movimento são tecnicamente confiáveis.</span></div>
+    <div><strong>Confirmação de superfície</strong><span>Sinais regionais que reforçam o que o radar está indicando.</span></div>
   </aside>
+
+  <details class="admin-glossary">
+    <summary><i class="fa-solid fa-book-open"></i> Glossário do monitoramento</summary>
+    <dl>
+      <div><dt>Índice de evidência</dt><dd>Pontuação interna que soma sinais observados. Não representa porcentagem de chance de chuva.</dd></div>
+      <div><dt>Confirmação de superfície</dt><dd>Sinais nas estações regionais que reforçam o que o radar está indicando.</dd></div>
+      <div><dt>Estação a montante</dt><dd>Estação posicionada no caminho de onde o sistema meteorológico está vindo.</dd></div>
+      <div><dt>Ameaça principal</dt><dd>Eco considerado mais relevante pelo sistema naquele momento.</dd></div>
+      <div><dt>Outros sistemas em monitoramento</dt><dd>Outros ecos detectados que continuam sendo acompanhados.</dd></div>
+      <div><dt>ETA conservador</dt><dd>Estimativa de chegada mostrada somente quando trajetória e movimento são tecnicamente confiáveis.</dd></div>
+    </dl>
+  </details>
 
   <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
     <div class="monitor-hero-header">
@@ -96,11 +141,14 @@
         <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(radar.distancia_borda_km) if radar.distancia_borda_km is not none else '—' }}</dd></div>
         <div><dt>Faixa</dt><dd>{{ radar.faixa_distancia or '—' }}</dd></div>
         <div><dt>Movimento</dt><dd>{{ radar.direcao or 'Dados insuficientes' }}</dd></div>
-        <div><dt>Velocidade</dt><dd>{{ '%.1f km/h'|format(radar.velocidade_kmh) if radar.velocidade_kmh is not none else '—' }}</dd></div>
-        <div><dt>Tendência</dt><dd>{% if radar.aproximando is not none %}{{ 'Aproximando' if radar.aproximando else 'Afastando' }}{% else %}—{% endif %}</dd></div>
-        <div><dt>ETA conservador</dt><dd>{{ '%.0f min'|format(radar.eta_minutos) if radar.eta_minutos is not none else '—' }}</dd></div>
+        <div><dt>Velocidade estimada do eco</dt><dd>{{ '%.1f km/h'|format(radar.velocidade_kmh) if radar.velocidade_kmh is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Tendência</dt><dd>{% if radar.aproximando is not none %}{{ 'Aproximando' if radar.aproximando else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
+        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(radar.eta_minutos) if radar.eta_minutos is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(radar.get('eta_borda_minutos')) if radar.get('eta_borda_minutos') is not none else 'Dados insuficientes' }}</dd></div>
         <div><dt>Trajetória compatível</dt><dd>{{ 'Sim' if radar.trajetoria_compativel else 'Não confirmada' }}</dd></div>
         <div><dt>Frames no tracking</dt><dd>{{ radar.quantidade_frames if radar.quantidade_frames is not none else '—' }}</dd></div>
+        <div><dt>Duração do tracking</dt><dd>{{ '%.0f min'|format(radar.get('duracao_tracking_minutos')) if radar.get('duracao_tracking_minutos') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Qualidade do tracking</dt><dd>{{ radar.get('qualidade_tracking', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
         <div><dt>Possível clutter</dt><dd>{{ 'Sim' if radar.suspeito_clutter else 'Não' }}</dd></div>
         <div><dt>Persistência de clutter</dt><dd>{{ '%.2f'|format(radar.indice_persistencia_clutter) if radar.indice_persistencia_clutter is not none else 'Dados insuficientes' }}</dd></div>
       </dl>

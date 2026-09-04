@@ -118,7 +118,24 @@ class RadarIntegrationTest(unittest.TestCase):
             self.frame(), None, "analisadas/frame.png", 20, 20, [self.cluster()]
         )
         self.autenticar_admin()
-        pagina = self.client.get("/admin/radar")
+        alerta = {
+            "nivel": "VERMELHO", "message": "Alerta visual de teste",
+            "approaching": True, "speed_kmh": 40, "eta_minutes": 30,
+            "eta_border_minutes": 20, "tracking_quality": "BOA",
+            "regional_confirmation": False,
+            "simulation_message": (
+                "Este evento seria candidato a alerta por WhatsApp, "
+                "mas o envio está desativado."
+            ),
+        }
+        with mock.patch(
+            "routes.radar.obter_ultimo_snapshot",
+            return_value={
+                "radar": {"frame_id": frame_id},
+                "alerta_preventivo": alerta,
+            },
+        ):
+            pagina = self.client.get("/admin/radar")
         payload = self.client.get("/admin/api/radar/status").get_json()
         imagem = self.client.get(f"/admin/radar/imagem/{frame_id}")
         self.assertEqual(pagina.status_code, 200)
@@ -127,6 +144,11 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertIn(b"Atualiza", pagina.data)
         self.assertIn(b"Eco e deslocamento", pagina.data)
         self.assertIn(b"Como interpretar", pagina.data)
+        self.assertIn("Níveis de proximidade".encode(), pagina.data)
+        self.assertIn("Envio preventivo: DESATIVADO".encode(), pagina.data)
+        self.assertIn("Glossário do radar".encode(), pagina.data)
+        self.assertIn("Velocidade estimada do eco".encode(), pagina.data)
+        self.assertIn(b"Alerta visual de teste", pagina.data)
         self.assertTrue(payload["disponivel"])
         self.assertNotIn("arquivo_local", payload["frame"])
         self.assertNotIn("path_remoto", json.dumps(payload))

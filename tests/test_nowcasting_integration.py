@@ -58,7 +58,10 @@ class NowcastingIntegrationTest(unittest.TestCase):
                 "faixa_distancia": None, "direcao": None,
                 "velocidade_kmh": None, "aproximando": None,
                 "trajetoria_compativel": False, "eta_minutos": None,
+                "eta_borda_minutos": None, "taxa_aproximacao_borda_kmh": None,
+                "qualidade_tracking": "DADOS_INSUFICIENTES",
                 "quantidade_frames": None, "suspeito_clutter": False,
+                "duracao_tracking_minutos": None,
                 "indice_persistencia_clutter": None, "imagem_disponivel": False,
             },
             "estacoes_relevantes": [], "escola": None,
@@ -67,11 +70,26 @@ class NowcastingIntegrationTest(unittest.TestCase):
                 "confirmada": False, "stations": [], "evidence_count": 0,
             },
             "radar_only": False, "evento_local_observado": False,
+            "alerta_preventivo": {
+                "nivel": "NORMAL", "nivel_base": "NORMAL", "cor": "verde",
+                "distance_km": None, "track_id": None,
+                "tracking_valid": False, "tracking_quality": "DADOS_INSUFICIENTES",
+                "frame_count": None, "duration_minutes": None,
+                "approaching": None, "trajectory_compatible": False,
+                "direction": None, "speed_kmh": None, "eta_minutes": None,
+                "eta_border_minutes": None, "border_approach_rate_kmh": None,
+                "clutter": False, "clutter_index": None, "low_confidence": False,
+                "regional_confirmation": False, "regional_stations": [],
+                "local_event": False,
+                "message": "Sem eco relevante dentro de 100 km.",
+                "would_send": False, "preventive_sending": "DESATIVADO",
+                "simulation_message": "Nenhum alerta preventivo será enviado por esta versão.",
+            },
             "historico_regional_em_formacao": False,
             "evidencias": ["Sem evidencia observacional relevante no momento"],
             "gerado_em": "2026-09-03T09:20:00-04:00",
             "gerado_em_utc": "2026-09-03T13:20:00+00:00",
-            "versao_algoritmo": "1.2",
+            "versao_algoritmo": "1.3",
         }
 
     def test_migration_aditiva_idempotente_cria_snapshot_schema_8(self):
@@ -172,15 +190,42 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertIn("Como interpretar".encode(), page.data)
         self.assertIn("Índice interno de evidência".encode(), page.data)
         self.assertIn("Radar e deslocamento".encode(), page.data)
+        self.assertIn("Níveis de proximidade".encode(), page.data)
+        self.assertIn("Envio preventivo: DESATIVADO".encode(), page.data)
+        self.assertIn("Glossário do monitoramento".encode(), page.data)
         self.assertIn(b"Outros sistemas em monitoramento", page.data)
         self.assertIn("histórico regional ainda em formação".encode(), page.data)
-        self.assertEqual(payload["versao_algoritmo"], "1.2")
+        self.assertEqual(payload["versao_algoritmo"], "1.3")
+        self.assertEqual(payload["alerta_preventivo"]["nivel"], "NORMAL")
         self.assertIn("ameaca_principal", payload)
         self.assertIn("ameacas", payload)
         self.assertIn("confirmacao_regional", payload)
         self.assertEqual(len(payload["ameacas"]), 2)
         self.assertNotIn("estado_json", json.dumps(payload))
         self.assertNotIn("input_fingerprint", json.dumps(payload))
+
+    def test_snapshot_legado_sem_novos_campos_continua_renderizando(self):
+        from services.nowcasting_repository import salvar_snapshot
+
+        state = self.state()
+        state.pop("alerta_preventivo")
+        for campo in (
+            "eta_borda_minutos",
+            "taxa_aproximacao_borda_kmh",
+            "qualidade_tracking",
+            "duracao_tracking_minutos",
+        ):
+            state["radar"].pop(campo)
+        self.assertIsNotNone(salvar_snapshot(state, "snapshot-legado"))
+
+        self.autenticar_admin()
+        page = self.client.get("/admin/monitoramento")
+        payload = self.client.get("/admin/api/nowcasting/status").get_json()
+
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"AGUARDANDO", page.data)
+        self.assertIn("Aguardando cálculo do nível preventivo".encode(), page.data)
+        self.assertNotIn("alerta_preventivo", payload)
 
     def test_worker_mockado_nao_chama_internet_nem_alertas(self):
         from config import nowcasting_config
@@ -244,6 +289,9 @@ class NowcastingIntegrationTest(unittest.TestCase):
             nowcasting_config()
         )
         self.assertEqual(len(radar["tracks_atuais"]), 2)
+        self.assertTrue(
+            all(item["track"]["historico_borda"] for item in radar["tracks_atuais"])
+        )
         self.assertEqual(
             len({item["track"]["track_id"] for item in radar["tracks_atuais"]}), 2
         )
@@ -251,7 +299,56 @@ class NowcastingIntegrationTest(unittest.TestCase):
     def test_alerts_true_continua_sem_enfileirar(self):
         from workers.nowcasting_updater import enfileirar_alertas_nowcasting
 
-        self.assertEqual(enfileirar_alertas_nowcasting({"alerts_enabled": True}, {}), 0)
+        vermelho_simulado = {
+            "alerta_preventivo": {
+                "nivel": "VERMELHO",
+                "would_send": True,
+                "preventive_sending": "DESATIVADO",
+            }
+        }
+        self.assertEqual(
+            enfileirar_alertas_nowcasting(
+                {"alerts_enabled": True}, vermelho_simulado
+            ),
+            0,
+        )
+        conn = self.database.get_db()
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)
+        conn.close()
+
+    def test_worker_vermelho_com_alerts_true_ainda_nao_cria_fila(self):
+        from config import nowcasting_config
+        from workers import nowcasting_updater
+
+        os.environ["NOWCASTING_ENABLED"] = "true"
+        os.environ["NOWCASTING_ALERTS_ENABLED"] = "true"
+        estado = self.state()
+        estado["alerta_preventivo"].update({
+            "nivel": "VERMELHO",
+            "nivel_base": "VERMELHO",
+            "cor": "vermelho",
+            "distance_km": 20,
+            "would_send": True,
+            "message": "ALERTA PREVENTIVO: possível chuva próxima.",
+            "simulation_message": (
+                "Este evento seria candidato a alerta por WhatsApp, "
+                "mas o envio está desativado."
+            ),
+        })
+        with (
+            mock.patch.object(
+                nowcasting_updater,
+                "carregar_entradas_nowcasting",
+                return_value=({}, {"stations": []}, None, "vermelho-simulado"),
+            ),
+            mock.patch.object(
+                nowcasting_updater, "analisar_nowcasting", return_value=estado
+            ),
+        ):
+            resultado = nowcasting_updater.executar_ciclo(nowcasting_config())
+
+        self.assertTrue(resultado["snapshot"]["alerta_preventivo"]["would_send"])
         conn = self.database.get_db()
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)

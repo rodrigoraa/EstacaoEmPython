@@ -62,6 +62,11 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
                 self.assertNotIn(b'href="/radar"', response.data)
                 self.assertNotIn(b'href="/monitoramento"', response.data)
                 self.assertNotIn(b'href="/estacoes-regionais"', response.data)
+                for experimental_text in (
+                    "Níveis de proximidade", "ALERTA PREVENTIVO",
+                    "Envio preventivo",
+                ):
+                    self.assertNotIn(experimental_text.encode(), response.data)
         home = self.client.get("/").data
         for label in ("Dashboard", "Histórico", "Previsão do tempo", "Sobre a estação"):
             self.assertIn(label.encode(), home)

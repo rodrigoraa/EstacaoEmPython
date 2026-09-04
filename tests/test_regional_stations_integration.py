@@ -205,6 +205,8 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.assertIn("Qualidade da coleta".encode(), page.data)
         self.assertIn("Tendências meteorológicas".encode(), page.data)
         self.assertIn("Ver tendências detalhadas".encode(), page.data)
+        self.assertIn("Glossário das estações regionais".encode(), page.data)
+        self.assertIn("Dados estagnados".encode(), page.data)
 
     def test_worker_mockado_processa_seis_e_ignora_slots_vazios(self):
         from config import regional_stations_config

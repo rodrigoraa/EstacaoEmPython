@@ -5,10 +5,16 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 
+from services.preventive_alerts import (
+    criar_alerta_preventivo,
+    estimar_eta_borda,
+    possui_clutter_forte,
+    qualidade_tracking,
+)
 from time_utils import agora_utc, iso_local, iso_utc
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.2"
+NOWCASTING_ALGORITHM_VERSION = "1.3"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -160,6 +166,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         and track.get("velocidade_kmh") is not None
         and track.get("bearing_movimento") is not None
     )
+    tracking_quality = qualidade_tracking(track, track_valid)
 
     if radar_fresh and cluster:
         score += 8
@@ -257,6 +264,15 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         track.get("eta_minutos")
         if structural else None
     )
+    eta_borda = estimar_eta_borda(
+        track.get("historico_borda"),
+        tracking_valido=track_valid,
+        aproximando=track.get("aproximando"),
+        trajetoria_compativel=track.get("trajetoria_compativel"),
+        min_frames=config["track_min_frames"],
+        min_duration_minutes=config.get("track_min_duration_minutes", 10.0),
+        max_speed_kmh=config.get("track_max_speed_kmh", 150.0),
+    )
     relevant.sort(
         key=lambda item: (
             0 if item["evidencias"] else 1,
@@ -271,10 +287,17 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         "approaching": track.get("aproximando") if track_valid else None,
         "trajectory_compatible": bool(track_valid and track.get("trajetoria_compativel")),
         "tracking_valid": track_valid,
+        "tracking_quality": tracking_quality,
         "eta_minutes": eta,
-        "direction": track.get("direcao_movimento"),
+        "eta_border_minutes": eta_borda.get("eta_minutes") if eta_borda else None,
+        "border_approach_rate_kmh": (
+            eta_borda.get("approach_rate_kmh") if eta_borda else None
+        ),
+        "eta_border_quality": eta_borda.get("quality") if eta_borda else None,
+        "direction": track.get("direcao_movimento") if track_valid else None,
         "speed_kmh": track.get("velocidade_kmh") if track_valid else None,
         "frame_count": track.get("quantidade_frames"),
+        "duration_minutes": track.get("duracao_minutos"),
         "evidence_level": _nivel_evidencia(score),
         "evidence_index": score,
         "upstream_stations": relevant,
@@ -291,6 +314,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
 def _prioridade_ameaca(ameaca):
     clutter = ameaca.get("indice_persistencia_clutter")
     return (
+        1 if possui_clutter_forte(ameaca) else 0,
         THREAT_STATUS_PRIORITY.get(ameaca.get("status"), 99),
         0 if (ameaca.get("confirmacao_regional") or {}).get("confirmada") else 1,
         0 if ameaca.get("trajectory_compatible") else 1,
@@ -367,6 +391,12 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         principal["confirmacao_regional"]
         if principal else {"confirmada": False, "stations": [], "evidence_count": 0}
     )
+    alerta_preventivo = criar_alerta_preventivo(
+        principal,
+        radar_atualizado=radar_fresh,
+        evento_local=evento_local,
+        confirmacao_regional=confirmation,
+    )
     radar_publico = {
         "disponivel": bool(radar.get("disponivel")),
         "stale": radar.get("stale"),
@@ -380,7 +410,17 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         "aproximando": principal.get("approaching") if principal else None,
         "trajetoria_compativel": bool(principal and principal.get("trajectory_compatible")),
         "eta_minutos": principal.get("eta_minutes") if principal else None,
+        "eta_borda_minutos": principal.get("eta_border_minutes") if principal else None,
+        "taxa_aproximacao_borda_kmh": (
+            principal.get("border_approach_rate_kmh") if principal else None
+        ),
+        "qualidade_tracking": (
+            principal.get("tracking_quality") if principal else "DADOS_INSUFICIENTES"
+        ),
         "quantidade_frames": principal.get("frame_count") if principal else None,
+        "duracao_tracking_minutos": (
+            principal.get("duration_minutes") if principal else None
+        ),
         "suspeito_clutter": bool(principal and principal.get("suspeito_clutter")),
         "indice_persistencia_clutter": principal.get("indice_persistencia_clutter") if principal else None,
         "imagem_disponivel": bool(frame.get("imagem_disponivel")),
@@ -397,6 +437,7 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         "estacoes_relevantes": principal.get("upstream_stations", []) if principal else [],
         "escola": local,
         "evento_local_observado": evento_local,
+        "alerta_preventivo": alerta_preventivo,
         "historico_regional_em_formacao": bool(
             regional_usable and not regional_history_ready
         ),

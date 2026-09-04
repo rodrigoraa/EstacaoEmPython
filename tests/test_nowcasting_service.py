@@ -20,7 +20,7 @@ class NowcastingServiceTest(unittest.TestCase):
             "track_min_frames": 3,
             "upstream_corridor_km": 50,
             "regional_max_age_minutes": 180,
-            "algorithm_version": "1.2",
+            "algorithm_version": "1.3",
             "target_lat": -22.49,
             "target_lon": -54.46,
             "regional_confirm_min_signals": 2,
@@ -41,6 +41,7 @@ class NowcastingServiceTest(unittest.TestCase):
             "tracking": {
                 "track_id": 12,
                 "quantidade_frames": 4,
+                "duracao_minutos": 20,
                 "velocidade_kmh": 45,
                 "bearing_movimento": 0,
                 "direcao_movimento": "N",
@@ -50,6 +51,11 @@ class NowcastingServiceTest(unittest.TestCase):
                 "trajetoria_compativel": trajectory,
                 "eta_minutos": 80,
                 "indice_persistencia_clutter": clutter,
+                "historico_borda": [
+                    {"data_frame": "2026-09-03T13:00:00+00:00", "distancia_borda_km": 84},
+                    {"data_frame": "2026-09-03T13:10:00+00:00", "distancia_borda_km": 78},
+                    {"data_frame": "2026-09-03T13:20:00+00:00", "distancia_borda_km": 72},
+                ],
             },
         }
 
@@ -106,6 +112,9 @@ class NowcastingServiceTest(unittest.TestCase):
         radar["tracking"]["velocidade_kmh"] = None
         state = analisar_nowcasting(radar, {"stations": []}, self.local(), self.config, self.now)
         self.assertEqual(state["status"], "ECO_EM_MONITORAMENTO")
+        self.assertIsNone(state["radar"]["velocidade_kmh"])
+        self.assertIsNone(state["radar"]["eta_minutos"])
+        self.assertIsNone(state["radar"]["eta_borda_minutos"])
 
     def test_aproximando_sem_trajetoria_nao_recebe_eta(self):
         state = analisar_nowcasting(
@@ -120,6 +129,9 @@ class NowcastingServiceTest(unittest.TestCase):
         )
         self.assertEqual(state["status"], "TRAJETORIA_RELEVANTE")
         self.assertEqual(state["radar"]["eta_minutos"], 80)
+        self.assertEqual(state["radar"]["eta_borda_minutos"], 120)
+        self.assertEqual(state["radar"]["velocidade_kmh"], 45)
+        self.assertTrue(state["radar"]["aproximando"])
 
     def test_estacao_montante_eleva_evidencia_com_regras_explicitas(self):
         state = analisar_nowcasting(
@@ -175,6 +187,8 @@ class NowcastingServiceTest(unittest.TestCase):
         )
         self.assertLess(clutter["indice_evidencia"], normal["indice_evidencia"])
         self.assertTrue(clutter["radar"]["disponivel"])
+        self.assertEqual(clutter["alerta_preventivo"]["nivel"], "AMARELO")
+        self.assertTrue(clutter["alerta_preventivo"]["low_confidence"])
 
     def test_radar_sozinho_nunca_gera_atencao_preventiva(self):
         radar = self.radar()
@@ -298,6 +312,37 @@ class NowcastingServiceTest(unittest.TestCase):
         )
         self.assertTrue(state["evento_local_observado"])
         self.assertNotEqual(state["status"], "ATENCAO_PREVENTIVA")
+        self.assertEqual(
+            state["alerta_preventivo"]["message"],
+            "Chuva já observada na EE São José.",
+        )
+
+    def test_eco_confiavel_tem_prioridade_sobre_clutter_forte_mais_proximo(self):
+        radar = self.radar()
+        track_confiavel = deepcopy(radar["tracking"])
+        cluster_confiavel = deepcopy(radar["cluster_mais_proximo"])
+        track_confiavel["track_id"] = 12
+        cluster_confiavel["distancia_borda_escola_km"] = 45
+
+        track_clutter = deepcopy(track_confiavel)
+        cluster_clutter = deepcopy(cluster_confiavel)
+        track_clutter.update({"track_id": 18, "indice_persistencia_clutter": 0.9})
+        cluster_clutter.update({
+            "distancia_borda_escola_km": 10,
+            "suspeito_clutter": True,
+            "indice_persistencia_clutter": 0.9,
+        })
+        radar["tracks_atuais"] = [
+            {"track": track_clutter, "cluster": cluster_clutter},
+            {"track": track_confiavel, "cluster": cluster_confiavel},
+        ]
+
+        state = analisar_nowcasting(
+            radar, {"stations": []}, self.local(), self.config, self.now
+        )
+        self.assertEqual(state["ameaca_principal"]["track_id"], 12)
+        self.assertEqual(state["alerta_preventivo"]["nivel"], "LARANJA")
+        self.assertEqual(len(state["ameacas"]), 2)
 
 
 if __name__ == "__main__":

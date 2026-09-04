@@ -223,7 +223,7 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS` | `2` | sinais independentes mínimos para confirmação |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS` | `1` | estações a montante mínimas com sinais |
-| `NOWCASTING_ALGORITHM_VERSION` | `1.3` | versão persistida junto ao snapshot |
+| `NOWCASTING_ALGORITHM_VERSION` | `1.4` | versão persistida junto ao snapshot |
 
 Nowcasting aqui não é previsão numérica. É fusão observacional de curtíssimo prazo:
 o radar acompanha ecos, as estações regionais confirmam alterações em superfície e
@@ -502,15 +502,25 @@ do movimento, até 300 km, e a distância perpendicular ao eixo é menor que o c
 Quando o alvo é fornecido, o vetor também precisa apontar para a região da escola.
 Direção do vento de superfície nunca é usada como direção da célula.
 
-Na versão 1.3 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. Ecos com índice de clutter a partir de 0,75 perdem a prioridade para ameaças sem clutter forte; depois são considerados status explícito (`ATENCAO_PREVENTIVA`, `EVIDENCIA_REGIONAL`, `TRAJETORIA_RELEVANTE`, `SISTEMA_SE_APROXIMANDO`, `SISTEMA_EM_MOVIMENTO`, `ECO_EM_MONITORAMENTO`), confirmação regional, trajetória, aproximação, tracking, distância e ETA. As demais ameaças permanecem em `ameacas` e no painel. Estações com valores estagnados continuam excluídas da confirmação regional.
+Na versão 1.4 cada track atual gera uma ameaça independente; scores de células diferentes não são somados. A `ameaca_principal` continua sendo ordenada pela relevância meteorológica: status explícito (`ATENCAO_PREVENTIVA`, `EVIDENCIA_REGIONAL`, `TRAJETORIA_RELEVANTE`, `SISTEMA_SE_APROXIMANDO`, `SISTEMA_EM_MOVIMENTO`, `ECO_EM_MONITORAMENTO`), confirmação regional, trajetória, aproximação, tracking, distância, ETA e clutter. As demais ameaças permanecem em `ameacas` e no painel. Estações com valores estagnados continuam excluídas da confirmação regional.
 
-O estado `alerta_preventivo` é somente visual e usa exclusivamente a distância da
-borda: `NORMAL` acima de 100 km, `AMARELO` até 100 km, `LARANJA` até 50 km e
-`VERMELHO` até 25 km, com limites inclusivos. Clutter forte permanece visível e
-auditável, mas o nível operacional é limitado a `AMARELO`; outro eco confiável tem
-prioridade. Confirmação regional aumenta a confiança textual, mas não é exigida para
-mostrar uma faixa. Se houver chuva local, a mensagem passa a informar que a chuva já
-foi observada na EE São José.
+O estado `alerta_preventivo` é somente visual e é independente da ameaça principal.
+Ele seleciona o eco sem clutter forte com a menor distância válida da borda no frame
+operacional: `NORMAL` acima de 100 km, `AMARELO` até 100 km, `LARANJA` até 50 km e
+`VERMELHO` até 25 km, com limites inclusivos. Tracking não é obrigatório para mostrar
+a faixa. Se não existir eco confiável, clutter forte permanece visível e auditável,
+mas dentro de 100 km produz apenas `AMARELO` diagnóstico. Se o radar estiver stale ou
+sem frame operacional válido, o estado é `INDISPONIVEL`, nunca `NORMAL` verde.
+Confirmação regional aumenta a confiança textual, mas não é exigida para mostrar uma
+faixa. Se houver chuva local fresca, a mensagem passa a informar que a chuva já foi
+observada na EE São José.
+
+Frames processados com `timestamp_status='suspect'` continuam persistidos para
+auditoria, porém são excluídos da seleção operacional, do tracking e do histórico
+usado para clutter. A idade e o estado stale usam o último frame processado não
+suspeito. O histórico curto da borda é carregado em uma consulta agrupada para todos
+os tracks do frame, aproveitando o índice existente `(track_id, data_frame)` e sem
+alteração de schema.
 
 O `ETA da trajetória` continua sendo a entrada projetada do centro no raio-alvo. O
 `ETA estimado da borda` é separado e usa até oito distâncias recentes do mesmo track:
@@ -539,7 +549,10 @@ estação local”, sem aumentar o score preventivo. `confirmacao_regional`, `ra
 `ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria. Mesmo assim,
 `NOWCASTING_ALERTS_ENABLED=true` continua retornando zero e não grava filas.
 O campo `would_send` indica apenas se um nível vermelho confiável seria candidato em
-uma versão futura; `preventive_sending` permanece `DESATIVADO` e não cria registros em
+uma versão futura. Nesta versão ele depende somente de radar fresco, nível vermelho e
+ausência de clutter forte; tracking, aproximação e trajetória não bloqueiam a
+simulação, para que uma célula confiável recém-detectada perto da escola não seja
+ocultada. `preventive_sending` permanece `DESATIVADO` e não cria registros em
 `alertas_fila` nem em `alertas_eventos`.
 
 O MaxCAPPI processado é imagem RGB, não volume bruto calibrado. Portanto o sistema mostra “eco de radar”/“área de refletividade detectada” e não inventa dBZ, mm/h, probabilidade, granizo, severidade ou “tempestade confirmada”. Estações externas são aproximadamente horárias, o radar pode conter clutter, o ETA depende da continuidade e células podem nascer ou desaparecer rapidamente. Nowcasting não substitui avisos oficiais. As regras precisam rodar em observação por dias/semanas e ser comparadas com a chegada real à escola antes de qualquer alerta preventivo.

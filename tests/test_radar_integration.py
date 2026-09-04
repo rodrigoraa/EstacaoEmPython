@@ -70,6 +70,15 @@ class RadarIntegrationTest(unittest.TestCase):
             -58.226281, -50.543479, 400, 1000,
         )
 
+    def frame_suspect(self, horario="2099-01-01 00:00:00", sufixo="suspect"):
+        return RadarFrame(
+            "jr", "maxcappi", datetime.fromisoformat(horario).replace(tzinfo=timezone.utc),
+            f"https://estatico.example/{sufixo}.png",
+            -20.27855, -54.47396, -23.830664, -16.642761,
+            -58.226281, -50.543479, 400, 1000,
+            horario, "suspect",
+        )
+
     def cluster(self, numero=1, lat=-22.0, lon=-54.46, clutter=False, pixels=200):
         distancia = haversine_km(lat, lon, -22.4925326, -54.4610352)
         return RadarCluster(
@@ -106,6 +115,8 @@ class RadarIntegrationTest(unittest.TestCase):
         api = self.client.get("/admin/api/radar/status")
         self.assertEqual(pagina.status_code, 200)
         self.assertIn("Radar temporariamente indisponível".encode(), pagina.data)
+        self.assertIn("INDISPONÍVEL".encode(), pagina.data)
+        self.assertIn("Dados operacionais do radar indisponíveis".encode(), pagina.data)
         self.assertFalse(api.get_json()["disponivel"])
 
     def test_pagina_api_e_imagem_com_dados_sem_expor_paths(self):
@@ -114,12 +125,17 @@ class RadarIntegrationTest(unittest.TestCase):
         pasta = self.raiz / "radar" / "analisadas"
         pasta.mkdir(parents=True)
         Image.new("RGB", (20, 20), "black").save(pasta / "frame.png")
+        horario = datetime.now(timezone.utc).replace(microsecond=0).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         frame_id, _ = salvar_resultado_frame(
-            self.frame(), None, "analisadas/frame.png", 20, 20, [self.cluster()]
+            self.frame(horario, "pagina"),
+            None, "analisadas/frame.png", 20, 20, [self.cluster()]
         )
         self.autenticar_admin()
         alerta = {
             "nivel": "VERMELHO", "message": "Alerta visual de teste",
+            "cluster_id": 1, "track_id": 9, "distance_km": 20,
             "approaching": True, "speed_kmh": 40, "eta_minutes": 30,
             "eta_border_minutes": 20, "tracking_quality": "BOA",
             "regional_confirmation": False,
@@ -133,16 +149,25 @@ class RadarIntegrationTest(unittest.TestCase):
             return_value={
                 "radar": {"frame_id": frame_id},
                 "alerta_preventivo": alerta,
+                "ameaca_principal": {
+                    "cluster_id": 2, "track_id": 12,
+                    "distance_km": 60, "status": "ATENCAO_PREVENTIVA",
+                },
             },
         ):
             pagina = self.client.get("/admin/radar")
         payload = self.client.get("/admin/api/radar/status").get_json()
         imagem = self.client.get(f"/admin/radar/imagem/{frame_id}")
+        self.assertEqual(imagem.status_code, 200)
+        self.assertEqual(imagem.mimetype, "image/png")
+        imagem.close()
         self.assertEqual(pagina.status_code, 200)
-        self.assertIn(b"Eco significativo", pagina.data)
+        self.assertIn("Eco usado no alerta".encode(), pagina.data)
+        self.assertIn("Ameaça principal do nowcasting".encode(), pagina.data)
+        self.assertIn("As análises usam ecos diferentes".encode(), pagina.data)
         self.assertIn(b"Resumo operacional", pagina.data)
         self.assertIn(b"Atualiza", pagina.data)
-        self.assertIn(b"Eco e deslocamento", pagina.data)
+        self.assertIn(b"Eco usado no alerta e deslocamento", pagina.data)
         self.assertIn(b"Como interpretar", pagina.data)
         self.assertIn("Níveis de proximidade".encode(), pagina.data)
         self.assertIn("Envio preventivo: DESATIVADO".encode(), pagina.data)
@@ -152,9 +177,32 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertTrue(payload["disponivel"])
         self.assertNotIn("arquivo_local", payload["frame"])
         self.assertNotIn("path_remoto", json.dumps(payload))
-        self.assertEqual(imagem.status_code, 200)
-        self.assertEqual(imagem.mimetype, "image/png")
-        imagem.close()
+
+    def test_radar_nao_reutiliza_alerta_de_snapshot_de_outro_frame(self):
+        from services.radar_repository import salvar_resultado_frame
+
+        horario = datetime.now(timezone.utc).replace(microsecond=0).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        frame_id, _ = salvar_resultado_frame(
+            self.frame(horario, "frame-atual"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        self.autenticar_admin()
+        with mock.patch(
+            "routes.radar.obter_ultimo_snapshot",
+            return_value={
+                "radar": {"frame_id": frame_id + 100},
+                "alerta_preventivo": {
+                    "nivel": "VERMELHO", "message": "ALERTA ANTIGO",
+                },
+            },
+        ):
+            pagina = self.client.get("/admin/radar")
+
+        self.assertEqual(pagina.status_code, 200)
+        self.assertIn("AGUARDANDO ANÁLISE".encode(), pagina.data)
+        self.assertNotIn(b"ALERTA ANTIGO", pagina.data)
 
     def test_salvar_atomico_publica_png_legivel_pelo_grupo(self):
         from workers import radar_updater
@@ -261,6 +309,74 @@ class RadarIntegrationTest(unittest.TestCase):
         row = conn.execute("SELECT timestamp_status FROM radar_frames WHERE id=?", (frame_id,)).fetchone()
         conn.close()
         self.assertEqual(row["timestamp_status"], "suspect")
+
+    def test_frame_future_suspect_nao_substitui_frame_operacional_valido(self):
+        from services.radar_repository import obter_estado_radar, salvar_resultado_frame
+
+        valido_id, _ = salvar_resultado_frame(
+            self.frame("2026-09-04 12:00:00", "valido-antes"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        suspect_id, _ = salvar_resultado_frame(
+            self.frame_suspect(), None, None, 20, 20, [self.cluster()]
+        )
+
+        estado = obter_estado_radar(10**9)
+        self.assertEqual(estado["frame"]["id"], valido_id)
+        self.assertNotEqual(estado["frame"]["id"], suspect_id)
+
+    def test_frame_valido_coletado_depois_de_suspect_e_operacional(self):
+        from services.radar_repository import obter_estado_radar, salvar_resultado_frame
+
+        salvar_resultado_frame(
+            self.frame_suspect(sufixo="suspect-antes"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        valido_id, _ = salvar_resultado_frame(
+            self.frame("2026-09-04 12:20:00", "valido-depois"),
+            None, None, 20, 20, [self.cluster()],
+        )
+
+        self.assertEqual(obter_estado_radar(10**9)["frame"]["id"], valido_id)
+
+    def test_somente_frame_suspect_deixa_radar_operacional_indisponivel(self):
+        from services.radar_repository import obter_estado_radar, salvar_resultado_frame
+
+        suspect_id, _ = salvar_resultado_frame(
+            self.frame_suspect(), None, None, 20, 20, [self.cluster()]
+        )
+        estado = obter_estado_radar(45)
+        conn = self.database.get_db()
+        persistido = conn.execute(
+            "SELECT timestamp_status FROM radar_frames WHERE id=?", (suspect_id,)
+        ).fetchone()
+        conn.close()
+
+        self.assertFalse(estado["disponivel"])
+        self.assertIsNone(estado["frame"])
+        self.assertEqual(persistido["timestamp_status"], "suspect")
+
+    def test_frame_valido_antigo_com_suspect_futuro_fica_stale_e_indisponivel(self):
+        from config import nowcasting_config
+        from services.nowcasting_service import analisar_nowcasting
+        from services.radar_repository import obter_estado_radar, salvar_resultado_frame
+
+        valido_id, _ = salvar_resultado_frame(
+            self.frame("2000-01-01 00:00:00", "valido-antigo"),
+            None, None, 20, 20, [self.cluster()],
+        )
+        salvar_resultado_frame(
+            self.frame_suspect(), None, None, 20, 20, [self.cluster()]
+        )
+        radar = obter_estado_radar(45)
+        estado = analisar_nowcasting(
+            radar, {"stations": []}, None, nowcasting_config()
+        )
+
+        self.assertEqual(radar["frame"]["id"], valido_id)
+        self.assertTrue(radar["stale"])
+        self.assertEqual(estado["alerta_preventivo"]["nivel"], "INDISPONIVEL")
+        self.assertNotEqual(estado["alerta_preventivo"]["cor"], "verde")
 
     def test_worker_finaliza_frame_suspect_sem_criar_track(self):
         from config import radar_config

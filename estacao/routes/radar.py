@@ -8,6 +8,7 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, send_fil
 from admin_auth import admin_api_required, admin_page_required
 from config import radar_config
 from services.nowcasting_repository import obter_ultimo_snapshot
+from services.preventive_alerts import criar_alerta_preventivo
 from services.radar_repository import obter_arquivo_frame, obter_estado_radar
 from time_utils import formatar_local
 
@@ -35,7 +36,16 @@ def _estado_seguro():
 @admin_page_required
 def radar_admin():
     estado = _estado_seguro()
-    alerta_preventivo = None
+    alerta_preventivo = (
+        None
+        if estado.get("frame")
+        else criar_alerta_preventivo(
+            None,
+            radar_atualizado=False,
+            evento_local=False,
+        )
+    )
+    ameaca_principal = None
     if estado.get("frame"):
         estado["frame"]["data_frame_formatada"] = formatar_local(
             estado["frame"].get("data_frame_local")
@@ -53,6 +63,7 @@ def radar_admin():
                 == estado["frame"]["id"]
             ):
                 alerta_preventivo = snapshot.get("alerta_preventivo")
+                ameaca_principal = snapshot.get("ameaca_principal")
         except Exception as erro:
             logger.warning(
                 "Alerta preventivo persistido indisponivel no radar: %s",
@@ -62,6 +73,7 @@ def radar_admin():
         "radar.html",
         estado=estado,
         alerta_preventivo=alerta_preventivo,
+        ameaca_principal=ameaca_principal,
         titulo="Radar Meteorológico",
         radar_track_min_frames=radar_config()["track_min_frames"],
         aba_ativa="radar",

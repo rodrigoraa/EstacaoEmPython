@@ -10,11 +10,12 @@ from services.preventive_alerts import (
     estimar_eta_borda,
     possui_clutter_forte,
     qualidade_tracking,
+    selecionar_eco_alerta_proximidade,
 )
 from time_utils import agora_utc, iso_local, iso_utc
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.3"
+NOWCASTING_ALGORITHM_VERSION = "1.4"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -280,9 +281,12 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         )
     )
     return {
+        "cluster_id": cluster.get("id"),
         "track_id": track.get("track_id"),
         "status": status,
         "distance_km": distance,
+        "center_distance_km": cluster.get("distancia_centro_escola_km"),
+        "relative_position": cluster.get("direcao_relativa"),
         "faixa_distancia": _faixa_distancia(distance),
         "approaching": track.get("aproximando") if track_valid else None,
         "trajectory_compatible": bool(track_valid and track.get("trajetoria_compativel")),
@@ -314,7 +318,6 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
 def _prioridade_ameaca(ameaca):
     clutter = ameaca.get("indice_persistencia_clutter")
     return (
-        1 if possui_clutter_forte(ameaca) else 0,
         THREAT_STATUS_PRIORITY.get(ameaca.get("status"), 99),
         0 if (ameaca.get("confirmacao_regional") or {}).get("confirmada") else 1,
         0 if ameaca.get("trajectory_compatible") else 1,
@@ -322,6 +325,7 @@ def _prioridade_ameaca(ameaca):
         0 if ameaca.get("tracking_valid") else 1,
         ameaca.get("distance_km") if ameaca.get("distance_km") is not None else 99999,
         ameaca.get("eta_minutes") if ameaca.get("eta_minutes") is not None else 99999,
+        1 if possui_clutter_forte(ameaca) else 0,
         clutter if clutter is not None else 0,
         ameaca.get("track_id") or 0,
     )
@@ -391,14 +395,21 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         principal["confirmacao_regional"]
         if principal else {"confirmada": False, "stations": [], "evidence_count": 0}
     )
+    eco_alerta = selecionar_eco_alerta_proximidade(ameacas)
+    confirmacao_alerta = (
+        eco_alerta.get("confirmacao_regional")
+        if eco_alerta
+        else {"confirmada": False, "stations": [], "evidence_count": 0}
+    )
     alerta_preventivo = criar_alerta_preventivo(
-        principal,
+        eco_alerta,
         radar_atualizado=radar_fresh,
         evento_local=evento_local,
-        confirmacao_regional=confirmation,
+        confirmacao_regional=confirmacao_alerta,
     )
     radar_publico = {
         "disponivel": bool(radar.get("disponivel")),
+        "operacional": radar_fresh,
         "stale": radar.get("stale"),
         "timestamp_status": frame.get("timestamp_status"),
         "frame_id": frame.get("id"),
@@ -431,6 +442,7 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         "indice_evidencia": score,
         "radar": radar_publico,
         "ameaca_principal": principal,
+        "eco_alerta_proximidade": eco_alerta,
         "ameacas": ameacas,
         "confirmacao_regional": confirmation,
         "radar_only": bool(principal and principal.get("radar_only")),

@@ -253,6 +253,7 @@ def _atualizar_clutter_frame(conn, frame_id: int):
         SELECT id, COALESCE(data_frame_utc, data_frame) AS momento
         FROM radar_frames
         WHERE id<>? AND status_processamento='processado'
+          AND COALESCE(timestamp_status, 'legacy_unverified') <> 'suspect'
         ORDER BY id DESC LIMIT 4000
         """,
         (frame_id,),
@@ -272,6 +273,7 @@ def _atualizar_clutter_frame(conn, frame_id: int):
         FROM radar_clusters c
         JOIN radar_frames f ON f.id=c.frame_id
         WHERE c.frame_id<>?
+          AND COALESCE(f.timestamp_status, 'legacy_unverified') <> 'suspect'
         ORDER BY f.id DESC LIMIT 4000
         """,
         (frame_id,),
@@ -653,6 +655,7 @@ def obter_estado_radar(stale_minutes: int) -> dict:
             """
             SELECT * FROM radar_frames
             WHERE status_processamento='processado'
+              AND COALESCE(timestamp_status, 'legacy_unverified') <> 'suspect'
             ORDER BY COALESCE(data_frame_utc, data_frame) DESC LIMIT 1
             """
         ).fetchone()

@@ -22,36 +22,47 @@
   {% set radar = estado.radar %}
   {% set confirmacao = estado.confirmacao_regional or {} %}
   {% set alerta = estado.alerta_preventivo or {} %}
-  {% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO') %}
+  {% set principal = estado.ameaca_principal or {} %}
+  {% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO ANÁLISE') %}
+  {% set rotulo_nivel_alerta = 'INDISPONÍVEL' if nivel_alerta == 'INDISPONIVEL' else nivel_alerta %}
+  {% set classe_alerta = alerta.get('nivel', 'aguardando')|lower %}
 
-  <section class="preventive-alert preventive-alert--{{ nivel_alerta|lower }}" aria-live="polite" aria-labelledby="monitor-alerta-titulo">
+  <section class="preventive-alert preventive-alert--{{ classe_alerta }}" aria-live="polite" aria-labelledby="monitor-alerta-titulo">
     <span class="preventive-alert-icon"><i class="fa-solid fa-shield-halved"></i></span>
     <div class="preventive-alert-content">
       <div class="preventive-alert-heading">
-        <div><small>Nível operacional interno</small><h2 id="monitor-alerta-titulo">{{ nivel_alerta }}</h2></div>
+        <div><small>Alerta de proximidade · nível operacional interno</small><h2 id="monitor-alerta-titulo">{{ rotulo_nivel_alerta }}</h2></div>
         <span class="preventive-simulation-badge">Envio preventivo: DESATIVADO</span>
       </div>
-      <p>{{ alerta.message if alerta else 'Aguardando cálculo do nível preventivo.' }}</p>
+      <p>{{ alerta.get('message', 'Aguardando cálculo do nível preventivo.') }}</p>
       {% if alerta %}
       <dl class="preventive-alert-details">
-        <div><dt>Tendência</dt><dd>{% if alerta.approaching is not none %}{{ 'Aproximando' if alerta.approaching else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
-        <div><dt>Velocidade do eco</dt><dd>{{ '%.1f km/h'|format(alerta.speed_kmh) if alerta.speed_kmh is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(alerta.eta_minutes) if alerta.eta_minutes is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(alerta.eta_border_minutes) if alerta.eta_border_minutes is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Qualidade do tracking</dt><dd>{{ alerta.tracking_quality|replace('_', ' ') }}</dd></div>
-        <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.regional_confirmation else 'Ainda não disponível' }}</dd></div>
+        <div><dt>Eco selecionado</dt><dd>{% if alerta.get('track_id') %}Sistema {{ alerta.get('track_id') }}{% elif alerta.get('cluster_id') %}Cluster {{ alerta.get('cluster_id') }} sem tracking{% else %}Nenhum eco operacional{% endif %}</dd></div>
+        <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(alerta.get('distance_km')) if alerta.get('distance_km') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Tendência</dt><dd>{% if alerta.get('approaching') is not none %}{{ 'Aproximando' if alerta.get('approaching') else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
+        <div><dt>Velocidade do eco</dt><dd>{{ '%.1f km/h'|format(alerta.get('speed_kmh')) if alerta.get('speed_kmh') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(alerta.get('eta_minutes')) if alerta.get('eta_minutes') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(alerta.get('eta_border_minutes')) if alerta.get('eta_border_minutes') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Qualidade do tracking</dt><dd>{{ alerta.get('tracking_quality', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
+        <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.get('regional_confirmation') else 'Ainda não disponível' }}</dd></div>
       </dl>
-      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.simulation_message }}</p>
+      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.get('simulation_message', 'Nenhum alerta preventivo será enviado por esta versão.') }}</p>
       {% endif %}
     </div>
   </section>
 
+  {% if alerta and principal and (alerta.get('cluster_id') != principal.get('cluster_id') or alerta.get('track_id') != principal.get('track_id')) %}
+  <div class="operational-identity-difference"><i class="fa-solid fa-code-compare"></i><span>O alerta de proximidade usa {% if alerta.get('track_id') %}o Sistema {{ alerta.get('track_id') }}{% else %}o Cluster {{ alerta.get('cluster_id') }}{% endif %}; a ameaça principal do nowcasting é {% if principal.get('track_id') %}o Sistema {{ principal.get('track_id') }}{% else %}o Cluster {{ principal.get('cluster_id') }}{% endif %}. Essa diferença é esperada: proximidade e evidência são análises independentes.</span></div>
+  {% endif %}
+
   <section class="proximity-levels" aria-labelledby="monitor-niveis-titulo">
     <div class="proximity-levels-heading"><h2 id="monitor-niveis-titulo">Níveis de proximidade</h2><p>Os níveis usam a distância da borda do eco e não representam probabilidade de chuva.</p></div>
     <div class="proximity-levels-grid">
-      <div class="proximity-level proximity-level--yellow"><strong>AMARELO — até 100 km</strong><span>Eco meteorológico em monitoramento.</span></div>
-      <div class="proximity-level proximity-level--orange"><strong>LARANJA — até 50 km</strong><span>Eco mais próximo da região; atenção aumentada.</span></div>
-      <div class="proximity-level proximity-level--red"><strong>VERMELHO — até 25 km</strong><span>Possível chuva próxima da escola.</span></div>
+      <div class="proximity-level proximity-level--neutral"><strong>INDISPONÍVEL</strong><span>Dados operacionais do radar indisponíveis.</span></div>
+      <div class="proximity-level proximity-level--green"><strong>NORMAL — acima de 100 km</strong><span>Nenhum eco confiável dentro de 100 km.</span></div>
+      <div class="proximity-level proximity-level--yellow"><strong>AMARELO — até 100 km</strong><span>Eco confiável dentro de 100 km.</span></div>
+      <div class="proximity-level proximity-level--orange"><strong>LARANJA — até 50 km</strong><span>Eco confiável dentro de 50 km.</span></div>
+      <div class="proximity-level proximity-level--red"><strong>VERMELHO — até 25 km</strong><span>Possível chuva próxima; eco confiável dentro de 25 km.</span></div>
     </div>
   </section>
 
@@ -67,7 +78,7 @@
       </article>
       <article class="admin-overview-item {{ 'admin-overview-item--warning' if radar.stale else 'admin-overview-item--neutral' }}">
         <span class="admin-overview-icon"><i class="fa-solid fa-satellite-dish"></i></span>
-        <div><small>Radar</small><strong>{{ 'Desatualizado' if radar.stale else ('Disponível' if radar.disponivel else 'Sem dados') }}</strong><p>{{ ('Borda a %.1f km'|format(radar.distancia_borda_km)) if radar.distancia_borda_km is not none else 'Sem distância calculada' }}</p></div>
+        <div><small>Radar operacional</small><strong>{{ 'Desatualizado' if radar.stale else ('Disponível' if radar.get('operacional', radar.disponivel) else 'Sem dados operacionais') }}</strong><p>{{ ('Eco do alerta com borda a %.1f km'|format(alerta.get('distance_km'))) if alerta.get('distance_km') is not none else 'Sem distância operacional calculada' }}</p></div>
       </article>
       <article class="admin-overview-item {{ 'admin-overview-item--success' if confirmacao.confirmada else 'admin-overview-item--neutral' }}">
         <span class="admin-overview-icon"><i class="fa-solid fa-tower-broadcast"></i></span>
@@ -93,16 +104,19 @@
       <div><dt>Índice de evidência</dt><dd>Pontuação interna que soma sinais observados. Não representa porcentagem de chance de chuva.</dd></div>
       <div><dt>Confirmação de superfície</dt><dd>Sinais nas estações regionais que reforçam o que o radar está indicando.</dd></div>
       <div><dt>Estação a montante</dt><dd>Estação posicionada no caminho de onde o sistema meteorológico está vindo.</dd></div>
-      <div><dt>Ameaça principal</dt><dd>Eco considerado mais relevante pelo sistema naquele momento.</dd></div>
+      <div><dt>Ameaça principal</dt><dd>Sistema considerado meteorologicamente mais relevante pelo nowcasting.</dd></div>
+      <div><dt>Alerta de proximidade</dt><dd>Nível definido pela distância da borda do eco confiável mais próximo.</dd></div>
       <div><dt>Outros sistemas em monitoramento</dt><dd>Outros ecos detectados que continuam sendo acompanhados.</dd></div>
       <div><dt>ETA conservador</dt><dd>Estimativa de chegada mostrada somente quando trajetória e movimento são tecnicamente confiáveis.</dd></div>
+      <div><dt>ETA da trajetória</dt><dd>Estimativa obtida pela trajetória calculada do sistema acompanhado.</dd></div>
+      <div><dt>ETA estimado da borda</dt><dd>Previsão aproximada de quando a parte mais próxima do eco poderia alcançar a região, caso o movimento atual continue. Não é garantia de chegada.</dd></div>
     </dl>
   </details>
 
   <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
     <div class="monitor-hero-header">
       <div>
-        <p class="monitor-kicker">{{ 'AMEAÇA PRINCIPAL' if estado.ameaca_principal else 'STATUS ATUAL' }}</p>
+        <p class="monitor-kicker">{{ 'AMEAÇA PRINCIPAL DO NOWCASTING' if principal else 'STATUS ATUAL' }}</p>
         <h2>{{ estado.status|replace('_', ' ') }}</h2>
       </div>
       <span class="admin-time-badge"><i class="fa-regular fa-clock"></i>{{ estado.gerado_em }}</span>
@@ -134,7 +148,7 @@
   <div class="monitor-grid">
     <article class="card monitor-panel">
       <div class="monitor-panel-heading">
-        <div><h2><i class="fa-solid fa-satellite-dish"></i> Radar e deslocamento{% if radar.track_id %} · Sistema {{ radar.track_id }}{% endif %}</h2><p>Posição e movimento do eco principal acompanhado.</p></div>
+        <div><h2><i class="fa-solid fa-satellite-dish"></i> Ameaça principal do nowcasting{% if principal.get('track_id') %} · Sistema {{ principal.get('track_id') }}{% endif %}</h2><p>Posição e movimento do sistema meteorologicamente mais relevante; pode ser diferente do alerta de proximidade.</p></div>
         <span class="regional-status">{{ 'DESATUALIZADO' if radar.stale else ('DISPONÍVEL' if radar.disponivel else 'SEM DADOS') }}</span>
       </div>
       <dl class="regional-values">

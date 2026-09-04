@@ -80,19 +80,38 @@ def _tracks_frame_atual(radar):
         ).fetchall()
         if not rows:
             return []
+        track_ids = [row["id"] for row in rows]
+        marcadores = ",".join("?" for _ in track_ids)
+        historicos = {track_id: [] for track_id in track_ids}
+        pontos = conn.execute(
+            f"""
+            WITH pontos_ordenados AS (
+                SELECT track_id,
+                       COALESCE(data_frame_utc, data_frame) AS data_frame,
+                       distancia_borda_escola_km,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY track_id
+                           ORDER BY COALESCE(data_frame_utc, data_frame) DESC, id DESC
+                       ) AS posicao
+                FROM radar_track_points
+                WHERE track_id IN ({marcadores})
+            )
+            SELECT track_id, data_frame, distancia_borda_escola_km
+            FROM pontos_ordenados
+            WHERE posicao <= 8
+            ORDER BY track_id, posicao DESC
+            """,
+            track_ids,
+        ).fetchall()
+        for ponto in pontos:
+            historicos[ponto["track_id"]].append(
+                {
+                    "data_frame": ponto["data_frame"],
+                    "distancia_borda_km": ponto["distancia_borda_escola_km"],
+                }
+            )
         resultado = []
         for row in rows:
-            historico_borda = conn.execute(
-                """
-                SELECT COALESCE(data_frame_utc, data_frame) AS data_frame,
-                       distancia_borda_escola_km
-                FROM radar_track_points
-                WHERE track_id=?
-                ORDER BY COALESCE(data_frame_utc, data_frame) DESC
-                LIMIT 8
-                """,
-                (row["id"],),
-            ).fetchall()
             resultado.append(
                 {
                     "track": {
@@ -115,15 +134,7 @@ def _tracks_frame_atual(radar):
                         "suspeito_clutter": bool(row["suspeito_clutter"]),
                         "indice_persistencia_clutter": row["indice_persistencia_clutter"],
                         "clutter_amostras": row["clutter_amostras"],
-                        "historico_borda": [
-                            {
-                                "data_frame": ponto["data_frame"],
-                                "distancia_borda_km": ponto[
-                                    "distancia_borda_escola_km"
-                                ],
-                            }
-                            for ponto in reversed(historico_borda)
-                        ],
+                        "historico_borda": historicos[row["id"]],
                     },
                     "cluster": {
                         "id": row["cluster_id"],
@@ -153,24 +164,6 @@ def carregar_entradas_nowcasting(config):
     radar = obter_estado_radar(config["radar_max_age_minutes"])
     tracks_atuais = _tracks_frame_atual(radar)
     radar["tracks_atuais"] = tracks_atuais
-    if tracks_atuais:
-        preliminar = min(
-            tracks_atuais,
-            key=lambda item: (
-                0 if item["track"].get("trajetoria_compativel") else 1,
-                0 if item["track"].get("aproximando") else 1,
-                0 if item["track"].get("velocidade_kmh") is not None else 1,
-                item["cluster"].get("distancia_borda_escola_km")
-                if item["cluster"].get("distancia_borda_escola_km") is not None
-                else 99999,
-                item["track"].get("eta_minutos")
-                if item["track"].get("eta_minutos") is not None else 99999,
-                item["track"].get("indice_persistencia_clutter")
-                if item["track"].get("indice_persistencia_clutter") is not None else 0,
-            ),
-        )
-        radar["tracking"] = preliminar["track"]
-        radar["cluster_mais_proximo"] = preliminar["cluster"]
 
     regional_config = regional_stations_config()
     regional_config["stale_minutes"] = config["regional_max_age_minutes"]

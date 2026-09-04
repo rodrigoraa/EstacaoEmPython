@@ -64,6 +64,7 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
                 self.assertNotIn(b'href="/estacoes-regionais"', response.data)
                 for experimental_text in (
                     "Níveis de proximidade", "ALERTA PREVENTIVO",
+                    "Alerta de proximidade", "Ameaça principal do nowcasting",
                     "Envio preventivo",
                 ):
                     self.assertNotIn(experimental_text.encode(), response.data)

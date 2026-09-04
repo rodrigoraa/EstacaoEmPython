@@ -16,6 +16,7 @@ from time_utils import parse_datetime
 CLUTTER_FORTE_LIMIAR = 0.75
 ETA_BORDA_MAX_MINUTOS = 360.0
 NIVEIS_CORES = {
+    "INDISPONIVEL": "cinza",
     "NORMAL": "verde",
     "AMARELO": "amarelo",
     "LARANJA": "laranja",
@@ -23,15 +24,20 @@ NIVEIS_CORES = {
 }
 
 
+def _distancia_valida(valor):
+    try:
+        distancia = float(valor)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(distancia) or distancia < 0:
+        return None
+    return distancia
+
+
 def classificar_nivel_proximidade(distancia_km):
     """Classifica pela borda do eco, preservando os limites inclusivos."""
-    if distancia_km is None:
-        return "NORMAL"
-    try:
-        distancia = float(distancia_km)
-    except (TypeError, ValueError):
-        return "NORMAL"
-    if not math.isfinite(distancia) or distancia < 0 or distancia > 100:
+    distancia = _distancia_valida(distancia_km)
+    if distancia is None or distancia > 100:
         return "NORMAL"
     if distancia <= 25:
         return "VERMELHO"
@@ -46,6 +52,34 @@ def possui_clutter_forte(ameaca):
         return bool(indice is not None and float(indice) >= CLUTTER_FORTE_LIMIAR)
     except (TypeError, ValueError):
         return False
+
+
+def selecionar_eco_alerta_proximidade(ameacas):
+    """Seleciona o eco operacional pela menor distância válida da borda.
+
+    A seleção é deliberadamente independente da ordenação meteorológica da
+    ameaça principal. Tracking não é requisito: células recém-detectadas ainda
+    precisam aparecer na faixa de proximidade. Clutter forte só é escolhido
+    quando não existe nenhum eco confiável no frame atual.
+    """
+    candidatos = []
+    for ameaca in ameacas or []:
+        distancia = _distancia_valida((ameaca or {}).get("distance_km"))
+        if distancia is None:
+            continue
+        candidatos.append((ameaca, distancia))
+    if not candidatos:
+        return None
+    confiaveis = [item for item in candidatos if not possui_clutter_forte(item[0])]
+    universo = confiaveis or candidatos
+    return min(
+        universo,
+        key=lambda item: (
+            item[1],
+            item[0].get("cluster_id") or 0,
+            item[0].get("track_id") or 0,
+        ),
+    )[0]
 
 
 def qualidade_tracking(track, tracking_valido):
@@ -143,54 +177,55 @@ def estimar_eta_borda(
 
 def _mensagem_nivel(nivel, distancia):
     if nivel == "AMARELO":
-        return f"ATENÇÃO: eco meteorológico detectado a {distancia:.1f} km da escola."
+        return f"ATENÇÃO: eco confiável dentro de 100 km. Borda a {distancia:.1f} km."
     if nivel == "LARANJA":
-        return f"ATENÇÃO ELEVADA: eco meteorológico a {distancia:.1f} km da escola."
+        return f"ATENÇÃO ELEVADA: eco confiável dentro de 50 km. Borda a {distancia:.1f} km."
     if nivel == "VERMELHO":
         return (
-            "ALERTA PREVENTIVO: possível chuva próxima. "
-            f"Eco a {distancia:.1f} km da escola."
+            "ALERTA PREVENTIVO: possível chuva próxima; "
+            f"eco confiável dentro de 25 km. Borda a {distancia:.1f} km."
         )
-    return "Sem eco relevante dentro de 100 km."
+    return "Nenhum eco confiável dentro de 100 km."
 
 
 def criar_alerta_preventivo(
-    ameaca_principal,
+    eco_alerta,
     *,
     radar_atualizado,
     evento_local,
     confirmacao_regional=None,
 ):
     """Monta o estado visual; nunca enfileira ou envia mensagens."""
-    ameaca = ameaca_principal or {}
+    ameaca = eco_alerta or {}
     confirmacao = confirmacao_regional or {
         "confirmada": False,
         "stations": [],
         "evidence_count": 0,
     }
-    distancia = ameaca.get("distance_km")
-    try:
-        distancia = float(distancia) if distancia is not None else None
-        if distancia is not None and not math.isfinite(distancia):
-            distancia = None
-    except (TypeError, ValueError):
-        distancia = None
+    distancia = _distancia_valida(ameaca.get("distance_km"))
     nivel_base = (
-        classificar_nivel_proximidade(distancia) if radar_atualizado else "NORMAL"
+        classificar_nivel_proximidade(distancia)
+        if radar_atualizado
+        else "INDISPONIVEL"
     )
     clutter_forte = possui_clutter_forte(ameaca)
     nivel = nivel_base
-    if clutter_forte and nivel_base in {"LARANJA", "VERMELHO"}:
+    if (
+        radar_atualizado
+        and clutter_forte
+        and distancia is not None
+        and distancia <= 100
+    ):
         nivel = "AMARELO"
 
     if evento_local:
         mensagem = "Chuva já observada na EE São José."
-    elif not radar_atualizado and ameaca:
-        mensagem = "Radar desatualizado; nível preventivo indisponível."
-    elif clutter_forte and nivel_base != "NORMAL":
+    elif not radar_atualizado:
+        mensagem = "Dados operacionais do radar indisponíveis."
+    elif clutter_forte and distancia is not None and distancia <= 100:
         mensagem = (
-            f"Eco a {distancia:.1f} km com baixa confiabilidade por "
-            "persistência de clutter; mantido em monitoramento diagnóstico."
+            "Eco próximo detectado, mas com baixa confiabilidade por possível "
+            f"clutter. Borda a {distancia:.1f} km."
         )
     else:
         mensagem = _mensagem_nivel(nivel, distancia or 0)
@@ -208,7 +243,10 @@ def criar_alerta_preventivo(
         "nivel": nivel,
         "nivel_base": nivel_base,
         "cor": NIVEIS_CORES[nivel],
+        "cluster_id": ameaca.get("cluster_id"),
         "distance_km": distancia,
+        "center_distance_km": ameaca.get("center_distance_km"),
+        "relative_position": ameaca.get("relative_position"),
         "track_id": ameaca.get("track_id"),
         "tracking_valid": bool(ameaca.get("tracking_valid")),
         "tracking_quality": ameaca.get("tracking_quality", "DADOS_INSUFICIENTES"),
@@ -221,7 +259,7 @@ def criar_alerta_preventivo(
         "eta_minutes": ameaca.get("eta_minutes"),
         "eta_border_minutes": ameaca.get("eta_border_minutes"),
         "border_approach_rate_kmh": ameaca.get("border_approach_rate_kmh"),
-        "clutter": bool(ameaca.get("suspeito_clutter")),
+        "clutter": bool(ameaca.get("suspeito_clutter") or clutter_forte),
         "clutter_index": ameaca.get("indice_persistencia_clutter"),
         "low_confidence": clutter_forte,
         "regional_confirmation": bool(confirmacao.get("confirmada")),

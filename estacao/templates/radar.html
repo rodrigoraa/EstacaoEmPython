@@ -1,7 +1,10 @@
 {% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
 {% set alerta = alerta_preventivo or {} %}
-{% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO') %}
+{% set principal = ameaca_principal or {} %}
+{% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO ANÁLISE') %}
+{% set rotulo_nivel_alerta = 'INDISPONÍVEL' if nivel_alerta == 'INDISPONIVEL' else nivel_alerta %}
+{% set classe_alerta = alerta.get('nivel', 'aguardando')|lower %}
 <section class="radar-page admin-weather-page max-w-7xl mx-auto space-y-6">
   <header class="admin-weather-header">
     <div class="flex items-start gap-3">
@@ -14,34 +17,51 @@
     <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>
   </header>
 
-  <section class="preventive-alert preventive-alert--{{ nivel_alerta|lower }}" aria-live="polite" aria-labelledby="radar-alerta-titulo">
+  <section class="preventive-alert preventive-alert--{{ classe_alerta }}" aria-live="polite" aria-labelledby="radar-alerta-titulo">
     <span class="preventive-alert-icon"><i class="fa-solid fa-shield-halved"></i></span>
     <div class="preventive-alert-content">
       <div class="preventive-alert-heading">
-        <div><small>Nível operacional interno</small><h2 id="radar-alerta-titulo">{{ nivel_alerta }}</h2></div>
+        <div><small>Alerta de proximidade · nível operacional interno</small><h2 id="radar-alerta-titulo">{{ rotulo_nivel_alerta }}</h2></div>
         <span class="preventive-simulation-badge">Envio preventivo: DESATIVADO</span>
       </div>
-      <p>{{ alerta.message if alerta else 'Aguardando o snapshot preventivo correspondente ao frame atual.' }}</p>
+      <p>{{ alerta.get('message', 'Aguardando o snapshot preventivo correspondente ao frame atual.') }}</p>
       {% if alerta %}
       <dl class="preventive-alert-details">
-        <div><dt>Tendência</dt><dd>{% if alerta.approaching is not none %}{{ 'Aproximando' if alerta.approaching else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
-        <div><dt>Velocidade do eco</dt><dd>{{ '%.1f km/h'|format(alerta.speed_kmh) if alerta.speed_kmh is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(alerta.eta_minutes) if alerta.eta_minutes is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(alerta.eta_border_minutes) if alerta.eta_border_minutes is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Qualidade do tracking</dt><dd>{{ alerta.tracking_quality|replace('_', ' ') }}</dd></div>
-        <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.regional_confirmation else 'Ainda não disponível' }}</dd></div>
+        <div><dt>Eco selecionado</dt><dd>{% if alerta.get('track_id') %}Sistema {{ alerta.get('track_id') }}{% elif alerta.get('cluster_id') %}Cluster {{ alerta.get('cluster_id') }} sem tracking{% else %}Nenhum eco operacional{% endif %}</dd></div>
+        <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(alerta.get('distance_km')) if alerta.get('distance_km') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Tendência</dt><dd>{% if alerta.get('approaching') is not none %}{{ 'Aproximando' if alerta.get('approaching') else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
+        <div><dt>Velocidade do eco</dt><dd>{{ '%.1f km/h'|format(alerta.get('speed_kmh')) if alerta.get('speed_kmh') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(alerta.get('eta_minutes')) if alerta.get('eta_minutes') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(alerta.get('eta_border_minutes')) if alerta.get('eta_border_minutes') is not none else 'Dados insuficientes' }}</dd></div>
+        <div><dt>Qualidade do tracking</dt><dd>{{ alerta.get('tracking_quality', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
+        <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.get('regional_confirmation') else 'Ainda não disponível' }}</dd></div>
       </dl>
-      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.simulation_message }}</p>
+      <p class="preventive-simulation-note"><i class="fa-solid fa-ban"></i> {{ alerta.get('simulation_message', 'Nenhum alerta preventivo será enviado por esta versão.') }}</p>
       {% endif %}
     </div>
+  </section>
+
+  <section class="card operational-identity" aria-labelledby="radar-ameaca-titulo">
+    <div>
+      <span class="admin-section-kicker">Análise meteorológica</span>
+      <h2 id="radar-ameaca-titulo">Ameaça principal do nowcasting</h2>
+      {% if principal %}
+      <p>{% if principal.get('track_id') %}Sistema {{ principal.get('track_id') }}{% elif principal.get('cluster_id') %}Cluster {{ principal.get('cluster_id') }} sem tracking{% else %}Eco sem identificador de tracking{% endif %} · {{ principal.get('status', 'DADOS_INSUFICIENTES')|replace('_', ' ') }} · borda {{ '%.1f km'|format(principal.get('distance_km')) if principal.get('distance_km') is not none else 'indisponível' }}.</p>
+      {% else %}<p>Aguardando análise do nowcasting para o frame operacional atual.</p>{% endif %}
+    </div>
+    {% if alerta and principal and (alerta.get('cluster_id') != principal.get('cluster_id') or alerta.get('track_id') != principal.get('track_id')) %}
+    <div class="operational-identity-difference"><i class="fa-solid fa-code-compare"></i><span>As análises usam ecos diferentes: o alerta escolhe o eco confiável mais próximo; o nowcasting escolhe o sistema meteorologicamente mais relevante.</span></div>
+    {% endif %}
   </section>
 
   <section class="proximity-levels" aria-labelledby="radar-niveis-titulo">
     <div class="proximity-levels-heading"><h2 id="radar-niveis-titulo">Níveis de proximidade</h2><p>Os níveis usam a distância da borda do eco e não representam probabilidade de chuva.</p></div>
     <div class="proximity-levels-grid">
-      <div class="proximity-level proximity-level--yellow"><strong>AMARELO — até 100 km</strong><span>Eco meteorológico em monitoramento.</span></div>
-      <div class="proximity-level proximity-level--orange"><strong>LARANJA — até 50 km</strong><span>Eco mais próximo da região; atenção aumentada.</span></div>
-      <div class="proximity-level proximity-level--red"><strong>VERMELHO — até 25 km</strong><span>Possível chuva próxima da escola.</span></div>
+      <div class="proximity-level proximity-level--neutral"><strong>INDISPONÍVEL</strong><span>Dados operacionais do radar indisponíveis.</span></div>
+      <div class="proximity-level proximity-level--green"><strong>NORMAL — acima de 100 km</strong><span>Nenhum eco confiável dentro de 100 km.</span></div>
+      <div class="proximity-level proximity-level--yellow"><strong>AMARELO — até 100 km</strong><span>Eco confiável dentro de 100 km.</span></div>
+      <div class="proximity-level proximity-level--orange"><strong>LARANJA — até 50 km</strong><span>Eco confiável dentro de 50 km.</span></div>
+      <div class="proximity-level proximity-level--red"><strong>VERMELHO — até 25 km</strong><span>Possível chuva próxima; eco confiável dentro de 25 km.</span></div>
     </div>
   </section>
 
@@ -73,17 +93,17 @@
           <span class="admin-overview-icon"><i class="fa-solid fa-clock"></i></span>
           <div><small>Atualidade</small><strong>{{ 'Desatualizado' if estado.stale else 'Atualizado' }}</strong><p>Frame com {{ frame.idade_minutos }} min de idade</p></div>
         </article>
-        <article class="admin-overview-item {{ 'admin-overview-item--attention' if cluster else 'admin-overview-item--neutral' }}">
+        <article class="admin-overview-item {{ 'admin-overview-item--attention' if alerta.get('distance_km') is not none else 'admin-overview-item--neutral' }}">
           <span class="admin-overview-icon"><i class="fa-solid fa-cloud-showers-heavy"></i></span>
-          <div><small>Eco significativo</small><strong>{{ 'Detectado' if cluster else 'Não detectado' }}</strong><p>{{ ('Borda a %.1f km da escola'|format(cluster.distancia_borda_escola_km)) if cluster else 'Nenhum eco relevante no frame' }}</p></div>
+          <div><small>Eco do alerta de proximidade</small><strong>{{ 'Detectado' if alerta.get('distance_km') is not none else 'Não selecionado' }}</strong><p>{{ ('Borda a %.1f km da escola'|format(alerta.get('distance_km'))) if alerta.get('distance_km') is not none else 'Sem distância operacional' }}</p></div>
         </article>
         <article class="admin-overview-item">
           <span class="admin-overview-icon"><i class="fa-solid fa-arrow-trend-up"></i></span>
-          <div><small>Movimento</small><strong>{% if track and track.aproximando is not none %}{{ 'Aproximando' if track.aproximando else 'Afastando' }}{% else %}Indefinido{% endif %}</strong><p>{{ track.direcao_movimento if track and track.direcao_movimento else 'Histórico ainda insuficiente' }}</p></div>
+          <div><small>Movimento do eco do alerta</small><strong>{% if alerta.get('approaching') is not none %}{{ 'Aproximando' if alerta.get('approaching') else 'Afastando' }}{% else %}Indefinido{% endif %}</strong><p>{{ alerta.get('direction') or 'Histórico ainda insuficiente' }}</p></div>
         </article>
         <article class="admin-overview-item">
           <span class="admin-overview-icon"><i class="fa-solid fa-stopwatch"></i></span>
-          <div><small>ETA</small><strong>{{ '%.0f min'|format(track.eta_minutos) if track and track.eta_minutos is not none else 'Indisponível' }}</strong><p>{{ 'Trajetória tecnicamente compatível' if track and track.eta_minutos is not none else 'Sem estimativa válida de chegada' }}</p></div>
+          <div><small>ETA da trajetória do eco do alerta</small><strong>{{ '%.0f min'|format(alerta.get('eta_minutes')) if alerta.get('eta_minutes') is not none else 'Indisponível' }}</strong><p>{{ 'Trajetória tecnicamente compatível' if alerta.get('eta_minutes') is not none else 'Sem estimativa válida de chegada' }}</p></div>
         </article>
       </div>
     </section>
@@ -104,11 +124,13 @@
         <div><dt>Frame</dt><dd>Uma imagem individual produzida pelo radar em determinado horário.</dd></div>
         <div><dt>Distância da borda</dt><dd>Distância entre a escola e o ponto mais próximo do eco.</dd></div>
         <div><dt>Distância do centro</dt><dd>Distância entre a escola e o centro aproximado do eco.</dd></div>
-        <div><dt>Velocidade estimada</dt><dd>Velocidade de deslocamento do eco, não velocidade do vento.</dd></div>
+        <div><dt>Velocidade do eco</dt><dd>Velocidade estimada de deslocamento da área detectada; não é velocidade do vento.</dd></div>
         <div><dt>Tendência</dt><dd>Indica se o eco está se aproximando ou se afastando da escola.</dd></div>
-        <div><dt>ETA</dt><dd>Tempo estimado de chegada, exibido somente quando o movimento é confiável.</dd></div>
-        <div><dt>Trajetória compatível</dt><dd>Indica que a projeção atual do movimento pode levar o eco para perto da escola.</dd></div>
-        <div><dt>Persistência de clutter</dt><dd>Quanto o eco reaparece na mesma região. Valores altos aumentam a suspeita de eco fixo.</dd></div>
+        <div><dt>ETA</dt><dd>Tempo estimado de chegada. Não é garantia de chegada.</dd></div>
+        <div><dt>ETA da trajetória</dt><dd>Estimativa obtida pela trajetória calculada do sistema.</dd></div>
+        <div><dt>ETA estimado da borda</dt><dd>Previsão aproximada de quando a parte mais próxima do eco poderia alcançar a região, caso o movimento atual continue. Não é garantia de chegada.</dd></div>
+        <div><dt>Trajetória compatível</dt><dd>A projeção atual do movimento passa pela região da escola.</dd></div>
+        <div><dt>Persistência de clutter</dt><dd>Quanto o eco reaparece na mesma região. Valores altos aumentam a suspeita de retorno fixo.</dd></div>
       </dl>
     </details>
 
@@ -126,25 +148,29 @@
 
     <section class="card admin-weather-section" aria-labelledby="radar-movimento-titulo">
       <div class="admin-section-title admin-section-title--bordered">
-        <div><span class="admin-section-kicker">Análise espacial</span><h2 id="radar-movimento-titulo">Eco e deslocamento</h2></div>
-        <p>Distância, direção e comportamento do eco mais próximo.</p>
+        <div><span class="admin-section-kicker">Alerta de proximidade</span><h2 id="radar-movimento-titulo">Eco usado no alerta e deslocamento</h2></div>
+        <p>Dados do eco confiável mais próximo selecionado para as faixas 100/50/25 km.</p>
       </div>
       <div class="radar-grid radar-grid--inside">
-        <article class="radar-stat"><span>Eco significativo</span><strong>{{ 'Detectado' if cluster else 'Não detectado' }}</strong></article>
-        <article class="radar-stat"><span>Distância da borda</span><strong>{{ '%.1f km'|format(cluster.distancia_borda_escola_km) if cluster else '—' }}</strong></article>
-        <article class="radar-stat"><span>Distância do centro</span><strong>{{ '%.1f km'|format(cluster.distancia_centro_escola_km) if cluster else '—' }}</strong></article>
-        <article class="radar-stat"><span>Posição relativa</span><strong>{{ cluster.direcao_relativa if cluster else '—' }}</strong></article>
-        <article class="radar-stat"><span>Movimento atual</span><strong>{{ track.direcao_movimento if track and track.direcao_movimento else 'Dados insuficientes' }}</strong></article>
-        <article class="radar-stat"><span>Velocidade estimada do eco</span><strong>{{ '%.1f km/h'|format(track.velocidade_kmh) if track and track.velocidade_kmh is not none else 'Dados insuficientes' }}</strong></article>
-        <article class="radar-stat"><span>Tendência</span><strong>{% if track and track.aproximando is not none %}{{ 'Aproximando' if track.aproximando else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</strong></article>
-        <article class="radar-stat"><span>Frames no tracking</span><strong>{{ track.quantidade_frames if track and track.quantidade_frames is not none else 'Dados insuficientes' }}</strong></article>
-        <article class="radar-stat"><span>Duração do tracking</span><strong>{{ '%.0f min'|format(track.duracao_minutos) if track and track.duracao_minutos is not none else 'Dados insuficientes' }}</strong></article>
-        <article class="radar-stat"><span>ETA da trajetória</span><strong>{{ '%.0f min'|format(track.eta_minutos) if track and track.eta_minutos is not none else 'Dados insuficientes' }}</strong></article>
-        <article class="radar-stat"><span>ETA estimado da borda</span><strong>{{ '%.0f min'|format(alerta.eta_border_minutes) if alerta and alerta.eta_border_minutes is not none else 'Dados insuficientes' }}</strong></article>
-        <article class="radar-stat"><span>Trajetória compatível</span><strong>{{ 'Sim' if track and track.trajetoria_compativel else 'Não confirmada' }}</strong></article>
-        <article class="radar-stat radar-stat-wide"><span>Status do tracking</span><strong>{{ track.status|replace('_', ' ') if track else 'DADOS INSUFICIENTES' }}</strong></article>
+        <article class="radar-stat"><span>Eco selecionado</span><strong>{% if alerta.get('track_id') %}Sistema {{ alerta.get('track_id') }}{% elif alerta.get('cluster_id') %}Cluster {{ alerta.get('cluster_id') }}{% else %}Não selecionado{% endif %}</strong></article>
+        <article class="radar-stat"><span>Distância da borda</span><strong>{{ '%.1f km'|format(alerta.get('distance_km')) if alerta.get('distance_km') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Distância do centro</span><strong>{{ '%.1f km'|format(alerta.get('center_distance_km')) if alerta.get('center_distance_km') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Posição relativa</span><strong>{{ alerta.get('relative_position') or 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Movimento atual</span><strong>{{ alerta.get('direction') or 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Velocidade estimada do eco</span><strong>{{ '%.1f km/h'|format(alerta.get('speed_kmh')) if alerta.get('speed_kmh') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Tendência</span><strong>{% if alerta.get('approaching') is not none %}{{ 'Aproximando' if alerta.get('approaching') else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</strong></article>
+        <article class="radar-stat"><span>Frames no tracking</span><strong>{{ alerta.get('frame_count') if alerta.get('frame_count') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Duração do tracking</span><strong>{{ '%.0f min'|format(alerta.get('duration_minutes')) if alerta.get('duration_minutes') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>ETA da trajetória</span><strong>{{ '%.0f min'|format(alerta.get('eta_minutes')) if alerta.get('eta_minutes') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>ETA estimado da borda</span><strong>{{ '%.0f min'|format(alerta.get('eta_border_minutes')) if alerta.get('eta_border_minutes') is not none else 'Dados insuficientes' }}</strong></article>
+        <article class="radar-stat"><span>Trajetória compatível</span><strong>{{ 'Sim' if alerta.get('trajectory_compatible') else 'Não confirmada' }}</strong></article>
+        <article class="radar-stat radar-stat-wide"><span>Qualidade do tracking</span><strong>{{ alerta.get('tracking_quality', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</strong></article>
       </div>
     </section>
+
+    {% if cluster and alerta and cluster.id != alerta.get('cluster_id') %}
+    <div class="radar-diagnostic-note"><i class="fa-solid fa-magnifying-glass-chart"></i> Eco fisicamente mais próximo no frame, mantido para diagnóstico: cluster {{ cluster.id }}, borda a {{ '%.1f km'|format(cluster.distancia_borda_escola_km) }}{% if cluster.indice_persistencia_clutter is not none %}, persistência de clutter {{ '%.2f'|format(cluster.indice_persistencia_clutter) }}{% endif %}. Ele não é o eco operacional selecionado pelo alerta.</div>
+    {% endif %}
 
     {% if cluster and cluster.suspeito_clutter %}
     <div class="radar-clutter-note"><i class="fa-solid fa-circle-info"></i> Possível eco fixo/clutter próximo ao radar. O eco permanece visível para avaliação temporal.{% if cluster.indice_persistencia_clutter is not none %} Índice diagnóstico de persistência: {{ '%.2f'|format(cluster.indice_persistencia_clutter) }} ({{ cluster.clutter_amostras }} amostras).{% else %} Histórico ainda insuficiente para índice de persistência.{% endif %}</div>

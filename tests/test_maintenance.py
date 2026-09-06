@@ -1,10 +1,12 @@
 import importlib
+import inspect
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -73,15 +75,89 @@ class MaintenanceBackupTest(unittest.TestCase):
         conn.close()
         destino = Path(self.tmp.name) / "backup.db"
 
-        self.backup.criar_backup(destino)
+        with mock.patch.object(self.backup.time, "sleep"):
+            self.backup.criar_backup(destino)
         backup_conn = sqlite3.connect(destino)
         try:
-            self.assertEqual(backup_conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            self.assertEqual(backup_conn.execute("PRAGMA quick_check").fetchone()[0], "ok")
             self.assertEqual(backup_conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0], 1)
         finally:
             backup_conn.close()
         with self.assertRaises(FileExistsError):
             self.backup.criar_backup(destino)
+
+    def test_backup_usa_lotes_pequenos_e_callback_de_progresso(self):
+        destino = Path(self.tmp.name) / "backup.db"
+        conn_origem = mock.MagicMock()
+        conn_destino = mock.MagicMock()
+        conn_destino.execute.return_value.fetchone.return_value = ("ok",)
+
+        with mock.patch.object(
+            self.backup.sqlite3,
+            "connect",
+            side_effect=(conn_origem, conn_destino),
+        ):
+            self.backup.criar_backup(destino)
+
+        conn_origem.backup.assert_called_once_with(
+            conn_destino,
+            pages=50,
+            progress=self.backup.progresso_backup,
+            sleep=0.25,
+        )
+        conn_destino.execute.assert_called_once_with("PRAGMA quick_check")
+        conn_destino.close.assert_called_once_with()
+        conn_origem.close.assert_called_once_with()
+
+    def test_callback_de_progresso_controla_o_ritmo_sem_pausa_final(self):
+        parametros = inspect.signature(self.backup.progresso_backup).parameters
+        self.assertEqual(list(parametros), ["status", "remaining", "total"])
+
+        with mock.patch.object(self.backup.time, "sleep") as sleep:
+            self.backup.progresso_backup(0, 10, 20)
+            sleep.assert_called_once_with(0.25)
+
+            sleep.reset_mock()
+            self.backup.progresso_backup(0, 0, 20)
+            sleep.assert_not_called()
+
+    def test_quick_check_invalido_remove_backup_parcial(self):
+        destino = Path(self.tmp.name) / "backup.db"
+        conn_origem = mock.MagicMock()
+        conn_destino = mock.MagicMock()
+        conn_destino.execute.return_value.fetchone.return_value = ("corrupt",)
+
+        with mock.patch.object(
+            self.backup.sqlite3,
+            "connect",
+            side_effect=(conn_origem, conn_destino),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "quick_check retornou: corrupt"):
+                self.backup.criar_backup(destino)
+
+        self.assertFalse(destino.exists())
+        conn_destino.close.assert_called_once_with()
+        conn_origem.close.assert_called_once_with()
+
+    def test_falha_no_backup_fecha_conexoes_e_remove_arquivo_parcial(self):
+        for erro in (RuntimeError("falha"), KeyboardInterrupt()):
+            with self.subTest(tipo=type(erro).__name__):
+                destino = Path(self.tmp.name) / f"backup-{type(erro).__name__}.db"
+                conn_origem = mock.MagicMock()
+                conn_destino = mock.MagicMock()
+                conn_origem.backup.side_effect = erro
+
+                with mock.patch.object(
+                    self.backup.sqlite3,
+                    "connect",
+                    side_effect=(conn_origem, conn_destino),
+                ):
+                    with self.assertRaises(type(erro)):
+                        self.backup.criar_backup(destino)
+
+                self.assertFalse(destino.exists())
+                conn_destino.close.assert_called_once_with()
+                conn_origem.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

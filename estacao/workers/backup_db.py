@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -17,6 +18,11 @@ from logging_utils import configurar_logging
 logger = logging.getLogger(__name__)
 
 
+def progresso_backup(status, remaining, total):
+    if remaining > 0:
+        time.sleep(0.25)
+
+
 def criar_backup(destino):
     origem = Path(database.DATABASE).resolve()
     destino = Path(destino).resolve()
@@ -29,21 +35,30 @@ def criar_backup(destino):
 
     descritor = os.open(destino, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(descritor)
+    conn_origem = None
+    conn_destino = None
     try:
-        conn_origem = sqlite3.connect(origem, timeout=30)
-        conn_destino = sqlite3.connect(destino, timeout=30)
         try:
+            conn_origem = sqlite3.connect(origem, timeout=30)
+            conn_destino = sqlite3.connect(destino, timeout=30)
             with conn_origem, conn_destino:
-                conn_origem.backup(conn_destino, pages=1000, sleep=0.10)
+                conn_origem.backup(
+                    conn_destino,
+                    pages=50,
+                    progress=progresso_backup,
+                    sleep=0.25,
+                )
                 resultado = conn_destino.execute("PRAGMA quick_check").fetchone()[0]
                 if resultado != "ok":
                     raise RuntimeError(f"Backup criado, mas quick_check retornou: {resultado}")
         finally:
-            conn_destino.close()
-            conn_origem.close()
+            if conn_destino is not None:
+                conn_destino.close()
+            if conn_origem is not None:
+                conn_origem.close()
         logger.info("Backup SQLite consistente criado em %s", destino)
         return destino
-    except Exception:
+    except (Exception, KeyboardInterrupt):
         try:
             destino.unlink()
         except OSError:

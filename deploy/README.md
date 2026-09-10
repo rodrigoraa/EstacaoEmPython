@@ -85,28 +85,114 @@ falhas anteriores à abertura do log aparecem no stderr do cron.
 
 ## Google Drive
 
-Somente o novo backup comprimido da estação é enviado por `rclone copyto`
-para `gdrive:BackupsServidor/estacao/estacao_latest.db.gz`, com checksum,
-`--transfers 1` e `--checkers 2`. Não é enviada a pasta de backups.
+Cada execução envia somente os três artefatos recém-criados, validados,
+compactados e publicados localmente. São três chamadas sequenciais de
+`rclone copyto`, com checksum, `--transfers 1` e `--checkers 2`, nesta ordem:
+
+| Arquivo local atual | Destino remoto |
+| --- | --- |
+| `/var/backups/escola/secretaria/secretaria_YYYY-MM-DD_HH-MM.db.gz` | `gdrive:BackupsServidor/secretaria/secretaria_latest.db.gz` |
+| `/var/backups/escola/secretaria/uploads_YYYY-MM-DD_HH-MM.tar.gz` | `gdrive:BackupsServidor/secretaria/uploads_latest.tar.gz` |
+| `/var/backups/escola/estacao/estacao_YYYY-MM-DD_HH-MM.db.gz` | `gdrive:BackupsServidor/estacao/estacao_latest.db.gz` |
+
+Não é enviada a pasta de backups, logs, temporários, auxiliares SQLite ou
+históricos locais. O histórico de 7 dias permanece exclusivamente local.
 Todas as chamadas rclone usam também `--contimeout 1m --timeout 10m
 --retries 3 --low-level-retries 3 --retries-sleep 30s`. O primeiro timeout limita
 o estabelecimento de conexão; o segundo limita inatividade de I/O. Não há
 timeout global de duração: um upload lento pode continuar enquanto transfere.
 As tentativas são limitadas tanto por operação HTTP quanto por transferência.
 Consulte a [documentação dos limites do rclone](https://rclone.org/docs/#timeout-duration).
-Não há exclusão ou renomeação prévia do latest. Se o upload retornar erro,
-o script encerra com erro e não executa nenhuma limpeza remota.
+Não há exclusão ou renomeação prévia de nenhum latest. Se qualquer upload
+retornar erro, o log identifica o artefato, o script encerra com erro e não
+executa nenhuma limpeza remota. Os três backups locais completos permanecem.
+Os uploads são independentes: se um upload posterior falhar, os anteriores
+já concluídos permanecem atualizados; não há rollback dos três arquivos.
 
-Depois do upload bem-sucedido, `rclone delete` remove os demais arquivos
-diretamente em `gdrive:BackupsServidor/estacao/`, com `--max-depth 1` e
-`--exclude '/estacao_latest.db.gz'`. Atalhos do Drive são ignorados para
-não percorrer outros destinos. A listagem final inclui atalhos para detectar
-pendências. Nenhuma outra pasta, incluindo secretaria
-e logs, é alvo. A listagem final precisa ser exatamente
-`estacao_latest.db.gz`; subpastas ou nomes duplicados provocam erro para
-inspeção do operador, sem remoção automática de subpastas ou deduplicação.
-O estado esperado é um único arquivo visível nessa pasta; revisões internas
-e lixeira do Google Drive não são eliminadas pelo script.
+Somente depois de **todos os três uploads** concluírem, dois comandos
+`rclone delete` limpam os históricos reconhecidos no nível superior de cada
+pasta, com `--max-depth 1` e filtros ordenados que protegem os latest:
+
+- `estacao/`: `estacao_YYYY-MM-DD_HH-MM` seguido exclusivamente de `.db`,
+  `.db.gz`, `.db-journal`, `.db-wal` ou `.db-shm`. Esses formatos legados
+  foram confirmados pelo administrador e são removidos apenas no Drive.
+- `secretaria/`: somente `secretaria_YYYY-MM-DD_HH-MM.db.gz` e
+  `uploads_YYYY-MM-DD_HH-MM.tar.gz`.
+
+A revisão do código e do histórico disponível no repositório não identificou
+outros nomes legados da Secretaria. Por isso, seus filtros permanecem restritos
+aos dois formatos comprovados acima; não se presume que ela tenha produzido
+os mesmos legados da Estação. Outros formatos exigem confirmação antes de
+entrar na limpeza automática. Os três latest são sempre preservados.
+
+O padrão de data aceita apenas dígitos nas posições indicadas. Todo outro
+nome é excluído da limpeza. Atalhos do Drive são ignorados na escrita/limpeza
+para não percorrer outros destinos. Nenhum comando percorre subpastas, usa
+purge ou opera sobre `BackupsServidor/` inteiro, logs ou qualquer outra pasta.
+As listagens finais incluem atalhos e precisam corresponder exatamente a:
+
+```text
+BackupsServidor/
+├── estacao/
+│   └── estacao_latest.db.gz
+└── secretaria/
+    ├── secretaria_latest.db.gz
+    └── uploads_latest.tar.gz
+```
+
+Objetos inesperados, arquivos de outros padrões, subpastas ou nomes duplicados
+são preservados e provocam erro com as listagens no log para inspeção do
+operador. Não há remoção automática de subpastas ou deduplicação. Revisões
+internas e lixeira do Google Drive não são eliminadas pelo script.
+
+### Inspeção de objetos inesperados na migração
+
+`teste-rclone.txt` e `arquivo-desconhecido.txt`, por exemplo, não são backups
+reconhecidos. Eles permanecem no Drive e fazem a verificação final retornar
+erro. Para listar somente nomes não reconhecidos e todos os diretórios, sem
+remover nada ou percorrer subpastas, execute no servidor:
+
+```bash
+(
+set -Eeuo pipefail
+for pasta in estacao secretaria; do
+  sudo -u servidor /usr/bin/rclone lsjson "gdrive:BackupsServidor/$pasta/" \
+    --max-depth 1 --drive-skip-shortcuts=false --drive-skip-dangling-shortcuts=false \
+    --config /home/servidor/.config/rclone/rclone.conf \
+    --contimeout 1m --timeout 10m --retries 3 --low-level-retries 3 |
+  /var/www/EstacaoEmPython/estacao/venv/bin/python -c '
+import json, re, sys
+pasta = sys.argv[1]
+data = r"[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}"
+padroes = {
+    "estacao": rf"(?:estacao_latest\.db\.gz|estacao_{data}\.db(?:\.gz|-journal|-wal|-shm)?)",
+    "secretaria": rf"(?:secretaria_latest\.db\.gz|uploads_latest\.tar\.gz|secretaria_{data}\.db\.gz|uploads_{data}\.tar\.gz)",
+}
+for item in json.load(sys.stdin):
+    if item["IsDir"] or not re.fullmatch(padroes[pasta], item["Name"]):
+        print(json.dumps({"pasta": pasta, "nome": item["Name"], "diretorio": item["IsDir"]}, ensure_ascii=False))
+' "$pasta"
+done
+)
+```
+
+A saída é apenas uma lista para inspeção, nunca entrada para uma exclusão em
+lote. Se o administrador decidir remover **somente** `teste-rclone.txt`, use
+o caminho literal, primeiro em simulação e depois com confirmação interativa:
+
+```bash
+sudo -u servidor /usr/bin/rclone deletefile \
+  'gdrive:BackupsServidor/estacao/teste-rclone.txt' \
+  --config /home/servidor/.config/rclone/rclone.conf --drive-use-trash=true --dry-run
+
+sudo -u servidor /usr/bin/rclone deletefile \
+  'gdrive:BackupsServidor/estacao/teste-rclone.txt' \
+  --config /home/servidor/.config/rclone/rclone.conf --drive-use-trash=true --interactive
+```
+
+Não use curingas, um caminho de diretório ou qualquer nome latest nesse comando.
+`deletefile` opera sobre um único arquivo e não aplica filtros de proteção;
+confira o caminho mostrado antes de confirmar. [Documentação do rclone](https://rclone.org/commands/rclone_deletefile/).
 
 Referências: [API de backup do SQLite no Python](https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup),
 [rclone copyto](https://rclone.org/commands/rclone_copyto/) e
@@ -133,7 +219,7 @@ sudo -u servidor test -r /var/www/secretaria/sistema_escolar_root/sistema_escola
 sudo -u servidor test -x /var/www/secretaria/sistema_escolar_root/sistema_escolar/public/uploads
 sudo -u servidor test -r /home/servidor/.config/rclone/rclone.conf
 sudo -u servidor /usr/bin/rclone version
-command -v flock ionice nice gzip tar find mktemp
+command -v flock ionice nice gzip tar find mktemp stat du wc sort
 
 sudo install -d -o servidor -g "$(id -gn servidor)" -m 0750 \
   /var/backups/escola /var/backups/escola/secretaria \
@@ -159,7 +245,7 @@ válido; não acrescente outra entrada. A linha equivalente no crontab de
 ## Teste manual e conferência
 
 O primeiro comando executa o fluxo real, incluindo upload e limpeza remota
-limitada à pasta da estação:
+limitada às pastas da Estação e da Secretaria:
 
 ```bash
 sudo -u servidor /var/www/deploy/backup_escola.sh
@@ -170,16 +256,27 @@ sudo -u servidor /bin/bash -c \
 sudo -u servidor /usr/bin/rclone lsf \
   gdrive:BackupsServidor/estacao/ --max-depth 1 \
   --config /home/servidor/.config/rclone/rclone.conf
+sudo -u servidor /usr/bin/rclone lsf \
+  gdrive:BackupsServidor/secretaria/ --max-depth 1 \
+  --config /home/servidor/.config/rclone/rclone.conf
 ```
 
-A saída do último comando deve ser uma única linha: `estacao_latest.db.gz`.
-Para validar isso automaticamente, inclusive detectar diretórios/duplicatas:
+A primeira listagem deve mostrar `estacao_latest.db.gz`; a segunda,
+`secretaria_latest.db.gz` e `uploads_latest.tar.gz`, sem outros objetos.
+Para validar automaticamente, inclusive detectar diretórios/duplicatas:
 
 ```bash
-listagem=$(sudo -u servidor /usr/bin/rclone lsf \
+(
+set -Eeuo pipefail
+estacao=$(sudo -u servidor /usr/bin/rclone lsf \
   gdrive:BackupsServidor/estacao/ --max-depth 1 \
-  --config /home/servidor/.config/rclone/rclone.conf) && \
-  test "$listagem" = 'estacao_latest.db.gz'
+  --config /home/servidor/.config/rclone/rclone.conf)
+secretaria=$(sudo -u servidor /usr/bin/rclone lsf \
+  gdrive:BackupsServidor/secretaria/ --max-depth 1 \
+  --config /home/servidor/.config/rclone/rclone.conf | LC_ALL=C sort)
+test "$estacao" = 'estacao_latest.db.gz'
+test "$secretaria" = $'secretaria_latest.db.gz\nuploads_latest.tar.gz'
+)
 echo "Verificação do Drive: $?"
 ```
 

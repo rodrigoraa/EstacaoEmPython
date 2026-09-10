@@ -31,9 +31,30 @@ class BackupEscolaTest(unittest.TestCase):
             (self.root / nome).mkdir()
         for nome in ("secretaria.db", "estacao.db", "worker.py", "rclone.conf", "uploads/exemplo.pdf"):
             (self.root / nome).write_text("original", encoding="utf-8")
-        self.latest = self.root / "remote/latest"
-        self.latest.write_text("backup anterior", encoding="utf-8")
-        (self.root / "remote/antigo").write_text("historico", encoding="utf-8")
+        for nome in ("estacao", "secretaria", "logs", "outra"):
+            (self.root / "remote" / nome).mkdir()
+        self.artefatos = {
+            "secretaria_latest.db.gz": ("secretaria", "secretaria_2026-09-09_22-00.db.gz"),
+            "uploads_latest.tar.gz": ("secretaria", "uploads_2026-09-09_22-00.tar.gz"),
+            "estacao_latest.db.gz": ("estacao", "estacao_2026-09-09_22-00.db.gz"),
+        }
+        self.remotos = {
+            nome: self.root / "remote" / pasta / nome
+            for nome, (pasta, _) in self.artefatos.items()
+        }
+        for path in self.remotos.values():
+            path.write_text("backup anterior", encoding="utf-8")
+        self.latest = self.remotos["estacao_latest.db.gz"]
+        self.historicos = []
+        for nome in ("estacao/estacao_2020-01-01_22-00.db.gz",
+                     "secretaria/secretaria_2020-01-01_22-00.db.gz",
+                     "secretaria/uploads_2020-01-01_22-00.tar.gz"):
+            path = self.root / "remote" / nome
+            path.write_text("historico", encoding="utf-8")
+            self.historicos.append(path)
+        self.protegidos = [self.root / "remote/logs/backup.log", self.root / "remote/outra/documento.pdf"]
+        for path in self.protegidos:
+            path.write_text("nao tocar", encoding="utf-8")
         self.trace = self.root / "trace"
         self.env = os.environ.copy()
         self.env.update({"MOCK_ROOT": shell_path(self.root), "MOCK_TRACE": shell_path(self.trace)})
@@ -44,18 +65,57 @@ echo 'Backup SQLite consistente criado.'
 ''')
         self.helper("rclone", '''echo "rclone:$*" >>"$MOCK_TRACE"
 echo "rclone stderr: $1" >&2
-case "$1" in
+comando=$1
+shift
+shopt -s nullglob dotglob
+if [[ "$comando" == copyto ]]; then remoto=$2; else remoto=$1; fi
+case "$remoto" in
+gdrive:BackupsServidor/estacao/*) pasta="$MOCK_ROOT/remote/estacao";;
+gdrive:BackupsServidor/secretaria/*) pasta="$MOCK_ROOT/remote/secretaria";;
+*) exit 90;;
+esac
+case "$comando" in
 copyto)
-    if [[ "${FAIL_UPLOAD:-0}" == 1 ]]; then echo 'erro upload' >&2; exit 22; fi
-    cp -- "$2" "$MOCK_ROOT/remote/latest";;
+    nome=${remoto##*/}
+    if [[ "${FAIL_UPLOAD:-0}" == "$nome" ]]; then echo "erro upload $nome" >&2; exit 22; fi
+    cp -- "$1" "$pasta/$nome"
+    echo "uploaded:$remoto" >>"$MOCK_TRACE";;
 delete)
-    [[ "$2" == 'gdrive:BackupsServidor/estacao/' ]] || exit 90
-    [[ "$*" == *'--exclude /estacao_latest.db.gz'* ]] || exit 91
     if [[ "${FAIL_DELETE:-0}" == 1 ]]; then exit 24; fi
-    rm -f -- "$MOCK_ROOT/remote/antigo";;
+    [[ "$remoto" == "gdrive:BackupsServidor/${pasta##*/}/" ]] || exit 91
+    regras=()
+    profundidade=
+    shift
+    while (( $# )); do
+        case "$1" in
+        --filter) regras+=("$2"); shift 2;;
+        --max-depth) profundidade=$2; shift 2;;
+        *) shift;;
+        esac
+    done
+    [[ "$profundidade" == 1 ]] || exit 92
+    # Modelo dos filtros ordenados: primeira correspondência decide.
+    for arquivo in "$pasta"/*; do
+        [[ -f "$arquivo" && ! -L "$arquivo" ]] || continue
+        incluir=1
+        for regra in "${regras[@]}"; do
+            padrao=${regra:2}
+            if [[ "/${arquivo##*/}" == $padrao ]]; then
+                if [[ "${regra:0:1}" == - ]]; then incluir=0; fi
+                break
+            fi
+        done
+        if (( incluir )); then
+            echo "deleted:${pasta##*/}/${arquivo##*/}" >>"$MOCK_TRACE"
+            rm -- "$arquivo"
+        fi
+    done;;
 lsf)
-    echo 'estacao_latest.db.gz'
-    if [[ "${REMOTE_EXTRA:-0}" == 1 ]]; then echo 'subpasta/'; fi;;
+    if [[ "${FAIL_LIST:-0}" == "${pasta##*/}" ]]; then exit 26; fi
+    for arquivo in "$pasta"/*; do
+        if [[ -d "$arquivo" ]]; then printf '%s/\\n' "${arquivo##*/}";
+        else printf '%s\\n' "${arquivo##*/}"; fi
+    done;;
 *) exit 92;;
 esac
 ''')
@@ -123,43 +183,141 @@ fi
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_sucesso_envia_so_estacao_e_limpa_depois(self):
+    def test_sucesso_envia_tres_artefatos_atuais_e_limpa_depois(self):
+        # Históricos locais, logs e auxiliares não podem ser escolhidos no upload.
+        for nome in ("estacao/estacao_2026-01-01_22-00.db.gz",
+                     "secretaria/secretaria_2026-01-01_22-00.db.gz",
+                     "secretaria/uploads_2026-01-01_22-00.tar.gz",
+                     "logs/anterior.log", "estacao/antigo.db-wal",
+                     "estacao/antigo.db-journal", "estacao/antigo.db-shm"):
+            (self.root / nome).write_text("nao enviar")
         result = self.run_backup()
         self.assertEqual(result.returncode, 0, result.stderr + self.logs)
         uploads = [line for line in self.calls.splitlines() if line.startswith("rclone:copyto")]
-        self.assertEqual(len(uploads), 1)
-        self.assertIn("/estacao/estacao_", uploads[0])
-        self.assertIn("gdrive:BackupsServidor/estacao/estacao_latest.db.gz", uploads[0])
-        self.assertIn("--transfers 1 --checkers 2", uploads[0])
-        self.assertIn("--config", uploads[0])
-        atual = shell_path(self.root / "estacao/estacao_2026-09-09_22-00.db.gz")
-        self.assertTrue(uploads[0].startswith(
-            f"rclone:copyto {atual} gdrive:BackupsServidor/estacao/estacao_latest.db.gz "))
+        self.assertEqual(len(uploads), 3)
+        for chamada, (nome, (pasta, arquivo)) in zip(uploads, self.artefatos.items()):
+            atual = self.root / pasta / arquivo
+            self.assertTrue(chamada.startswith(
+                f"rclone:copyto {shell_path(atual)} gdrive:BackupsServidor/{pasta}/{nome} "))
+            self.assertEqual(self.remotos[nome].read_bytes(), atual.read_bytes())
+            self.assertIn("--checksum", chamada)
         for chamada in self.calls.splitlines():
             if chamada.startswith("rclone:"):
+                self.assertIn("--transfers 1 --checkers 2", chamada)
+                self.assertIn("--config", chamada)
                 for opcao in ("--contimeout 1m", "--timeout 10m", "--retries 3",
                               "--low-level-retries 3", "--retries-sleep 30s"):
                     self.assertIn(opcao, chamada)
                 self.assertNotIn("--max-duration", chamada)
-        self.assertLess(self.calls.index("rclone:copyto"), self.calls.index("rclone:delete"))
+        self.assertLess(self.calls.rindex("uploaded:"), self.calls.index("rclone:delete"))
+        self.assertEqual(self.calls.count("rclone:delete"), 2)
+        self.assertEqual(
+            {line for line in self.calls.splitlines() if line.startswith("deleted:")},
+            {f"deleted:{p.parent.name}/{p.name}" for p in self.historicos},
+        )
         self.assertIn("rclone stderr: copyto", self.logs)
         self.assertIn("Backup finalizado com sucesso.", self.logs)
-        self.assertFalse((self.root / "remote/antigo").exists())
-        self.assertEqual(len(list((self.root / "secretaria").glob("*.gz"))), 2)
-        self.assertEqual(len(list((self.root / "estacao").glob("*.gz"))), 1)
+        self.assertEqual({p.name for p in (self.root / "remote/estacao").iterdir()}, {"estacao_latest.db.gz"})
+        self.assertEqual({p.name for p in (self.root / "remote/secretaria").iterdir()},
+                         {"secretaria_latest.db.gz", "uploads_latest.tar.gz"})
+        for path in self.protegidos:
+            self.assertEqual(path.read_text(), "nao tocar")
         self.assertEqual((self.root / "estacao.db").read_text(), "original")
         self.assert_no_partials()
 
-    def test_falha_upload_preserva_nuvem_e_backup_local(self):
-        result = self.run_backup(FAIL_UPLOAD="1")
+    def verificar_falha_upload(self, artefato):
+        result = self.run_backup(FAIL_UPLOAD=artefato)
         self.assertEqual(result.returncode, 22, self.logs)
         self.assertNotIn("rclone:delete", self.calls)
         self.assertNotIn("rclone:lsf", self.calls)
-        self.assertEqual(self.latest.read_text(), "backup anterior")
-        self.assertTrue((self.root / "remote/antigo").exists())
-        self.assertTrue(list((self.root / "estacao").glob("*.gz")))
-        self.assertIn('ERRO na etapa "upload Google Drive"', self.logs)
+        ordem = list(self.artefatos)
+        indice = ordem.index(artefato)
+        self.assertEqual(self.calls.count("rclone:copyto"), indice + 1)
+        for nome in ordem[indice:]:
+            self.assertEqual(self.remotos[nome].read_text(), "backup anterior")
+        for path in self.historicos:
+            self.assertTrue(path.exists())
+        for pasta, arquivo in self.artefatos.values():
+            self.assertTrue((self.root / pasta / arquivo).is_file())
+        self.assertIn(f'ERRO na etapa "upload Google Drive: {artefato}"', self.logs)
         self.assert_no_partials()
+
+    def test_falha_upload_secretaria_preserva_nuvem_e_backups_locais(self):
+        self.verificar_falha_upload("secretaria_latest.db.gz")
+
+    def test_falha_upload_uploads_preserva_nuvem_e_backups_locais(self):
+        self.verificar_falha_upload("uploads_latest.tar.gz")
+
+    def test_falha_upload_estacao_preserva_nuvem_e_backups_locais(self):
+        self.verificar_falha_upload("estacao_latest.db.gz")
+
+    def preparar_legados_estacao(self):
+        nomes = [f"estacao_2026-09-04_22-00{extensao}"
+                 for extensao in (".db", ".db-journal", ".db-wal", ".db-shm")]
+        nomes.append("estacao_2026-09-03_22-00.db.gz")
+        legados = [self.root / "remote/estacao" / nome for nome in nomes]
+        for arquivo in legados:
+            arquivo.write_text("legado")
+        return legados
+
+    def test_migracao_remove_db_e_auxiliares_legados_so_apos_tres_uploads(self):
+        legados = self.preparar_legados_estacao()
+        result = self.run_backup()
+        self.assertEqual(result.returncode, 0, self.logs)
+        self.assertEqual(self.calls.count("rclone:copyto"), 3)
+        self.assertLess(self.calls.rindex("uploaded:"), self.calls.index("rclone:delete"))
+        self.assertEqual({p.name for p in self.latest.parent.iterdir()}, {"estacao_latest.db.gz"})
+        for arquivo in legados:
+            self.assertFalse(arquivo.exists())
+            self.assertIn(f"deleted:estacao/{arquivo.name}", self.calls)
+
+    def test_migracao_preserva_desconhecidos_e_reporta_estado_inesperado(self):
+        legados = self.preparar_legados_estacao()
+        desconhecidos = [self.latest.parent / nome for nome in
+                        ("arquivo-desconhecido.txt", "teste-rclone.txt")]
+        for arquivo in desconhecidos:
+            arquivo.write_text("preservar")
+        result = self.run_backup()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("estado remoto inesperado", self.logs)
+        for arquivo in desconhecidos:
+            self.assertEqual(arquivo.read_text(), "preservar")
+            self.assertIn(arquivo.name, self.logs)
+        for arquivo in legados:
+            self.assertFalse(arquivo.exists())
+        self.assertTrue(self.latest.is_file())
+
+    def test_migracao_nao_remove_legados_se_qualquer_upload_falhar(self):
+        legados = self.preparar_legados_estacao()
+        for artefato in self.artefatos:
+            with self.subTest(artefato=artefato):
+                # Nova execução local, mantendo todos os objetos remotos anteriores.
+                for pasta, nome in self.artefatos.values():
+                    (self.root / pasta / nome).unlink(missing_ok=True)
+                result = self.run_backup(FAIL_UPLOAD=artefato)
+                self.assertEqual(result.returncode, 22, self.logs)
+                self.assertNotIn("rclone:delete", self.calls)
+                for arquivo in legados:
+                    self.assertEqual(arquivo.read_text(), "legado")
+
+    def test_migracao_nao_amplia_padroes_datas_ou_escopo(self):
+        nomes = [f"estacao/estacao_abcd-09-04_22-00{extensao}"
+                 for extensao in (".db", ".db.gz", ".db-journal", ".db-wal", ".db-shm")]
+        nomes += ["estacao/estacao_2026-09-04_22-00.db.bak",
+                  "secretaria/estacao_2026-09-04_22-00.db-journal",
+                  "secretaria/secretaria_2026-09-04_22-00.db",
+                  "secretaria/uploads_2026-09-04_22-00.zip"]
+        protegidos = [self.root / "remote" / nome for nome in nomes]
+        for arquivo in protegidos:
+            arquivo.write_text("preservar")
+        # Diretório com nome de legado também não deve ser removido.
+        diretorio = self.latest.parent / "estacao_2026-09-04_22-00.db"
+        diretorio.mkdir()
+        arquivo_interno = diretorio / "estacao_2026-09-04_22-00.db-wal"
+        arquivo_interno.write_text("preservar")
+        self.assertNotEqual(self.run_backup().returncode, 0)
+        for arquivo in protegidos + [arquivo_interno]:
+            self.assertEqual(arquivo.read_text(), "preservar")
 
     def test_espaco_insuficiente_preserva_tudo_sem_copia_nem_rclone(self):
         antigo = self.root / "estacao/estacao_2020-01-01_22-00.db.gz"
@@ -173,7 +331,8 @@ fi
         self.assertEqual(self.calls, "", "Nem o worker nem o rclone devem ser chamados")
         self.assertEqual(antigo.read_bytes(), b"backup local anterior")
         self.assertEqual(self.latest.read_text(), "backup anterior")
-        self.assertTrue((self.root / "remote/antigo").exists())
+        for path in self.historicos:
+            self.assertTrue(path.exists())
         for path in ("estacao.db", "secretaria.db", "uploads/exemplo.pdf"):
             self.assertEqual((self.root / path).read_text(), "original")
         self.assert_no_partials()
@@ -248,7 +407,7 @@ fi
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Destino já existe", self.logs)
         self.assertEqual(self.latest.read_bytes(), antes)
-        self.assertEqual(self.calls.count("rclone:copyto"), 1)
+        self.assertEqual(self.calls.count("rclone:copyto"), 3)
 
     def test_retencao_limitada_a_backups_e_logs_completos(self):
         antigo = self.root / "estacao/estacao_2020-01-01_22-00.db.gz"
@@ -270,10 +429,43 @@ fi
         self.assertNotEqual(self.latest.read_bytes(), b"backup anterior")
 
     def test_subpasta_remota_e_reportada_sem_remocao(self):
-        result = self.run_backup(REMOTE_EXTRA="1")
+        preservados = []
+        for pasta in ("estacao", "secretaria"):
+            subpasta = self.root / "remote" / pasta / "subpasta"
+            subpasta.mkdir()
+            arquivo = subpasta / f"{pasta}_2020-01-01_22-00.db.gz"
+            arquivo.write_text("nao remover")
+            preservados.append(arquivo)
+        result = self.run_backup()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("nenhuma subpasta será removida", self.logs)
+        self.assertIn("subpasta/", self.logs)
         self.assertNotIn("purge", self.calls)
+        for arquivo in preservados:
+            self.assertEqual(arquivo.read_text(), "nao remover")
+
+    def test_objetos_inesperados_e_historicos_da_outra_pasta_sao_preservados(self):
+        preservados = []
+        for nome in ("estacao/notas.txt", "secretaria/contrato.pdf",
+                     "estacao/secretaria_2020-01-01_22-00.db.gz",
+                     "secretaria/estacao_2020-01-01_22-00.db.gz",
+                     "estacao/estacao_abcd-ef-gh_ij-kl.db.gz"):
+            arquivo = self.root / "remote" / nome
+            arquivo.write_text("nao remover")
+            preservados.append(arquivo)
+        result = self.run_backup()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("estado remoto inesperado", self.logs)
+        for arquivo in preservados:
+            self.assertEqual(arquivo.read_text(), "nao remover")
+            self.assertIn(arquivo.name, self.logs)
+        for arquivo in self.historicos:
+            self.assertFalse(arquivo.exists())
+
+    def test_falha_na_listagem_secretaria_nao_e_ocultada_pelo_sort(self):
+        result = self.run_backup(FAIL_LIST="secretaria")
+        self.assertEqual(result.returncode, 26, self.logs)
+        self.assertNotIn("Backup finalizado com sucesso.", self.logs)
 
     def test_origem_ausente_falha_antes_de_copiar(self):
         (self.root / "secretaria.db").unlink()

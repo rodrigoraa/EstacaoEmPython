@@ -14,7 +14,9 @@ readonly BACKUP_ESTACAO=/var/backups/escola/estacao
 readonly LOG_DIR=/var/backups/escola/logs
 readonly RCLONE=/usr/bin/rclone
 readonly RCLONE_CONFIG=/home/servidor/.config/rclone/rclone.conf
-readonly REMOTO=gdrive:BackupsServidor/estacao
+readonly REMOTO_ESTACAO=gdrive:BackupsServidor/estacao
+readonly REMOTO_SECRETARIA=gdrive:BackupsServidor/secretaria
+readonly PADRAO_DATA='[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9]-[0-9][0-9]'
 readonly LOCK=/var/backups/escola/backup_escola.lock
 
 ETAPA=inicializacao
@@ -79,7 +81,7 @@ done
 for diretorio in "$BACKUP_ROOT" "$BACKUP_SECRETARIA" "$BACKUP_ESTACAO"; do
     [[ -d "$diretorio" && -w "$diretorio" && -x "$diretorio" ]]
 done
-for programa in gzip tar mktemp ln find rm stat du wc; do command -v "$programa" >/dev/null; done
+for programa in gzip tar mktemp ln find rm stat du wc sort; do command -v "$programa" >/dev/null; done
 
 readonly SAIDA_SECRETARIA="$BACKUP_SECRETARIA/secretaria_$DATA.db.gz"
 readonly SAIDA_UPLOADS="$BACKUP_SECRETARIA/uploads_$DATA.tar.gz"
@@ -196,25 +198,58 @@ leve find "$BACKUP_ESTACAO" -maxdepth 1 -type f -name 'estacao_????-??-??_??-??.
 leve find "$LOG_DIR" -maxdepth 1 -type f -name 'backup_????-??-??_??-??.log' \
     -mmin +10080 ! -path "$LOG_DIR/backup_$DATA.log" -print -delete
 
-ETAPA='upload Google Drive'
-echo 'Enviando estacao_latest.db.gz para Google Drive...'
-# Upload de um único arquivo. Não excluir/renomear o latest antes do upload.
-drive copyto "$SAIDA_ESTACAO" "$REMOTO/estacao_latest.db.gz" --checksum \
+ETAPA='upload Google Drive: secretaria_latest.db.gz'
+echo 'Enviando secretaria_latest.db.gz para Google Drive...'
+# Somente artefatos completos publicados nesta execução, sem exclusão prévia.
+drive copyto "$SAIDA_SECRETARIA" "$REMOTO_SECRETARIA/secretaria_latest.db.gz" --checksum \
     --drive-skip-shortcuts --drive-skip-dangling-shortcuts
-echo 'Upload concluído.'
+echo 'Upload de secretaria_latest.db.gz concluído.'
 
-ETAPA='limpeza Google Drive'
-echo 'Removendo backups antigos do Google Drive...'
-# Limite literal de escopo; filtro protege latest e não percorre subpastas.
-drive delete "$REMOTO/" --max-depth 1 --exclude '/estacao_latest.db.gz' \
+ETAPA='upload Google Drive: uploads_latest.tar.gz'
+echo 'Enviando uploads_latest.tar.gz para Google Drive...'
+drive copyto "$SAIDA_UPLOADS" "$REMOTO_SECRETARIA/uploads_latest.tar.gz" --checksum \
+    --drive-skip-shortcuts --drive-skip-dangling-shortcuts
+echo 'Upload de uploads_latest.tar.gz concluído.'
+
+ETAPA='upload Google Drive: estacao_latest.db.gz'
+echo 'Enviando estacao_latest.db.gz para Google Drive...'
+drive copyto "$SAIDA_ESTACAO" "$REMOTO_ESTACAO/estacao_latest.db.gz" --checksum \
+    --drive-skip-shortcuts --drive-skip-dangling-shortcuts
+echo 'Upload de estacao_latest.db.gz concluído.'
+
+# Só alcançada se TODOS os uploads retornaram sucesso. Nunca percorre subpastas.
+# A estação inclui os formatos legados confirmados; desconhecidos são preservados.
+ETAPA='limpeza Google Drive: estacao'
+echo 'Removendo backups históricos reconhecidos da pasta remota estacao...'
+drive delete "$REMOTO_ESTACAO/" --max-depth 1 \
+    --filter '- /estacao_latest.db.gz' \
+    --filter "+ /estacao_${PADRAO_DATA}.db" \
+    --filter "+ /estacao_${PADRAO_DATA}.db.gz" \
+    --filter "+ /estacao_${PADRAO_DATA}.db-journal" \
+    --filter "+ /estacao_${PADRAO_DATA}.db-wal" \
+    --filter "+ /estacao_${PADRAO_DATA}.db-shm" --filter '- **' \
+    --drive-skip-shortcuts --drive-skip-dangling-shortcuts
+
+ETAPA='limpeza Google Drive: secretaria'
+# Sem evidência de outros formatos legados da Secretaria, não ampliar os filtros.
+echo 'Removendo backups históricos reconhecidos da pasta remota secretaria...'
+drive delete "$REMOTO_SECRETARIA/" --max-depth 1 \
+    --filter '- /secretaria_latest.db.gz' --filter '- /uploads_latest.tar.gz' \
+    --filter "+ /secretaria_${PADRAO_DATA}.db.gz" \
+    --filter "+ /uploads_${PADRAO_DATA}.tar.gz" --filter '- **' \
     --drive-skip-shortcuts --drive-skip-dangling-shortcuts
 
 ETAPA='verificacao Google Drive'
-LISTAGEM=$(drive lsf "$REMOTO/" --max-depth 1 \
+LISTAGEM_ESTACAO=$(drive lsf "$REMOTO_ESTACAO/" --max-depth 1 \
     --drive-skip-shortcuts=false --drive-skip-dangling-shortcuts=false)
-if [[ "$LISTAGEM" != 'estacao_latest.db.gz' ]]; then
-    echo 'ERRO: o diretório remoto não contém exclusivamente estacao_latest.db.gz.' >&2
-    echo 'Verifique duplicatas/subpastas; nenhuma subpasta será removida automaticamente.' >&2
+LISTAGEM_SECRETARIA=$(drive lsf "$REMOTO_SECRETARIA/" --max-depth 1 \
+    --drive-skip-shortcuts=false --drive-skip-dangling-shortcuts=false | LC_ALL=C sort)
+if [[ "$LISTAGEM_ESTACAO" != 'estacao_latest.db.gz' || \
+      "$LISTAGEM_SECRETARIA" != $'secretaria_latest.db.gz\nuploads_latest.tar.gz' ]]; then
+    echo 'ERRO: estado remoto inesperado; verifique objetos, duplicatas e subpastas.' >&2
+    printf 'Listagem de %s/:\n%s\n' "$REMOTO_ESTACAO" "$LISTAGEM_ESTACAO" >&2
+    printf 'Listagem de %s/:\n%s\n' "$REMOTO_SECRETARIA" "$LISTAGEM_SECRETARIA" >&2
+    echo 'Objetos não reconhecidos foram preservados; nenhuma subpasta será removida automaticamente.' >&2
     exit 1
 fi
 

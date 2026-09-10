@@ -337,7 +337,7 @@ Com WAL ativo, não copie apenas o arquivo `.db` durante escrita. Antes do deplo
 python -m estacao.workers.backup_db /var/backups/estacao/estacao-2026-08-21.db
 ```
 
-O comando usa `sqlite3.Connection.backup()`, valida `integrity_check`, cria o arquivo com permissão restrita e falha sem sobrescrever um backup existente. Ele não roda automaticamente.
+O comando usa `sqlite3.Connection.backup()` em lotes de 1024 páginas sem pausas artificiais, valida `quick_check`, cria o arquivo com permissão restrita e falha sem sobrescrever um backup existente. Ele não roda automaticamente. O script oficial de backup local e Google Drive, os caminhos e os comandos de instalação estão em [deploy/README.md](deploy/README.md).
 
 ## Integrity check, contagens e manutenção
 

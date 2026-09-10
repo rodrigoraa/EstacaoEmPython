@@ -1,5 +1,4 @@
 import importlib
-import inspect
 import os
 import sqlite3
 import sys
@@ -75,8 +74,7 @@ class MaintenanceBackupTest(unittest.TestCase):
         conn.close()
         destino = Path(self.tmp.name) / "backup.db"
 
-        with mock.patch.object(self.backup.time, "sleep"):
-            self.backup.criar_backup(destino)
+        self.backup.criar_backup(destino)
         backup_conn = sqlite3.connect(destino)
         try:
             self.assertEqual(backup_conn.execute("PRAGMA quick_check").fetchone()[0], "ok")
@@ -86,7 +84,7 @@ class MaintenanceBackupTest(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.backup.criar_backup(destino)
 
-    def test_backup_usa_lotes_pequenos_e_callback_de_progresso(self):
+    def test_backup_usa_lotes_incrementais_sem_pausa_artificial(self):
         destino = Path(self.tmp.name) / "backup.db"
         conn_origem = mock.MagicMock()
         conn_destino = mock.MagicMock()
@@ -101,25 +99,25 @@ class MaintenanceBackupTest(unittest.TestCase):
 
         conn_origem.backup.assert_called_once_with(
             conn_destino,
-            pages=50,
-            progress=self.backup.progresso_backup,
-            sleep=0.25,
+            pages=1024,
+            progress=mock.ANY,
+            sleep=0.1,
         )
-        conn_destino.execute.assert_called_once_with("PRAGMA quick_check")
+        self.assertTrue(callable(conn_origem.backup.call_args.kwargs["progress"]))
+        conn_destino.execute.assert_any_call("PRAGMA quick_check")
         conn_destino.close.assert_called_once_with()
         conn_origem.close.assert_called_once_with()
 
-    def test_callback_de_progresso_controla_o_ritmo_sem_pausa_final(self):
-        parametros = inspect.signature(self.backup.progresso_backup).parameters
-        self.assertEqual(list(parametros), ["status", "remaining", "total"])
-
+    def test_callback_de_progresso_limita_logs_sem_dormir(self):
+        progresso = self.backup.progresso_backup()
         with mock.patch.object(self.backup.time, "sleep") as sleep:
-            self.backup.progresso_backup(0, 10, 20)
-            sleep.assert_called_once_with(0.25)
-
-            sleep.reset_mock()
-            self.backup.progresso_backup(0, 0, 20)
+            with self.assertLogs(self.backup.logger, level="INFO") as logs:
+                for remaining in range(10000, -1, -1):
+                    progresso(sqlite3.SQLITE_OK, remaining, 10000)
             sleep.assert_not_called()
+        self.assertEqual(len(logs.output), 4)
+        for percentual, linha in zip((25, 50, 75, 100), logs.output):
+            self.assertIn(f"{percentual}%", linha)
 
     def test_quick_check_invalido_remove_backup_parcial(self):
         destino = Path(self.tmp.name) / "backup.db"

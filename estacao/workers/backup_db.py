@@ -80,11 +80,16 @@ def criar_backup(destino, origem=None, max_segundos=7200):
                     f"{origem.as_uri()}?mode=ro", uri=True, timeout=30,
                 )))
                 conn_destino = conexoes.enter_context(closing(sqlite3.connect(parcial, timeout=30)))
+
+                # Fixa um snapshot do banco antes de iniciar o backup.
+                conn_origem.execute("BEGIN")
+                conn_origem.execute("SELECT 1 FROM sqlite_schema LIMIT 1").fetchone()
+
                 conn_origem.backup(
                     conn_destino,
                     pages=PAGINAS_POR_LOTE,
                     progress=progresso_backup(max_segundos),
-                    sleep=0.1,  # Espera apenas quando SQLite retorna BUSY/LOCKED.
+                    sleep=0.1,
                 )
                 # Apenas no destino: deixa o artefato independente de arquivos WAL.
                 conn_destino.execute("PRAGMA journal_mode = DELETE")

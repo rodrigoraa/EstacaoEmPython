@@ -120,6 +120,13 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "track_id": 12,
             "distance_km": 20,
             "message": "ALERTA OPERACIONAL ANTIGO",
+            "tracking_valid": True,
+            "approaching": True,
+            "trajectory_compatible": True,
+            "pixels_refletividade_baixa": 900,
+            "pixels_refletividade_media": 0,
+            "pixels_refletividade_alta": 100,
+            "pixels_refletividade_muito_alta": 0,
             "would_send": True,
         })
         state["eco_alerta_proximidade"] = {
@@ -187,6 +194,41 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertFalse(payload["monitoramento_atual"])
         self.assertFalse(payload["snapshot_desatualizado"])
         self.assertIsNone(payload["ultimo_nivel_calculado"])
+
+    def test_intensidade_persistida_aparece_no_diagnostico_admin(self):
+        from services.nowcasting_intensity import analisar_intensidade_cluster
+        from services.nowcasting_repository import salvar_snapshot
+
+        state = self.state_vermelho()
+        alerta = state["alerta_preventivo"]
+        alerta["classe_predominante"] = "REFLETIVIDADE_MEDIA"
+        alerta["classe_maxima"] = "REFLETIVIDADE_ALTA"
+        alerta.update(analisar_intensidade_cluster(alerta))
+        salvar_snapshot(state, "intensidade-admin")
+        self.autenticar_admin()
+        page = self.client.get("/admin/monitoramento")
+        self.assertEqual(page.status_code, 200)
+        texto = page.get_data(as_text=True)
+        self.assertIn("Intensidade predominante</dt><dd>Média", texto)
+        self.assertIn("Refletividade forte</dt><dd>10.0%", texto)
+        self.assertIn("Refletividade muito alta</dt><dd>0.0%", texto)
+        self.assertIn("Intensidade suficiente para alerta</dt><dd>Sim", texto)
+        payload = self.client.get("/admin/api/nowcasting/status").get_json()
+        self.assertEqual(payload["alerta_preventivo"]["pixels_refletividade_alta"], 100)
+        self.assertTrue(payload["alerta_preventivo"]["intensidade_suficiente"])
+
+    def test_alterar_thresholds_atualiza_fingerprint(self):
+        from config import nowcasting_config
+        from services.nowcasting_repository import carregar_entradas_nowcasting
+
+        config = nowcasting_config()
+        primeiro = carregar_entradas_nowcasting(config)[3]
+        self.assertEqual(primeiro, carregar_entradas_nowcasting(config)[3])
+        config["alert_min_strong_reflectivity_percent"] = 20
+        segundo = carregar_entradas_nowcasting(config)[3]
+        self.assertNotEqual(primeiro, segundo)
+        config["alert_min_very_high_reflectivity_percent"] = 5
+        self.assertNotEqual(segundo, carregar_entradas_nowcasting(config)[3])
 
     def test_monitoramento_snapshot_antigo_vira_historico_sem_apagar_snapshot(self):
         from services.nowcasting_repository import salvar_snapshot
@@ -599,9 +641,16 @@ class NowcastingIntegrationTest(unittest.TestCase):
         os.environ["NOWCASTING_ALERTS_ENABLED"] = "true"
         os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
         os.environ["ADMIN_ALERT_PHONE"] = telefone
+        conn = self.database.get_db()
+        conn.execute(
+            "INSERT INTO usuarios (nome, telefone, receber_whatsapp) VALUES (?, ?, 1)",
+            ("Assinante normal", "67911111111"),
+        )
+        conn.commit()
+        conn.close()
         estado = self.state_vermelho()
         estado["alerta_preventivo"].update({
-            "tracking_valid": False,
+            "tracking_valid": True,
             "clutter": False,
             "low_confidence": False,
         })
@@ -641,7 +690,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         os.environ["ADMIN_ALERT_PHONE"] = "67987654321"
         estado = self.state_vermelho()
         estado["alerta_preventivo"].update({
-            "tracking_valid": False,
+            "tracking_valid": True,
             "clutter": False,
             "low_confidence": False,
         })

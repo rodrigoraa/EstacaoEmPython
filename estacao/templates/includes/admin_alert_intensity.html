@@ -1,0 +1,5 @@
+{% set classes_intensidade = {'REFLETIVIDADE_BAIXA': 'Baixa', 'REFLETIVIDADE_MEDIA': 'Média', 'REFLETIVIDADE_ALTA': 'Alta', 'REFLETIVIDADE_MUITO_ALTA': 'Muito alta'} %}
+<div><dt>Intensidade predominante</dt><dd>{{ classes_intensidade.get(alerta.get('classe_predominante'), 'Dados insuficientes') }}</dd></div>
+<div><dt>Refletividade forte</dt><dd>{{ '%.1f%%'|format(alerta.get('percentual_refletividade_forte')) if alerta.get('percentual_refletividade_forte') is not none else 'Dados insuficientes' }}</dd></div>
+<div><dt>Refletividade muito alta</dt><dd>{{ '%.1f%%'|format(alerta.get('percentual_refletividade_muito_alta')) if alerta.get('percentual_refletividade_muito_alta') is not none else 'Dados insuficientes' }}</dd></div>
+<div><dt>Intensidade suficiente para alerta</dt><dd>{{ 'Sim' if alerta.get('intensidade_suficiente') is sameas true else 'Não' }}</dd></div>

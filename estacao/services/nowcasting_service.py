@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 
+from services.nowcasting_intensity import analisar_intensidade_cluster
 from services.preventive_alerts import (
     criar_alerta_preventivo,
     estimar_eta_borda,
@@ -15,7 +16,7 @@ from services.preventive_alerts import (
 from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.4"
+NOWCASTING_ALGORITHM_VERSION = "1.5"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -382,8 +383,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         "radar_only": regional_signal_count == 0,
         "indice_persistencia_clutter": clutter_index,
         "suspeito_clutter": bool(cluster.get("suspeito_clutter")),
-        "classe_predominante": cluster.get("classe_predominante"),
-        "classe_maxima": cluster.get("classe_maxima"),
+        **analisar_intensidade_cluster(cluster, config),
     }
 
 

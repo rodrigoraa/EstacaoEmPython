@@ -221,12 +221,14 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_TEST_ALERTS_ENABLED` | `false` | envia testes vermelhos elegíveis somente ao administrador |
 | `NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES` | `60` | proteção global mínima entre testes enviados |
 | `NOWCASTING_TEST_ALERT_REARM_MINUTES` | `30` | tempo contínuo fora do vermelho para encerrar um episódio |
+| `NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT` | `10` | percentual mínimo de pixels de refletividade alta + muito alta |
+| `NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT` | `2` | percentual mínimo de pixels de refletividade muito alta (critério alternativo) |
 | `NOWCASTING_UPSTREAM_CORRIDOR_KM` | `50` | largura lateral do corredor a montante |
 | `NOWCASTING_RADAR_MAX_AGE_MINUTES` | `45` | idade máxima do radar para evidência plena |
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS` | `2` | sinais independentes mínimos para confirmação |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS` | `1` | estações a montante mínimas com sinais |
-| `NOWCASTING_ALGORITHM_VERSION` | `1.4` | versão persistida junto ao snapshot |
+| `NOWCASTING_ALGORITHM_VERSION` | `1.5` | versão persistida junto ao snapshot |
 
 Nowcasting aqui não é previsão numérica. É fusão observacional de curtíssimo prazo:
 o radar acompanha ecos, as estações regionais confirmam alterações em superfície e
@@ -560,11 +562,12 @@ confirma a ameaça. Chuva local gera a evidência separada “Evento já observa
 estação local”, sem aumentar o score preventivo. `confirmacao_regional`, `radar_only`,
 `ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria. Mesmo assim,
 `NOWCASTING_ALERTS_ENABLED=true` continua retornando zero e não grava filas.
-O campo `would_send` indica apenas se um nível vermelho confiável seria candidato em
-uma versão futura. Nesta versão ele depende somente de radar fresco, nível vermelho e
-ausência de clutter forte; tracking, aproximação e trajetória não bloqueiam a
-simulação, para que uma célula confiável recém-detectada perto da escola não seja
-ocultada. `preventive_sending` permanece `DESATIVADO` e não cria registros em
+O nível visual continua definido pela distância da borda (vermelho até 25 km),
+com os tratamentos existentes de radar indisponível e clutter. Vermelho sozinho
+não autoriza WhatsApp. `would_send` representa um candidato meteorológico: exige
+proximidade, tracking válido, aproximação, trajetória compatível, refletividade
+suficiente, radar atualizado, ausência de clutter e de chuva local.
+`preventive_sending` permanece `DESATIVADO` para usuários e não cria registros em
 `alertas_fila` nem em `alertas_eventos`.
 
 ### Alertas preventivos de teste para o administrador
@@ -576,11 +579,30 @@ recebem essas mensagens, e o teste não usa `alertas_fila` nem `alertas_eventos`
 `NOWCASTING_ALERTS_ENABLED` permanece bloqueado e não habilita alertas públicos nesta
 versão.
 
+Os percentuais usam o total de pixels das quatro classes relativas já calculadas:
+`forte = 100 × (alta + muito_alta) / total` e
+`muito_alta = 100 × muito_alta / total`. A intensidade é suficiente quando
+`muito_alta >= 2%` **ou** `forte >= 10%`, com pelo menos dois pixels de classe
+alta ou muito alta. Um pixel vermelho isolado, contagens incompletas/inválidas
+ou total zero não habilitam o teste. Azul/verde próximo sozinho não envia.
+Os dois mínimos acima são configuráveis no `.env`, em percentuais de 0 a 100
+(zero excluído); valores vazios, inválidos ou fora desse intervalo voltam aos
+defaults de 10 e 2. Reinicie o worker após ajustar a configuração.
+A paleta permanece igual, sem conversão para dBZ ou mm/h.
+
+A mensagem usa “Distrito de São José”, distância, aproximação, temperatura e rajada
+atuais da estação local, com link para https://meteo.eesjv.com.br. Não inclui ETA.
+Temperatura (°C) e rajada (km/h) vêm da última leitura persistida; valores ausentes,
+inválidos ou de leitura desatualizada aparecem como indisponíveis. Os painéis
+administrativos mostram classe predominante, percentuais forte/muito alta e
+intensidade suficiente.
+
 O episódio é persistido na chave isolada `nowcasting_test_alert` da estrutura genérica
 `health_check_estado`, sem armazenar telefone, credenciais ou texto enviado. Um track
-gera uma chave como `track:27`; sem tracking, usa-se um episódio vermelho global para
-impedir spam por mudanças de cluster. A troca posterior para um track também não
-repete o teste enquanto o episódio estiver ativo. O rearm padrão exige 30 minutos
+gera uma chave como `track:27`; sem tracking válido não há envio. A troca de cluster
+ou track não repete o teste enquanto o episódio estiver ativo, e perder intensidade
+mantendo o nível vermelho não rearma. Estados de episódios antigos são preservados.
+O rearm padrão exige 30 minutos
 contínuos fora do vermelho e o cooldown global padrão exige 60 minutos desde o último
 envio. Falhas no WhatsApp não derrubam o worker e uma nova tentativa respeita o mesmo
 cooldown de segurança.

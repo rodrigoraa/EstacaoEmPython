@@ -175,6 +175,10 @@ def carregar_entradas_nowcasting(config):
     local = _local_station(config)
     fingerprint_body = {
         "algorithm": config["algorithm_version"],
+        "alert_intensity_thresholds": (
+            config.get("alert_min_strong_reflectivity_percent", 10),
+            config.get("alert_min_very_high_reflectivity_percent", 2),
+        ),
         "radar_frame": (radar.get("frame") or {}).get("id"),
         "radar_stale": radar.get("stale"),
         "radar_tracks": [

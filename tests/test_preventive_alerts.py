@@ -21,6 +21,7 @@ class PreventiveAlertsTest(unittest.TestCase):
             "cluster_id": 109,
             "track_id": 9,
             "distance_km": distancia,
+            "intensidade_suficiente": True,
             "tracking_valid": True,
             "tracking_quality": "BOA",
             "frame_count": 5,
@@ -105,7 +106,7 @@ class PreventiveAlertsTest(unittest.TestCase):
         self.assertEqual(alerta["nivel"], "VERMELHO")
         self.assertIsNone(alerta["speed_kmh"])
         self.assertIsNone(alerta["eta_minutes"])
-        self.assertTrue(alerta["would_send"])
+        self.assertFalse(alerta["would_send"])
 
     def test_selecao_ignora_clutter_proximo_quando_ha_eco_confiavel(self):
         clutter = self.ameaca(8, clutter=0.96)

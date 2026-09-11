@@ -32,6 +32,7 @@
       {% endif %}
       {% if alerta %}
       <dl class="preventive-alert-details">
+        {% include "includes/admin_alert_intensity.html" %}
         <div><dt>Eco selecionado</dt><dd>{% if alerta.get('track_id') %}Sistema {{ alerta.get('track_id') }}{% elif alerta.get('cluster_id') %}Cluster {{ alerta.get('cluster_id') }} sem tracking{% else %}Nenhum eco operacional{% endif %}</dd></div>
         <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(alerta.get('distance_km')) if alerta.get('distance_km') is not none else 'Dados insuficientes' }}</dd></div>
         <div><dt>Tendência</dt><dd>{% if alerta.get('approaching') is not none %}{{ 'Aproximando' if alerta.get('approaching') else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>

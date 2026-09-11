@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from statistics import median
 
+from services.nowcasting_intensity import CAMPOS_INTENSIDADE
 from time_utils import parse_datetime
 
 
@@ -245,10 +246,7 @@ def criar_alerta_preventivo(
                 else " Confirmação regional ainda não disponível."
             )
 
-    would_send = bool(
-        radar_atualizado and nivel == "VERMELHO" and not clutter_forte
-    )
-    return {
+    alerta = {
         "nivel": nivel,
         "nivel_base": nivel_base,
         "cor": NIVEIS_CORES[nivel],
@@ -267,6 +265,7 @@ def criar_alerta_preventivo(
         "speed_kmh": ameaca.get("speed_kmh"),
         "eta_minutes": ameaca.get("eta_minutes"),
         "eta_border_minutes": ameaca.get("eta_border_minutes"),
+        "eta_border_quality": ameaca.get("eta_border_quality"),
         "border_approach_rate_kmh": ameaca.get("border_approach_rate_kmh"),
         "clutter": bool(ameaca.get("suspeito_clutter") or clutter_forte),
         "clutter_index": ameaca.get("indice_persistencia_clutter"),
@@ -275,11 +274,43 @@ def criar_alerta_preventivo(
         "regional_stations": list(confirmacao.get("stations") or []),
         "local_event": bool(evento_local),
         "message": mensagem,
-        "would_send": would_send,
+        **{campo: ameaca.get(campo) for campo in CAMPOS_INTENSIDADE},
         "preventive_sending": "DESATIVADO",
+    }
+    would_send = motivo_bloqueio_meteorologico(
+        alerta, radar_atualizado=radar_atualizado, evento_local=evento_local
+    ) is None
+    alerta.update({
+        "would_send": would_send,
         "simulation_message": (
             "Este evento é candidato preventivo; o envio está desativado para usuários."
             if would_send
             else "Nenhum alerta preventivo será enviado aos usuários por esta versão."
         ),
-    }
+    })
+    return alerta
+
+
+def motivo_bloqueio_meteorologico(alerta, *, radar_atualizado, evento_local):
+    """Requisitos cumulativos do candidato; o nível visual não os substitui."""
+    if not radar_atualizado:
+        return "radar_unavailable"
+    if (alerta.get("clutter") is True or alerta.get("low_confidence") is True
+            or possui_clutter_forte({
+                "indice_persistencia_clutter": alerta.get("clutter_index")
+            })):
+        return "clutter"
+    if evento_local or alerta.get("local_event") is True:
+        return "local_event_observed"
+    distancia = _distancia_valida(alerta.get("distance_km"))
+    if distancia is None or distancia > 25:
+        return "distance_not_critical"
+    if alerta.get("tracking_valid") is not True or alerta.get("track_id") is None:
+        return "tracking_insufficient"
+    if alerta.get("approaching") is not True:
+        return "not_approaching"
+    if alerta.get("trajectory_compatible") is not True:
+        return "trajectory_incompatible"
+    if alerta.get("intensidade_suficiente") is not True:
+        return "intensity_insufficient"
+    return None

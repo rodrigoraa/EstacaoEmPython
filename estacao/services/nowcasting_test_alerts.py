@@ -19,7 +19,8 @@ from services.admin_notification_service import (
     obter_admin_alert_phone,
 )
 from services.nowcasting_service import snapshot_operacionalmente_atual
-from services.preventive_alerts import CLUTTER_FORTE_LIMIAR
+from services.nowcasting_intensity import analisar_intensidade_cluster
+from services.preventive_alerts import motivo_bloqueio_meteorologico
 from time_utils import agora_utc, iso_utc, parse_datetime
 
 
@@ -188,99 +189,57 @@ def avaliar_alerta_teste_admin(snapshot, config, *, admin_phone=None, now=None):
 
     alerta = snapshot.get("alerta_preventivo") or {}
     radar = snapshot.get("radar") or {}
-    if alerta.get("nivel") != "VERMELHO":
-        return {"eligible": False, "reason": "level_not_red", "event_key": None}
-    if alerta.get("would_send") is not True:
-        return {"eligible": False, "reason": "not_candidate", "event_key": None}
-    if radar.get("operacional") is not True or radar.get("stale") is True:
-        return {"eligible": False, "reason": "radar_unavailable", "event_key": None}
-    clutter_index = _numero_finito(alerta.get("clutter_index"))
-    if (
-        alerta.get("clutter") is True
-        or alerta.get("low_confidence") is True
-        or (
-            clutter_index is not None
-            and clutter_index >= CLUTTER_FORTE_LIMIAR
-        )
-    ):
-        return {"eligible": False, "reason": "clutter", "event_key": None}
-    if _evento_local_observado(snapshot):
-        return {
-            "eligible": False,
-            "reason": "local_event_observed",
-            "event_key": _event_key(alerta),
-        }
+    # Revalida as contagens com a configuração atual: snapshots antigos ou
+    # flags persistidas isoladas nunca autorizam o envio.
+    intensidade = analisar_intensidade_cluster(alerta, config)
+    motivo = motivo_bloqueio_meteorologico(
+        {**alerta, **intensidade},
+        radar_atualizado=(radar.get("operacional") is True
+                          and radar.get("stale") is not True),
+        evento_local=_evento_local_observado(snapshot),
+    )
+    if motivo is None and alerta.get("nivel") != "VERMELHO":
+        motivo = "level_not_red"
+    if motivo is None and alerta.get("would_send") is not True:
+        motivo = "not_candidate"
     return {
-        "eligible": True,
-        "reason": "eligible",
-        "event_key": _event_key(alerta),
+        "eligible": motivo is None,
+        "reason": motivo or "eligible",
+        "event_key": _event_key(alerta) if motivo in (None, "local_event_observed") else None,
+        "intensidade": intensidade,
     }
 
 
 def montar_mensagem_alerta_teste(snapshot):
-    snapshot = snapshot or {}
-    alerta = snapshot.get("alerta_preventivo") or {}
+    """Mensagem curta com as condições atuais da estação local persistida."""
+    alerta = (snapshot or {}).get("alerta_preventivo") or {}
+    local = (snapshot or {}).get("escola") or {}
     distancia = _numero_finito(alerta.get("distance_km"))
-    linhas = [
-        "🧪 ALERTA PREVENTIVO — TESTE",
-        "",
-        "Possível chuva próxima à EE São José.",
-        "",
+    temperatura = rajada = None
+    if local.get("stale") is False:
+        temperatura = _numero_finito(local.get("temperature"))
+        rajada = _numero_finito(local.get("wind_gust"))
+    if rajada is not None and rajada < 0:
+        rajada = None
+    temperatura_texto = (
+        f"A temperatura atual é {temperatura:.1f} °C.".replace(".", ",", 1)
+        if temperatura is not None else "Temperatura atual indisponível."
+    )
+    rajada_texto = (
+        f"E rajadas de vento atuais de {rajada:.1f} km/h.".replace(".", ",", 1)
+        if rajada is not None else "Rajadas de vento atuais indisponíveis."
+    )
+    return "\n".join([
+        "⚠️ Possível chuva chegando ao Distrito de São José.",
         (
-            "Eco de radar com borda a aproximadamente "
-            f"{distancia:.1f} km da escola."
-            if distancia is not None
-            else "Distância da borda do eco: dados insuficientes."
+            f"Chuva forte a aproximadamente {distancia:.0f} km e se aproximando."
+            if distancia is not None else "Chuva forte se aproximando."
         ),
+        temperatura_texto,
+        rajada_texto,
         "",
-    ]
-
-    tracking_valido = alerta.get("tracking_valid") is True
-    if tracking_valido:
-        aproximando = alerta.get("approaching")
-        movimento = (
-            "aproximando"
-            if aproximando is True
-            else "afastando"
-            if aproximando is False
-            else "dados insuficientes"
-        )
-        velocidade = _numero_finito(alerta.get("speed_kmh"))
-        eta = _numero_finito(alerta.get("eta_minutes"))
-        eta_borda = _numero_finito(alerta.get("eta_border_minutes"))
-    else:
-        movimento = "dados insuficientes"
-        velocidade = eta = eta_borda = None
-
-    linhas.append(f"Movimento: {movimento}")
-    linhas.append(
-        "Velocidade estimada do eco: "
-        + (f"{velocidade:.0f} km/h" if velocidade is not None else "dados insuficientes")
-    )
-    linhas.append(
-        "ETA da trajetória: "
-        + (f"{eta:.0f} min" if eta is not None else "dados insuficientes")
-    )
-    linhas.append(
-        "ETA estimado da borda: "
-        + (f"{eta_borda:.0f} min" if eta_borda is not None else "dados insuficientes")
-    )
-    if alerta.get("regional_confirmation") is True:
-        linhas.extend(
-            [
-                "",
-                "Sinais compatíveis também foram observados em estações regionais.",
-            ]
-        )
-    linhas.extend(
-        [
-            "",
-            "Este é um alerta experimental enviado somente ao administrador para validação do sistema.",
-            "",
-            "Os dados de radar representam uma estimativa e não garantem ocorrência de chuva.",
-        ]
-    )
-    return "\n".join(linhas)
+        "Para mais informações acesse: https://meteo.eesjv.com.br",
+    ])
 
 
 def _erro_resumido(erro):
@@ -350,6 +309,28 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
         )
         return obter_status_alerta_teste_admin(snapshot, config, now=agora)
 
+    if not avaliacao["eligible"]:
+        motivos = {
+            "snapshot_stale": "radar ou snapshot desatualizado",
+            "radar_unavailable": "radar indisponível",
+            "clutter": "clutter",
+            "local_event_observed": "chuva já observada localmente",
+            "distance_not_critical": "eco fora da proximidade crítica",
+            "tracking_insufficient": "tracking insuficiente",
+            "not_approaching": "eco não está aproximando",
+            "trajectory_incompatible": "trajetória incompatível",
+            "intensity_insufficient": "intensidade insuficiente",
+            "level_not_red": "nível fora da proximidade crítica",
+            "not_candidate": "evento não candidato",
+        }
+        intensidade = avaliacao.get("intensidade") or {}
+        logger.info(
+            "Nowcasting teste admin: %s forte=%.1f%% muito_alta=%.1f%%",
+            motivos.get(avaliacao["reason"], avaliacao["reason"]),
+            intensidade.get("percentual_refletividade_forte", 0.0),
+            intensidade.get("percentual_refletividade_muito_alta", 0.0),
+        )
+
     conn = database.get_db()
     deve_enviar = False
     try:
@@ -367,7 +348,6 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
             estado["clear_since"] = None
             estado["suppressed_for_current_episode"] = True
             estado["last_result"] = "local_event_observed"
-            logger.info("Nowcasting teste admin: envio ignorado por evento local observado")
         elif not avaliacao["eligible"]:
             if nivel_vermelho and estado["active"]:
                 estado["clear_since"] = None
@@ -378,8 +358,6 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
                 if estado["last_result"] in {"rearm_pending", "rearmed"}
                 else avaliacao["reason"]
             )
-            if avaliacao["reason"] == "snapshot_stale":
-                logger.info("Nowcasting teste admin: envio ignorado por snapshot stale")
         else:
             logger.info(
                 "Nowcasting teste admin: candidato vermelho detectado track=%s distancia=%s",

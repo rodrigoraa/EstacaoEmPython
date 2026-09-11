@@ -1,3 +1,4 @@
+import math
 import os
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -29,6 +30,15 @@ def env_float(nome, padrao):
         return float(env_str(nome, str(padrao)))
     except (TypeError, ValueError):
         return float(padrao)
+
+
+def percentual_positivo_valido(valor, padrao):
+    """Limiares percentuais aceitam apenas números finitos em (0, 100]."""
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError, OverflowError):
+        return float(padrao)
+    return numero if not isinstance(valor, bool) and math.isfinite(numero) and 0 < numero <= 100 else float(padrao)
 
 
 def radar_config():
@@ -145,6 +155,12 @@ def nowcasting_config():
         "test_alert_rearm_minutes": max(
             1, env_int("NOWCASTING_TEST_ALERT_REARM_MINUTES", 30)
         ),
+        "alert_min_strong_reflectivity_percent": percentual_positivo_valido(
+            env_str("NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT"), 10
+        ),
+        "alert_min_very_high_reflectivity_percent": percentual_positivo_valido(
+            env_str("NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT"), 2
+        ),
         "upstream_corridor_km": max(
             5.0, env_float("NOWCASTING_UPSTREAM_CORRIDOR_KM", 50)
         ),
@@ -163,7 +179,7 @@ def nowcasting_config():
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.4") or "1.4",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.5") or "1.5",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),

@@ -121,6 +121,8 @@ class RadarAnalysisTest(unittest.TestCase):
             ),
         )[0]
         self.assertEqual(com_dilatacao.pixels_eco, 100)
+        self.assertEqual(com_dilatacao.frente_relevante, sem_dilatacao.frente_relevante)
+        self.assertLessEqual(com_dilatacao.frente_relevante["front_pixels_total"], 100)
         self.assertAlmostEqual(
             com_dilatacao.distancia_borda_escola_km,
             sem_dilatacao.distancia_borda_escola_km,

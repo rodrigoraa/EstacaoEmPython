@@ -101,6 +101,14 @@ class NowcastingIntegrationTest(unittest.TestCase):
         }
 
     def state_vermelho(self, gerado_em_utc=None):
+        from services.radar_repository import salvar_resultado_frame
+        from services.radar_service import RadarFrame
+        frame_id, _ = salvar_resultado_frame(
+            RadarFrame("jr", "maxcappi", datetime.now(timezone.utc),
+                       "https://example.test/fixture.png", -20.2, -54.4,
+                       -23.8, -16.6, -58.2, -50.5, 400, 1000),
+            None, None, 100, 100, [],
+        )
         state = self.state()
         state["gerado_em_utc"] = gerado_em_utc or datetime.now(
             timezone.utc
@@ -109,7 +117,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "disponivel": True,
             "operacional": True,
             "stale": False,
-            "frame_id": None,
+            "frame_id": frame_id,
             "distancia_borda_km": 20,
         })
         state["alerta_preventivo"].update({
@@ -123,6 +131,8 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "tracking_valid": True,
             "approaching": True,
             "trajectory_compatible": True,
+            "front_pixels_low": 900, "front_pixels_medium": 0,
+            "front_pixels_high": 100, "front_pixels_very_high": 0,
             "pixels_refletividade_baixa": 900,
             "pixels_refletividade_media": 0,
             "pixels_refletividade_alta": 100,
@@ -746,6 +756,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
                 "enabled", "eligible", "sent_for_current_episode",
                 "event_key", "last_sent_at", "cooldown_active",
                 "rearm_pending", "reason",
+                "highest_sent_severity", "last_sent_alert_level", "last_sent_radar_intensity",
             },
         )
 

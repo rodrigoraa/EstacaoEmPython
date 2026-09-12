@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
@@ -16,6 +17,15 @@ from services.radar_analysis import (
 )
 from services.radar_service import RadarFrame
 from time_utils import LOCAL_TZ, iso_local, iso_utc, minutos_desde, parse_datetime
+
+
+def ler_frente_relevante(valor):
+    from services.nowcasting_intensity import FRONT_FIELDS
+    try:
+        dados = json.loads(valor) if valor else {}
+    except (TypeError, ValueError):
+        return {}
+    return {campo: dados[campo] for campo in FRONT_FIELDS if campo in dados} if isinstance(dados, dict) else {}
 
 
 def frame_existente(path_remoto: str):
@@ -164,8 +174,8 @@ def salvar_resultado_frame(
                     suspeito_clutter, intensidade_codigo,
                     pixels_refletividade_baixa, pixels_refletividade_media,
                     pixels_refletividade_alta, pixels_refletividade_muito_alta,
-                    classe_predominante, classe_maxima
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    classe_predominante, classe_maxima, frente_relevante_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     frame_id,
@@ -191,6 +201,7 @@ def salvar_resultado_frame(
                     cluster.pixels_refletividade_muito_alta,
                     cluster.classe_predominante,
                     cluster.classe_maxima,
+                    json.dumps(cluster.frente_relevante) if cluster.frente_relevante is not None else None,
                 ),
             )
         _atualizar_clutter_frame(conn, frame_id)
@@ -726,6 +737,7 @@ def obter_estado_radar(stale_minutes: int) -> dict:
                 "pixels_refletividade_muito_alta": cluster["pixels_refletividade_muito_alta"],
                 "classe_predominante": cluster["classe_predominante"],
                 "classe_maxima": cluster["classe_maxima"],
+                **ler_frente_relevante(cluster["frente_relevante_json"]),
             }
         tracking = None
         if track:

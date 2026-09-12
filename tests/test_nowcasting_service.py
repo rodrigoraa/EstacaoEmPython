@@ -382,7 +382,7 @@ class NowcastingServiceTest(unittest.TestCase):
         self.assertNotEqual(state["status"], "ATENCAO_PREVENTIVA")
         self.assertEqual(
             state["alerta_preventivo"]["message"],
-            "Chuva já observada na EE São José.",
+            "Chuva já observada no Distrito de São José.",
         )
 
     def test_eco_confiavel_tem_prioridade_sobre_clutter_forte_mais_proximo(self):

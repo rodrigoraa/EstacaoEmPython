@@ -405,6 +405,7 @@ def garantir_tabelas_radar(conn):
     )
     garantir_coluna(conn, "radar_clusters", "classe_predominante", "TEXT")
     garantir_coluna(conn, "radar_clusters", "classe_maxima", "TEXT")
+    garantir_coluna(conn, "radar_clusters", "frente_relevante_json", "TEXT")
     garantir_coluna(conn, "radar_tracks", "primeiro_frame_em_utc", "TEXT")
     garantir_coluna(conn, "radar_tracks", "primeiro_frame_em_local", "TEXT")
     garantir_coluna(conn, "radar_tracks", "ultimo_frame_em_utc", "TEXT")

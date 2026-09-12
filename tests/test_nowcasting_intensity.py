@@ -18,6 +18,8 @@ from services.nowcasting_test_alerts import avaliar_alerta_teste_admin
 def cluster(baixa=900, media=0, alta=100, muito_alta=0):
     return {
         "id": 101,
+        "front_pixels_low": baixa, "front_pixels_medium": media,
+        "front_pixels_high": alta, "front_pixels_very_high": muito_alta,
         "distancia_borda_escola_km": 20,
         "pixels_refletividade_baixa": baixa,
         "pixels_refletividade_media": media,
@@ -36,7 +38,7 @@ class NowcastingIntensityTest(unittest.TestCase):
             ((980, 0, 0, 20), 2, 2, True),
             ((981, 0, 0, 19), 1.9, 1.9, False),
             ((900, 0, 90, 10), 10, 1, True),
-            ((500, 500, 0, 0), 0, 0, False),
+            ((500, 500, 0, 0), 0, 0, True),
             ((9999, 0, 0, 1), 0.01, 0.01, False),
             ((0, 0, 0, 1), 100, 100, False),
             ((0, 0, 0, 0), 0, 0, False),
@@ -70,7 +72,7 @@ class NowcastingIntensityTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             config = nowcasting_config()
             self.assertEqual([config[chave] for chave in chaves], [10, 2])
-            for valor in ("", "abc", "0", "-1", "100.1", "nan", "inf", "-inf"):
+            for valor in ("", "abc", "-1", "100.1", "nan", "inf", "-inf"):
                 with self.subTest(valor=valor):
                     os.environ.update(dict.fromkeys(nomes, valor))
                     config = nowcasting_config()
@@ -78,7 +80,7 @@ class NowcastingIntensityTest(unittest.TestCase):
             os.environ.update(dict(zip(nomes, ("12.5", "3.5"))))
             config = nowcasting_config()
             self.assertEqual([config[chave] for chave in chaves], [12.5, 3.5])
-            self.assertFalse(analisar_intensidade_cluster(cluster(), config)["intensidade_suficiente"])
+            self.assertEqual(analisar_intensidade_cluster(cluster(), config)["radar_intensity"], "MEDIUM")
             os.environ.update(dict.fromkeys(nomes, "100"))
             config = nowcasting_config()
             self.assertTrue(analisar_intensidade_cluster(cluster(0, 0, 0, 100), config)["intensidade_suficiente"])
@@ -87,10 +89,10 @@ class NowcastingIntensityTest(unittest.TestCase):
         now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
         config = nowcasting_config()
         config["test_alerts_enabled"] = True
-        for entrada, esperado in ((cluster(), True), (cluster(500, 500, 0, 0), False)):
+        for entrada, esperado in ((cluster(), True), (cluster(500, 500, 0, 0), True)):
             with self.subTest(esperado=esperado):
                 radar = {
-                    "disponivel": True, "stale": False,
+                    "disponivel": True, "stale": False, "frame": {"id": 1},
                     "cluster_mais_proximo": entrada,
                     "tracking": {
                         "track_id": 1, "quantidade_frames": 4, "duracao_minutos": 15,
@@ -109,7 +111,7 @@ class NowcastingIntensityTest(unittest.TestCase):
                     state, config, admin_phone="67999999999", now=now
                 )["eligible"], esperado)
                 # Mudança conservadora no .env também bloqueia um snapshot anterior.
-                rigoroso = {**config, "alert_min_strong_reflectivity_percent": 20}
+                rigoroso = {**config, "alert_min_strong_reflectivity_percent": 100, "alert_min_medium_reflectivity_percent": 100}
                 self.assertFalse(avaliar_alerta_teste_admin(
                     state, rigoroso, admin_phone="67999999999", now=now
                 )["eligible"])

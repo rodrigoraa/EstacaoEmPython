@@ -41,6 +41,38 @@ def percentual_positivo_valido(valor, padrao):
     return numero if not isinstance(valor, bool) and math.isfinite(numero) and 0 < numero <= 100 else float(padrao)
 
 
+def numero_alerta_valido(valor, padrao, *, percentual=False, pixels=False):
+    """Thresholds experimentais: valores inválidos retornam ao default."""
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError, OverflowError):
+        return padrao
+    valido = not isinstance(valor, bool) and math.isfinite(numero)
+    if percentual:
+        valido = valido and 0 <= numero <= 100
+    elif pixels:
+        valido = valido and numero >= 1 and numero.is_integer()
+    else:
+        valido = valido and numero > 0
+    return (int(numero) if pixels else numero) if valido else padrao
+
+
+def config_alerta_preventivo():
+    resultado = {}
+    for classe, percentual, pixels in (("medium", 10, 3), ("strong", 10, 2), ("very_high", 2, 2)):
+        for sufixo, padrao in (("percent", percentual), ("pixels", pixels)):
+            chave = f"alert_min_{classe}_reflectivity_{sufixo}"
+            resultado[chave] = numero_alerta_valido(
+                env_str(f"NOWCASTING_{chave.upper()}"), padrao,
+                percentual=sufixo == "percent", pixels=sufixo == "pixels",
+            )
+    for classe, perto, antecipado in (("medium", 25, 50), ("high", 35, 75), ("very_high", 50, 100)):
+        for rota, padrao in (("near", perto), ("tracked", antecipado)):
+            chave = f"alert_{classe}_{rota}_km"
+            resultado[chave] = numero_alerta_valido(env_str(f"NOWCASTING_{chave.upper()}"), padrao)
+    return resultado
+
+
 def radar_config():
     """Retorna a configuracao do radar sem exigir a chave na aplicacao web."""
     base_dir = Path(__file__).resolve().parent
@@ -58,6 +90,7 @@ def radar_config():
             1, env_int("RADAR_REQUEST_TIMEOUT_SECONDS", 30)
         ),
         "min_cluster_pixels": max(1, env_int("RADAR_MIN_CLUSTER_PIXELS", 100)),
+        "alert_front_depth_km": numero_alerta_valido(env_str("RADAR_ALERT_FRONT_DEPTH_KM"), 15),
         "morph_close_iterations": max(
             0, env_int("RADAR_MORPH_CLOSE_ITERATIONS", 2)
         ),
@@ -143,6 +176,7 @@ def regional_stations_config():
 def nowcasting_config():
     """Fusao observacional, sempre separada dos coletores e alertas."""
     return {
+        **config_alerta_preventivo(),
         "enabled": env_bool("NOWCASTING_ENABLED", False),
         "poll_seconds": max(60, env_int("NOWCASTING_POLL_SECONDS", 300)),
         "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", False),
@@ -154,12 +188,6 @@ def nowcasting_config():
         ),
         "test_alert_rearm_minutes": max(
             1, env_int("NOWCASTING_TEST_ALERT_REARM_MINUTES", 30)
-        ),
-        "alert_min_strong_reflectivity_percent": percentual_positivo_valido(
-            env_str("NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT"), 10
-        ),
-        "alert_min_very_high_reflectivity_percent": percentual_positivo_valido(
-            env_str("NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT"), 2
         ),
         "upstream_corridor_km": max(
             5.0, env_float("NOWCASTING_UPSTREAM_CORRIDOR_KM", 50)
@@ -179,7 +207,7 @@ def nowcasting_config():
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.5") or "1.5",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.6") or "1.6",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),

@@ -8,7 +8,7 @@ import sqlite3
 
 import database
 from config import regional_stations_config
-from services.radar_repository import obter_estado_radar
+from services.radar_repository import obter_estado_radar, ler_frente_relevante
 from services.regional_stations_repository import obter_estado_rede
 from time_utils import minutos_desde
 
@@ -66,15 +66,18 @@ def _tracks_frame_atual(radar):
             SELECT t.*, c.id AS cluster_id, c.pixels_eco,
                    c.distancia_radar_km, c.direcao_relativa_escola,
                    c.intensidade_codigo, c.classe_predominante, c.classe_maxima,
+                   c.frente_relevante_json,
+                   c.distancia_borda_escola_km AS cluster_distance_km,
+                   c.distancia_centro_escola_km AS cluster_center_distance_km,
                    c.pixels_refletividade_baixa, c.pixels_refletividade_media,
                    c.pixels_refletividade_alta, c.pixels_refletividade_muito_alta,
                    c.suspeito_clutter AS cluster_suspeito_clutter,
                    c.indice_persistencia_clutter AS cluster_indice_clutter,
                    c.clutter_amostras AS cluster_clutter_amostras
-            FROM radar_track_points p
-            JOIN radar_tracks t ON t.id=p.track_id
-            JOIN radar_clusters c ON c.id=p.cluster_id
-            WHERE p.frame_id=? AND t.ativo=1
+            FROM radar_clusters c
+            LEFT JOIN radar_track_points p ON p.cluster_id=c.id AND p.frame_id=c.frame_id
+            LEFT JOIN radar_tracks t ON t.id=p.track_id AND t.ativo=1
+            WHERE c.frame_id=?
             """,
             (frame["id"],),
         ).fetchall()
@@ -137,10 +140,11 @@ def _tracks_frame_atual(radar):
                         "historico_borda": historicos[row["id"]],
                     },
                     "cluster": {
+                        **ler_frente_relevante(row["frente_relevante_json"]),
                         "id": row["cluster_id"],
                         "pixels_eco": row["pixels_eco"],
-                        "distancia_centro_escola_km": row["distancia_centro_escola_km"],
-                        "distancia_borda_escola_km": row["distancia_borda_escola_km"],
+                        "distancia_centro_escola_km": row["cluster_center_distance_km"],
+                        "distancia_borda_escola_km": row["cluster_distance_km"],
                         "direcao_relativa": row["direcao_relativa_escola"],
                         "suspeito_clutter": bool(row["cluster_suspeito_clutter"]),
                         "indice_persistencia_clutter": row["cluster_indice_clutter"],
@@ -175,10 +179,8 @@ def carregar_entradas_nowcasting(config):
     local = _local_station(config)
     fingerprint_body = {
         "algorithm": config["algorithm_version"],
-        "alert_intensity_thresholds": (
-            config.get("alert_min_strong_reflectivity_percent", 10),
-            config.get("alert_min_very_high_reflectivity_percent", 2),
-        ),
+        "preventive_rules_version": "front-1",
+        "preventive_config": {k: v for k, v in config.items() if k.startswith("alert_")},
         "radar_frame": (radar.get("frame") or {}).get("id"),
         "radar_stale": radar.get("stale"),
         "radar_tracks": [

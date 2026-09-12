@@ -19,8 +19,7 @@ from services.admin_notification_service import (
     obter_admin_alert_phone,
 )
 from services.nowcasting_service import snapshot_operacionalmente_atual
-from services.nowcasting_intensity import analisar_intensidade_cluster
-from services.preventive_alerts import motivo_bloqueio_meteorologico
+from services.preventive_alerts import decidir_alerta_preventivo, tracking_confirmado, ALERT_SEVERITY
 from time_utils import agora_utc, iso_utc, parse_datetime
 
 
@@ -28,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 ESTADO_CHAVE = "nowcasting_test_alert"
 ESTADO_CAMPOS = (
+    "highest_sent_severity",
+    "last_sent_alert_level",
+    "last_sent_radar_intensity",
+    "pending_severity",
     "active",
     "event_key",
     "last_level",
@@ -51,6 +54,10 @@ class EstadoAlertaTesteInvalido(ValueError):
 
 def estado_alerta_teste_padrao():
     return {
+        "highest_sent_severity": 0,
+        "last_sent_alert_level": None,
+        "last_sent_radar_intensity": None,
+        "pending_severity": 0,
         "active": False,
         "event_key": None,
         "last_level": None,
@@ -81,6 +88,13 @@ def _normalizar_estado(valor):
     estado["suppressed_for_current_episode"] = bool(
         estado["suppressed_for_current_episode"]
     )
+    severity = estado.get("highest_sent_severity")
+    if not isinstance(severity, int) or isinstance(severity, bool) or not 0 <= severity <= 3:
+        severity = 3 if estado["sent_for_current_episode"] else 0
+    # Uma notificação legada já enviada tinha o patamar máximo do sistema antigo.
+    if isinstance(valor, dict) and "highest_sent_severity" not in valor and estado["sent_for_current_episode"]:
+        severity = 3
+    estado["highest_sent_severity"] = severity
     return estado
 
 
@@ -172,7 +186,7 @@ def _evento_local_observado(snapshot):
 
 def _event_key(alerta):
     track_id = alerta.get("track_id")
-    return f"track:{track_id}" if track_id is not None else "untracked_red_episode"
+    return f"track:{track_id}" if track_id is not None else "untracked_rain_episode"
 
 
 def avaliar_alerta_teste_admin(snapshot, config, *, admin_phone=None, now=None):
@@ -184,62 +198,50 @@ def avaliar_alerta_teste_admin(snapshot, config, *, admin_phone=None, now=None):
         return {"eligible": False, "reason": "disabled", "event_key": None}
     if not (admin_phone or "").strip():
         return {"eligible": False, "reason": "admin_phone_missing", "event_key": None}
-    if not snapshot_operacionalmente_atual(snapshot, config, now=agora):
-        return {"eligible": False, "reason": "snapshot_stale", "event_key": None}
-
     alerta = snapshot.get("alerta_preventivo") or {}
     radar = snapshot.get("radar") or {}
-    # Revalida as contagens com a configuração atual: snapshots antigos ou
-    # flags persistidas isoladas nunca autorizam o envio.
-    intensidade = analisar_intensidade_cluster(alerta, config)
-    motivo = motivo_bloqueio_meteorologico(
-        {**alerta, **intensidade},
-        radar_atualizado=(radar.get("operacional") is True
-                          and radar.get("stale") is not True),
+    if radar.get("stale") is True:
+        return {"eligible": False, "reason": "radar_stale", "event_key": None}
+    if radar.get("operacional") is not True:
+        return {"eligible": False, "reason": "radar_unavailable", "event_key": None}
+    if not snapshot_operacionalmente_atual(snapshot, config, now=agora):
+        return {"eligible": False, "reason": "snapshot_stale", "event_key": None}
+    decisao = decidir_alerta_preventivo(
+        alerta, config=config, radar_atualizado=True,
+        frame_valido=radar.get("timestamp_status") != "suspect" and radar.get("frame_id") is not None,
         evento_local=_evento_local_observado(snapshot),
     )
-    if motivo is None and alerta.get("nivel") != "VERMELHO":
-        motivo = "level_not_red"
-    if motivo is None and alerta.get("would_send") is not True:
-        motivo = "not_candidate"
     return {
-        "eligible": motivo is None,
-        "reason": motivo or "eligible",
-        "event_key": _event_key(alerta) if motivo in (None, "local_event_observed") else None,
-        "intensidade": intensidade,
+        "eligible": decisao["would_send"], "reason": decisao["block_reason"] or "eligible",
+        "event_key": _event_key(alerta) if decisao["block_reason"] in (None, "local_event_observed") else None,
+        "decision": decisao,
     }
 
 
 def montar_mensagem_alerta_teste(snapshot):
-    """Mensagem curta com as condições atuais da estação local persistida."""
+    """Texto público probabilístico, sem detalhes técnicos do diagnóstico."""
     alerta = (snapshot or {}).get("alerta_preventivo") or {}
-    local = (snapshot or {}).get("escola") or {}
+    confirmado = tracking_confirmado(alerta)
     distancia = _numero_finito(alerta.get("distance_km"))
-    temperatura = rajada = None
-    if local.get("stale") is False:
-        temperatura = _numero_finito(local.get("temperature"))
-        rajada = _numero_finito(local.get("wind_gust"))
-    if rajada is not None and rajada < 0:
-        rajada = None
-    temperatura_texto = (
-        f"A temperatura atual é {temperatura:.1f} °C.".replace(".", ",", 1)
-        if temperatura is not None else "Temperatura atual indisponível."
-    )
-    rajada_texto = (
-        f"E rajadas de vento atuais de {rajada:.1f} km/h.".replace(".", ",", 1)
-        if rajada is not None else "Rajadas de vento atuais indisponíveis."
-    )
-    return "\n".join([
-        "⚠️ Possível chuva chegando ao Distrito de São José.",
-        (
-            f"Chuva forte a aproximadamente {distancia:.0f} km e se aproximando."
-            if distancia is not None else "Chuva forte se aproximando."
-        ),
-        temperatura_texto,
-        rajada_texto,
-        "",
-        "Para mais informações acesse: https://meteo.eesjv.com.br",
-    ])
+    movimento = "se aproximando da" if confirmado else "próxima da"
+    nivel = alerta.get("alert_level")
+    if nivel == "ALERTA":
+        titulo = "🔴 Atenção para possibilidade de chuva forte no Distrito de São José."
+        corpo = f"Uma área de chuva intensa está {movimento} região."
+    elif nivel == "ATENCAO":
+        titulo = "⚠️ Atenção para possível chuva no Distrito de São José."
+        corpo = f"Uma área de chuva com maior intensidade está {movimento} região."
+    else:
+        titulo = ("🌧️ Possível chuva se aproximando do Distrito de São José." if confirmado
+                  else "🌧️ Possível chuva próxima ao Distrito de São José.")
+        corpo = (f"Uma área de chuva está a aproximadamente {distancia:.0f} km da região."
+                 if distancia is not None else "Uma área de chuva está próxima da região.")
+    partes = [titulo, corpo]
+    eta = _numero_finito(alerta.get("eta_border_minutes"))
+    if confirmado and eta is not None and 0 <= eta <= 360 and alerta.get("eta_border_quality") in {"BOA", "MODERADA"}:
+        partes.append(f"Estimativa de chegada: {eta:.0f} min.")
+    partes.append("Para mais informações acesse:\nhttps://meteo.eesjv.com.br")
+    return "\n\n".join(partes)
 
 
 def _erro_resumido(erro):
@@ -263,6 +265,18 @@ def _cooldown_ativo(estado, config, agora):
     )
 
 
+def _cooldown_bloqueia(estado, config, agora, severity):
+    # Escalonamento após sucesso é imediato; falhas e tentativas em curso
+    # continuam respeitando cooldown para impedir duplicação concorrente.
+    escalonamento = severity > estado["highest_sent_severity"] > 0
+    tentativa_pendente = estado.get("last_attempt_at") and (
+        not estado.get("last_sent_at") or estado["last_attempt_at"] > estado["last_sent_at"]
+    )
+    if escalonamento and not estado.get("pending_severity") and not tentativa_pendente and estado.get("last_result") not in {"sending", "send_failed"}:
+        return False
+    return _cooldown_ativo(estado, config, agora)
+
+
 def _atualizar_identidade(estado, snapshot, agora):
     alerta = snapshot.get("alerta_preventivo") or {}
     estado["last_level"] = alerta.get("nivel")
@@ -272,7 +286,7 @@ def _atualizar_identidade(estado, snapshot, agora):
     estado["last_seen_at"] = iso_utc(agora)
 
 
-def _processar_saida_vermelho(estado, config, agora):
+def _processar_ausencia_evento(estado, config, agora):
     if not estado["active"]:
         return
     if not estado.get("clear_since"):
@@ -287,6 +301,10 @@ def _processar_saida_vermelho(estado, config, agora):
         estado["event_key"] = None
         estado["sent_for_current_episode"] = False
         estado["suppressed_for_current_episode"] = False
+        estado["highest_sent_severity"] = 0
+        estado["last_sent_alert_level"] = None
+        estado["last_sent_radar_intensity"] = None
+        estado["pending_severity"] = 0
         estado["last_result"] = "rearmed"
     else:
         estado["last_result"] = "rearm_pending"
@@ -309,27 +327,16 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
         )
         return obter_status_alerta_teste_admin(snapshot, config, now=agora)
 
-    if not avaliacao["eligible"]:
-        motivos = {
-            "snapshot_stale": "radar ou snapshot desatualizado",
-            "radar_unavailable": "radar indisponível",
-            "clutter": "clutter",
-            "local_event_observed": "chuva já observada localmente",
-            "distance_not_critical": "eco fora da proximidade crítica",
-            "tracking_insufficient": "tracking insuficiente",
-            "not_approaching": "eco não está aproximando",
-            "trajectory_incompatible": "trajetória incompatível",
-            "intensity_insufficient": "intensidade insuficiente",
-            "level_not_red": "nível fora da proximidade crítica",
-            "not_candidate": "evento não candidato",
-        }
-        intensidade = avaliacao.get("intensidade") or {}
-        logger.info(
-            "Nowcasting teste admin: %s forte=%.1f%% muito_alta=%.1f%%",
-            motivos.get(avaliacao["reason"], avaliacao["reason"]),
-            intensidade.get("percentual_refletividade_forte", 0.0),
-            intensidade.get("percentual_refletividade_muito_alta", 0.0),
-        )
+    decisao = avaliacao.get("decision") or {}
+    alerta = {**(snapshot.get("alerta_preventivo") or {}), **decisao}
+    snapshot = {**snapshot, "alerta_preventivo": alerta}
+    severity = ALERT_SEVERITY.get(decisao.get("alert_level"), 0)
+    campos_log = ("radar_intensity", "alert_level", "certainty", "urgency", "authorization",
+                  "distance_km", "front_pixels_total", "front_percent_medium_or_higher",
+                  "front_percent_strong", "front_percent_very_high", "tracking_valid",
+                  "approaching", "trajectory_compatible")
+    logger.info("Nowcasting teste admin: decisão=%s bloqueio=%s",
+                {campo: alerta.get(campo) for campo in campos_log}, avaliacao["reason"])
 
     conn = database.get_db()
     deve_enviar = False
@@ -337,11 +344,12 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
         conn.execute("BEGIN IMMEDIATE")
         estado = carregar_estado_alerta_teste(conn)
         _atualizar_identidade(estado, snapshot, agora)
-        nivel_vermelho = (
-            (snapshot.get("alerta_preventivo") or {}).get("nivel") == "VERMELHO"
-        )
+        # Ausência de dados ou perda de tracking não prova o fim de um episódio.
+        ausencia_confirmada = avaliacao["reason"] in {
+            "intensity_below_medium", "insufficient_pixels", "outside_proximity_range"
+        }
 
-        if avaliacao["reason"] == "local_event_observed":
+        if _evento_local_observado(snapshot):
             if not estado["active"]:
                 estado["active"] = True
                 estado["event_key"] = avaliacao["event_key"]
@@ -349,10 +357,10 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
             estado["suppressed_for_current_episode"] = True
             estado["last_result"] = "local_event_observed"
         elif not avaliacao["eligible"]:
-            if nivel_vermelho and estado["active"]:
+            if not ausencia_confirmada and estado["active"]:
                 estado["clear_since"] = None
             else:
-                _processar_saida_vermelho(estado, config, agora)
+                _processar_ausencia_evento(estado, config, agora)
             estado["last_result"] = (
                 estado["last_result"]
                 if estado["last_result"] in {"rearm_pending", "rearmed"}
@@ -360,7 +368,7 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
             )
         else:
             logger.info(
-                "Nowcasting teste admin: candidato vermelho detectado track=%s distancia=%s",
+                "Nowcasting teste admin: candidato preventivo detectado track=%s distancia=%s",
                 (snapshot.get("alerta_preventivo") or {}).get("track_id"),
                 (snapshot.get("alerta_preventivo") or {}).get("distance_km"),
             )
@@ -373,20 +381,25 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
 
             if estado["suppressed_for_current_episode"]:
                 estado["last_result"] = "local_event_observed"
-            elif estado["sent_for_current_episode"]:
-                estado["last_result"] = "episode_already_notified"
+            elif severity <= estado["highest_sent_severity"]:
+                estado["last_result"] = "same_or_lower_severity"
                 logger.info(
                     "Nowcasting teste admin: envio ignorado porque o episódio já foi notificado"
                 )
-            elif _cooldown_ativo(estado, config, agora):
+            elif _cooldown_bloqueia(estado, config, agora, severity):
                 estado["last_result"] = "cooldown"
                 logger.info("Nowcasting teste admin: envio ignorado por cooldown")
             else:
+                logger.info("Nowcasting teste admin: escalonamento=%s episodio_notificado=%s",
+                            severity > estado["highest_sent_severity"] > 0, estado["sent_for_current_episode"])
                 estado["last_attempt_at"] = iso_utc(agora)
+                estado["pending_severity"] = severity
                 estado["last_result"] = "sending"
                 estado["last_error"] = None
                 deve_enviar = True
 
+        logger.info("Nowcasting teste admin: resultado=%s episodio_notificado=%s highest_sent_severity=%s",
+                    estado["last_result"], estado["sent_for_current_episode"], estado["highest_sent_severity"])
         salvar_estado_alerta_teste(conn, estado)
         conn.commit()
     except Exception:
@@ -414,12 +427,12 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
                 alerta.get("track_id"),
                 alerta.get("distance_km"),
             )
-            _finalizar_tentativa(enviado=True, erro=None, now=agora)
+            _finalizar_tentativa(enviado=True, erro=None, now=agora, decisao=decisao)
 
     return obter_status_alerta_teste_admin(snapshot, config, now=agora)
 
 
-def _finalizar_tentativa(*, enviado, erro, now):
+def _finalizar_tentativa(*, enviado, erro, now, decisao=None):
     conn = database.get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -429,10 +442,14 @@ def _finalizar_tentativa(*, enviado, erro, now):
             estado["last_result"] = "sent"
             estado["last_error"] = None
             estado["sent_for_current_episode"] = True
+            estado["pending_severity"] = 0
+            decisao = decisao or {}
+            estado["highest_sent_severity"] = max(estado["highest_sent_severity"], ALERT_SEVERITY.get(decisao.get("alert_level"), 0))
+            estado["last_sent_alert_level"] = decisao.get("alert_level")
+            estado["last_sent_radar_intensity"] = decisao.get("radar_intensity")
         else:
             estado["last_result"] = "send_failed"
             estado["last_error"] = erro
-            estado["sent_for_current_episode"] = False
         salvar_estado_alerta_teste(conn, estado)
         conn.commit()
     except Exception:
@@ -471,11 +488,12 @@ def obter_status_alerta_teste_admin(snapshot=None, config=None, *, now=None):
             admin_phone=obter_admin_alert_phone(),
             now=agora,
         )
-        cooldown = _cooldown_ativo(estado, config, agora)
+        severity = ALERT_SEVERITY.get((avaliacao.get("decision") or {}).get("alert_level"), 0)
+        cooldown = _cooldown_bloqueia(estado, config, agora, severity)
         rearm_pending = bool(estado["active"] and estado.get("clear_since"))
         eligible = bool(
             avaliacao["eligible"]
-            and not estado["sent_for_current_episode"]
+            and severity > estado["highest_sent_severity"]
             and not estado["suppressed_for_current_episode"]
             and not cooldown
         )
@@ -493,6 +511,9 @@ def obter_status_alerta_teste_admin(snapshot=None, config=None, *, now=None):
             "cooldown_active": cooldown,
             "rearm_pending": rearm_pending,
             "reason": reason,
+            "highest_sent_severity": estado["highest_sent_severity"],
+            "last_sent_alert_level": estado["last_sent_alert_level"],
+            "last_sent_radar_intensity": estado["last_sent_radar_intensity"],
         }
     except Exception as erro:
         logger.warning(

@@ -2,4 +2,13 @@
 <div><dt>Intensidade predominante</dt><dd>{{ classes_intensidade.get(alerta.get('classe_predominante'), 'Dados insuficientes') }}</dd></div>
 <div><dt>Refletividade forte</dt><dd>{{ '%.1f%%'|format(alerta.get('percentual_refletividade_forte')) if alerta.get('percentual_refletividade_forte') is not none else 'Dados insuficientes' }}</dd></div>
 <div><dt>Refletividade muito alta</dt><dd>{{ '%.1f%%'|format(alerta.get('percentual_refletividade_muito_alta')) if alerta.get('percentual_refletividade_muito_alta') is not none else 'Dados insuficientes' }}</dd></div>
-<div><dt>Intensidade suficiente para alerta</dt><dd>{{ 'Sim' if alerta.get('intensidade_suficiente') is sameas true else 'Não' }}</dd></div>
+<div><dt>Intensidade suficiente para alerta</dt><dd>{{ 'Sim' if alerta.get('radar_intensity') in ['MEDIUM', 'HIGH', 'VERY_HIGH'] else 'Não' }}</dd></div>
+{% for campo, rotulo in [('radar_intensity', 'Intensidade do radar (frente)'), ('alert_level', 'Nível do alerta'), ('certainty', 'Confiança'), ('urgency', 'Urgência'), ('authorization', 'Autorização'), ('front_pixels_total', 'Frente relevante (pixels)'), ('block_reason', 'Motivo do bloqueio')] %}
+<div><dt>{{ rotulo }}</dt><dd>{{ alerta.get(campo) if alerta.get(campo) is not none else 'Indisponível' }}</dd></div>
+{% endfor %}
+<div><dt>Tracking válido</dt><dd>{{ 'Válido' if alerta.get('tracking_valid') else 'Insuficiente' }}</dd></div>
+<div><dt>Trajetória</dt><dd>{{ ('Compatível' if alerta.get('trajectory_compatible') else 'Incompatível') if alerta.get('tracking_valid') else 'Desconhecida' }}</dd></div>
+<div><dt>Candidato a alerta</dt><dd>{{ 'SIM' if alerta.get('would_send') else 'NÃO' }}</dd></div>
+{% for classe, rotulo in [('low', 'Baixa'), ('medium', 'Média'), ('high', 'Alta'), ('very_high', 'Muito alta')] %}
+<div><dt>Frente: {{ rotulo }}</dt><dd>{{ '%.1f%%'|format(100 * (alerta.get('front_pixels_' ~ classe) or 0) / alerta.get('front_pixels_total')) if alerta.get('front_pixels_total') else 'Indisponível' }}</dd></div>
+{% endfor %}

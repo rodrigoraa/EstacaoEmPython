@@ -218,11 +218,11 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_ENABLED` | `false` | ativa o worker de fusão persistida |
 | `NOWCASTING_POLL_SECONDS` | `300` | intervalo entre análises |
 | `NOWCASTING_ALERTS_ENABLED` | `false` | reservado; sempre ignorado nesta versão |
-| `NOWCASTING_TEST_ALERTS_ENABLED` | `false` | envia testes vermelhos elegíveis somente ao administrador |
+| `NOWCASTING_TEST_ALERTS_ENABLED` | `false` | envia preventivos elegíveis somente ao administrador |
 | `NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES` | `60` | proteção global mínima entre testes enviados |
 | `NOWCASTING_TEST_ALERT_REARM_MINUTES` | `30` | tempo contínuo fora do vermelho para encerrar um episódio |
-| `NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT` | `10` | percentual mínimo de pixels de refletividade alta + muito alta |
-| `NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT` | `2` | percentual mínimo de pixels de refletividade muito alta (critério alternativo) |
+| `NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT` | `10` | percentual mínimo da frente com refletividade alta + muito alta |
+| `NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT` | `2` | percentual mínimo da frente com refletividade muito alta |
 | `NOWCASTING_UPSTREAM_CORRIDOR_KM` | `50` | largura lateral do corredor a montante |
 | `NOWCASTING_RADAR_MAX_AGE_MINUTES` | `45` | idade máxima do radar para evidência plena |
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
@@ -562,50 +562,111 @@ confirma a ameaça. Chuva local gera a evidência separada “Evento já observa
 estação local”, sem aumentar o score preventivo. `confirmacao_regional`, `radar_only`,
 `ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria. Mesmo assim,
 `NOWCASTING_ALERTS_ENABLED=true` continua retornando zero e não grava filas.
-O nível visual continua definido pela distância da borda (vermelho até 25 km),
-com os tratamentos existentes de radar indisponível e clutter. Vermelho sozinho
-não autoriza WhatsApp. `would_send` representa um candidato meteorológico: exige
-proximidade, tracking válido, aproximação, trajetória compatível, refletividade
-suficiente, radar atualizado, ausência de clutter e de chuva local.
-`preventive_sending` permanece `DESATIVADO` para usuários e não cria registros em
-`alertas_fila` nem em `alertas_eventos`.
+O campo legado `nivel` mantém as faixas visuais de distância para compatibilidade
+administrativa. Ele não determina intensidade nem nível do alerta público.
+`would_send` agora usa a frente relevante e as rotas descritas abaixo.
+`preventive_sending` permanece `DESATIVADO` para usuários; `alertas_fila` e
+`alertas_eventos` não participam do envio experimental.
 
-### Alertas preventivos de teste para o administrador
+### Alertas preventivos experimentais para o administrador
 
-`NOWCASTING_TEST_ALERTS_ENABLED=false` mantém o modo experimental desligado. Quando
-habilitado, somente alertas `VERMELHO` atuais, confiáveis e marcados como candidatos
-podem ser enviados diretamente para `ADMIN_ALERT_PHONE`. Usuários cadastrados não
-recebem essas mensagens, e o teste não usa `alertas_fila` nem `alertas_eventos`.
-`NOWCASTING_ALERTS_ENABLED` permanece bloqueado e não habilita alertas públicos nesta
-versão.
+A paleta real permanece: azul/ciano = `LOW` (somente monitoramento), verde =
+`MEDIUM` (já permite possível chuva), amarelo/laranja = `HIGH`, vermelho =
+`VERY_HIGH`. São classes relativas de refletividade do PNG MaxCAPPI, sem conversão
+para dBZ, mm/h ou volume de chuva. Cor não representa severidade oficial.
 
-Os percentuais usam o total de pixels das quatro classes relativas já calculadas:
-`forte = 100 × (alta + muito_alta) / total` e
-`muito_alta = 100 × muito_alta / total`. A intensidade é suficiente quando
-`muito_alta >= 2%` **ou** `forte >= 10%`, com pelo menos dois pixels de classe
-alta ou muito alta. Um pixel vermelho isolado, contagens incompletas/inválidas
-ou total zero não habilitam o teste. Azul/verde próximo sozinho não envia.
-Os dois mínimos acima são configuráveis no `.env`, em percentuais de 0 a 100
-(zero excluído); valores vazios, inválidos ou fora desse intervalo voltam aos
-defaults de 10 e 2. Reinicie o worker após ajustar a configuração.
-A paleta permanece igual, sem conversão para dBZ ou mm/h.
+A frente relevante contém somente pixels meteorológicos originais de cada cluster
+cuja distância ao Distrito de São José seja menor ou igual à distância mínima mais
+`RADAR_ALERT_FRONT_DEPTH_KM=15`. A morfologia agrupa fragmentos, mas seus pixels
+artificiais não entram nas contagens nem aproximam a borda. As distâncias de todos
+os pixels são calculadas uma única vez na detecção e reutilizadas para borda e
+frente. Assim, vermelho na traseira não contamina uma frente verde, e uma frente
+vermelha não se dilui no restante de um cluster grande.
 
-A mensagem usa “Distrito de São José”, distância, aproximação, temperatura e rajada
-atuais da estação local, com link para https://meteo.eesjv.com.br. Não inclui ETA.
-Temperatura (°C) e rajada (km/h) vêm da última leitura persistida; valores ausentes,
-inválidos ou de leitura desatualizada aparecem como indisponíveis. Os painéis
-administrativos mostram classe predominante, percentuais forte/muito alta e
-intensidade suficiente.
+Como radar e nowcasting são processos separados, a frente segue pela única coluna
+nova `radar_clusters.frente_relevante_json TEXT`, nullable, adicionada de forma
+idempotente. Nenhuma tabela é recriada. A migração usa o mecanismo aditivo existente
+na inicialização do banco. Registros antigos permanecem intactos, com valor NULL;
+snapshots sem frente são legíveis, mas não autorizam envio. Não há reprocessamento
+de históricos: novos frames passam a fornecer os dados necessários.
 
-O episódio é persistido na chave isolada `nowcasting_test_alert` da estrutura genérica
-`health_check_estado`, sem armazenar telefone, credenciais ou texto enviado. Um track
-gera uma chave como `track:27`; sem tracking válido não há envio. A troca de cluster
-ou track não repete o teste enquanto o episódio estiver ativo, e perder intensidade
-mantendo o nível vermelho não rearma. Estados de episódios antigos são preservados.
-O rearm padrão exige 30 minutos
-contínuos fora do vermelho e o cooldown global padrão exige 60 minutos desde o último
-envio. Falhas no WhatsApp não derrubam o worker e uma nova tentativa respeita o mesmo
-cooldown de segurança.
+A classificação testa, nesta ordem, quantidade **e** percentual da frente:
+
+| Intensidade | Pixels usados | Mínimo de pixels | Mínimo percentual |
+|---|---|---:|---:|
+| VERY_HIGH | muito alta | 2 | 2% |
+| HIGH | alta + muito alta | 2 | 10% |
+| MEDIUM | média + alta + muito alta | 3 | 10% |
+| LOW / NONE | abaixo dos critérios / ausência | — | — |
+
+Os nomes completos das configurações e seus defaults são:
+
+```dotenv
+RADAR_ALERT_FRONT_DEPTH_KM=15
+NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PERCENT=10
+NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PIXELS=3
+NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT=10
+NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PIXELS=2
+NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT=2
+NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PIXELS=2
+NOWCASTING_ALERT_MEDIUM_NEAR_KM=25
+NOWCASTING_ALERT_MEDIUM_TRACKED_KM=50
+NOWCASTING_ALERT_HIGH_NEAR_KM=35
+NOWCASTING_ALERT_HIGH_TRACKED_KM=75
+NOWCASTING_ALERT_VERY_HIGH_NEAR_KM=50
+NOWCASTING_ALERT_VERY_HIGH_TRACKED_KM=100
+```
+
+Percentuais aceitam 0–100 inclusive; pixels exigem inteiros >=1; profundidade e
+distâncias exigem valores >0. NaN, infinito e valores inválidos voltam ao default.
+Mesmo configurando um mínimo de um pixel, um pixel isolado nunca autoriza alerta.
+Thresholds e distâncias são **experimentais** e precisam de calibração com eventos
+reais. Reinicie os workers após modificar o ambiente; a profundidade nova vale para
+os próximos frames e os critérios de decisão são revalidados antes do envio.
+
+| Intensidade | Nível público | PROXIMIDADE | TRACKING |
+|---|---|---:|---:|
+| MEDIUM | INFORMATIVO | <=25 km | <=50 km |
+| HIGH | ATENCAO | <=35 km | <=75 km |
+| VERY_HIGH | ALERTA | <=50 km | <=100 km |
+
+A distância usada é a mínima dos pixels originais até o Distrito, mantendo a borda
+como gatilho. Dentro da proximidade não se exige track, três frames, aproximação ou
+trajetória. Fora dela, a rota TRACKING exige track_id, tracking válido, aproximação
+e trajetória compatível. Radar operacional, atual, frame válido, ausência de clutter
+forte e chuva local ainda não observada valem para ambas. Confirmação regional
+continua no diagnóstico e não é requisito obrigatório.
+
+`certainty` é `POSSIVEL` sem aproximação confirmada, `PROVAVEL` com tracking válido,
+aproximação e trajetória compatível, ou `OBSERVADO` quando já chove localmente.
+`rain_rate >0` bloqueia novos preventivos do episódio. `urgency` é `IMEDIATO` para
+PROXIMIDADE, `ESPERADO` para TRACKING e `MONITORAMENTO` fora das rotas autorizadas.
+O nível público é calculado separadamente de confiança e urgência.
+
+`NOWCASTING_TEST_ALERTS_ENABLED=false` continua sendo o default. Quando habilitado,
+o envio usa exclusivamente `ADMIN_ALERT_PHONE`, sem consultar usuários nem usar
+filas normais. `NOWCASTING_ALERTS_ENABLED` continua sem habilitar envio público.
+O estado JSON em `health_check_estado`, chave `nowcasting_test_alert`, adiciona
+`highest_sent_severity`, `last_sent_alert_level` e `last_sent_radar_intensity`.
+INFORMATIVO=1, ATENCAO=2 e ALERTA=3: o primeiro envia, aumentos enviam atualizações,
+repetições e reduções não enviam. A troca de track/cluster não reinicia o episódio.
+Estados legados já notificados recebem máximo 3 para evitar reenvio na atualização.
+
+O rearm exige 30 minutos de ausência confirmada (sem intensidade relevante ou fora
+do alcance). Radar indisponível, clutter ou perda de tracking não comprovam fim do
+episódio. Rearmar zera os três campos novos. O cooldown padrão de 60 minutos protege
+novos episódios e retries; escalonamentos após sucesso são imediatos. Tentativas
+pendentes ou falhas mantêm cooldown, sem apagar a maior severidade já enviada.
+
+As mensagens usam os textos probabilísticos solicitados para cada nível, sempre
+“Distrito de São José” e o link https://meteo.eesjv.com.br. Sem tracking confirmado
+usam “próxima”; somente com aproximação confiável usam “se aproximando”. O ETA da
+borda já existente aparece como “Estimativa de chegada: XX min.” apenas com tracking
+confirmado e qualidade BOA/MODERADA, nunca como promessa. Não incluem terminologia
+técnica, temperatura nem rajada. O painel administrativo apresenta separadamente
+intensidade, nível público, confiança, urgência, autorização, contagens e distribuição
+da frente, além de tracking, distância, ETA e motivo de bloqueio. Logs não incluem
+telefone, chaves ou credenciais.
 
 O MaxCAPPI processado é imagem RGB, não volume bruto calibrado. Portanto o sistema mostra “eco de radar”/“área de refletividade detectada” e não inventa dBZ, mm/h, probabilidade, granizo, severidade ou “tempestade confirmada”. Estações externas são aproximadamente horárias, o radar pode conter clutter, o ETA depende da continuidade e células podem nascer ou desaparecer rapidamente. Nowcasting não substitui avisos oficiais. As regras precisam rodar em observação por dias/semanas e ser comparadas com a chegada real à escola antes de qualquer alerta preventivo.
 

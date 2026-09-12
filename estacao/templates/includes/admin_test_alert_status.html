@@ -11,7 +11,10 @@
     {% elif test_alert.reason == 'status_unavailable' %}
     <span>Status experimental temporariamente indisponível; o monitoramento principal continua ativo.</span>
     {% else %}
-    <span>Somente situações vermelhas elegíveis podem gerar um teste administrativo.</span>
+    <span>Chuva de intensidade média ou superior pode gerar teste por proximidade ou aproximação confirmada.</span>
+    {% endif %}
+    {% if test_alert.get('last_sent_alert_level') %}
+    <span>Maior nível enviado: {{ test_alert.get('last_sent_alert_level') }}.</span>
     {% endif %}
   </div>
 </aside>

@@ -10,7 +10,8 @@ from __future__ import annotations
 import math
 from statistics import median
 
-from services.nowcasting_intensity import CAMPOS_INTENSIDADE
+from config import numero_alerta_valido
+from services.nowcasting_intensity import CAMPOS_INTENSIDADE, FRONT_COUNT_FIELDS, classificar_intensidade_frente
 from time_utils import parse_datetime
 
 
@@ -23,9 +24,84 @@ NIVEIS_CORES = {
     "LARANJA": "laranja",
     "VERMELHO": "vermelho",
 }
+ALERT_SEVERITY = {"NONE": 0, "INFORMATIVO": 1, "ATENCAO": 2, "ALERTA": 3}
+DISTANCE_DEFAULTS = {"MEDIUM": (25, 50), "HIGH": (35, 75), "VERY_HIGH": (50, 100)}
+
+
+def tracking_confirmado(alerta):
+    return (alerta.get("tracking_valid") is True and alerta.get("track_id") is not None
+            and alerta.get("approaching") is True and alerta.get("trajectory_compatible") is True)
+
+
+def classificar_alerta_publico(radar_intensity, *, observado=False, tracking=False, authorization="NENHUMA"):
+    return {
+        "alert_level": {"MEDIUM": "INFORMATIVO", "HIGH": "ATENCAO", "VERY_HIGH": "ALERTA"}.get(radar_intensity, "NONE"),
+        "certainty": "OBSERVADO" if observado else "PROVAVEL" if tracking else "POSSIVEL",
+        "urgency": {"PROXIMIDADE": "IMEDIATO", "TRACKING": "ESPERADO"}.get(authorization, "MONITORAMENTO"),
+    }
+
+
+def decidir_alerta_preventivo(alerta, *, radar_atualizado, evento_local, config=None,
+                              radar_stale=False, frame_valido=True):
+    """Duas rotas independentes; dados antigos incompletos ficam em monitoramento."""
+    alerta, config = alerta or {}, config or {}
+    intensidade = classificar_intensidade_frente(alerta, config)
+    distancia = _distancia_valida(alerta.get("distance_km"))
+    observado = bool(evento_local or alerta.get("local_event") is True)
+    confirmado = tracking_confirmado(alerta)
+    clutter_index = alerta.get("clutter_index", alerta.get("indice_persistencia_clutter"))
+    authorization, motivo = "NENHUMA", None
+    if not frame_valido:
+        motivo = "invalid_frame"
+    elif radar_stale:
+        motivo = "radar_stale"
+    elif not radar_atualizado:
+        motivo = "radar_unavailable"
+    elif (alerta.get("clutter") is True or alerta.get("low_confidence") is True
+          or possui_clutter_forte({"indice_persistencia_clutter": alerta.get("clutter_index", alerta.get("indice_persistencia_clutter"))})):
+        motivo = "clutter"
+    elif observado:
+        motivo = "local_event_observed"
+    elif clutter_index is not None and (
+        _distancia_valida(clutter_index) is None or float(clutter_index) > 1
+    ):
+        motivo = "inconsistent_data"
+    elif not intensidade["front_data_valid"]:
+        motivo = "inconsistent_data"
+    elif intensidade["front_pixels_total"] < 2:
+        motivo = "insufficient_pixels"
+    elif distancia is None:
+        motivo = "inconsistent_data"
+    elif intensidade["radar_intensity"] not in DISTANCE_DEFAULTS:
+        motivo = "intensity_below_medium"
+    else:
+        classe = intensidade["radar_intensity"]
+        near, tracked = (numero_alerta_valido(config.get(f"alert_{classe.lower()}_{rota}_km"), default)
+                         for rota, default in zip(("near", "tracked"), DISTANCE_DEFAULTS[classe]))
+        if distancia <= near:
+            authorization = "PROXIMIDADE"
+        elif distancia > tracked:
+            motivo = "outside_proximity_range"
+        elif alerta.get("tracking_valid") is not True or alerta.get("track_id") is None:
+            motivo = "tracking_insufficient_for_early_warning"
+        elif alerta.get("approaching") is not True:
+            motivo = "not_approaching"
+        elif alerta.get("trajectory_compatible") is not True:
+            motivo = "trajectory_incompatible"
+        else:
+            authorization = "TRACKING"
+    return {
+        **intensidade,
+        **classificar_alerta_publico(intensidade["radar_intensity"], observado=observado,
+                                    tracking=confirmado, authorization=authorization),
+        "event": "rain_observed" if observado else "rain_approaching" if confirmado else "possible_rain",
+        "authorization": authorization, "block_reason": motivo, "would_send": motivo is None,
+    }
 
 
 def _distancia_valida(valor):
+    if isinstance(valor, bool):
+        return None
     try:
         distancia = float(valor)
     except (TypeError, ValueError):
@@ -204,9 +280,12 @@ def criar_alerta_preventivo(
     radar_atualizado,
     evento_local,
     confirmacao_regional=None,
+    config=None,
+    radar_stale=False,
+    frame_valido=True,
 ):
     """Monta o estado visual; nunca enfileira ou envia mensagens."""
-    ameaca = eco_alerta or {}
+    ameaca = eco_alerta if eco_alerta is not None else dict.fromkeys(FRONT_COUNT_FIELDS, 0)
     confirmacao = confirmacao_regional or {
         "confirmada": False,
         "stations": [],
@@ -229,7 +308,7 @@ def criar_alerta_preventivo(
         nivel = "AMARELO"
 
     if evento_local:
-        mensagem = "Chuva já observada na EE São José."
+        mensagem = "Chuva já observada no Distrito de São José."
     elif not radar_atualizado:
         mensagem = "Dados operacionais do radar indisponíveis."
     elif clutter_forte and distancia is not None and distancia <= 100:
@@ -260,14 +339,14 @@ def criar_alerta_preventivo(
         "frame_count": ameaca.get("frame_count"),
         "duration_minutes": ameaca.get("duration_minutes"),
         "approaching": ameaca.get("approaching"),
-        "trajectory_compatible": bool(ameaca.get("trajectory_compatible")),
+        "trajectory_compatible": ameaca.get("trajectory_compatible"),
         "direction": ameaca.get("direction"),
         "speed_kmh": ameaca.get("speed_kmh"),
         "eta_minutes": ameaca.get("eta_minutes"),
         "eta_border_minutes": ameaca.get("eta_border_minutes"),
         "eta_border_quality": ameaca.get("eta_border_quality"),
         "border_approach_rate_kmh": ameaca.get("border_approach_rate_kmh"),
-        "clutter": bool(ameaca.get("suspeito_clutter") or clutter_forte),
+        "clutter": clutter_forte,
         "clutter_index": ameaca.get("indice_persistencia_clutter"),
         "low_confidence": clutter_forte,
         "regional_confirmation": bool(confirmacao.get("confirmada")),
@@ -277,9 +356,14 @@ def criar_alerta_preventivo(
         **{campo: ameaca.get(campo) for campo in CAMPOS_INTENSIDADE},
         "preventive_sending": "DESATIVADO",
     }
-    would_send = motivo_bloqueio_meteorologico(
-        alerta, radar_atualizado=radar_atualizado, evento_local=evento_local
-    ) is None
+    decisao = decidir_alerta_preventivo(
+        {**ameaca, **alerta}, radar_atualizado=radar_atualizado, evento_local=evento_local,
+        config=config, radar_stale=radar_stale, frame_valido=frame_valido,
+    )
+    alerta.update(decisao)
+    if not tracking_confirmado(alerta):
+        alerta.update(eta_minutes=None, eta_border_minutes=None, eta_border_quality=None)
+    would_send = decisao["would_send"]
     alerta.update({
         "would_send": would_send,
         "simulation_message": (
@@ -291,26 +375,7 @@ def criar_alerta_preventivo(
     return alerta
 
 
-def motivo_bloqueio_meteorologico(alerta, *, radar_atualizado, evento_local):
-    """Requisitos cumulativos do candidato; o nível visual não os substitui."""
-    if not radar_atualizado:
-        return "radar_unavailable"
-    if (alerta.get("clutter") is True or alerta.get("low_confidence") is True
-            or possui_clutter_forte({
-                "indice_persistencia_clutter": alerta.get("clutter_index")
-            })):
-        return "clutter"
-    if evento_local or alerta.get("local_event") is True:
-        return "local_event_observed"
-    distancia = _distancia_valida(alerta.get("distance_km"))
-    if distancia is None or distancia > 25:
-        return "distance_not_critical"
-    if alerta.get("tracking_valid") is not True or alerta.get("track_id") is None:
-        return "tracking_insufficient"
-    if alerta.get("approaching") is not True:
-        return "not_approaching"
-    if alerta.get("trajectory_compatible") is not True:
-        return "trajectory_incompatible"
-    if alerta.get("intensidade_suficiente") is not True:
-        return "intensity_insufficient"
-    return None
+def motivo_bloqueio_meteorologico(alerta, *, radar_atualizado, evento_local, config=None):
+    return decidir_alerta_preventivo(
+        alerta, radar_atualizado=radar_atualizado, evento_local=evento_local, config=config
+    )["block_reason"]

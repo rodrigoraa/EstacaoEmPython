@@ -111,6 +111,50 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM radar_frames").fetchone()[0], 1)
         conn.close()
 
+    def test_frente_persistida_sem_track_chega_ao_admin_no_primeiro_frame(self):
+        from dataclasses import replace
+        from config import nowcasting_config
+        from services.radar_repository import salvar_resultado_frame
+        from services.nowcasting_repository import carregar_entradas_nowcasting
+        from services.nowcasting_service import analisar_nowcasting
+        from services.nowcasting_test_alerts import processar_alerta_teste_admin
+
+        dados_frente = {"front_pixels_low": 0, "front_pixels_medium": 200,
+                       "front_pixels_high": 0, "front_pixels_very_high": 0,
+                       "front_pixels_total": 200, "front_depth_km": 15}
+        cluster = replace(self.cluster(lat=-22.3), frente_relevante=dados_frente)
+        horario = datetime.now(timezone.utc).replace(microsecond=0)
+        frame_id, _ = salvar_resultado_frame(
+            self.frame(horario.isoformat(), "frente"), None, None, 100, 100, [cluster]
+        )
+        config = nowcasting_config()
+        config["test_alerts_enabled"] = True
+        entradas = carregar_entradas_nowcasting(config)
+        radar = entradas["radar"] if isinstance(entradas, dict) else entradas[0]
+        self.assertEqual(len(radar["tracks_atuais"]), 1)
+        self.assertIsNone(radar["tracks_atuais"][0]["track"]["track_id"])
+        self.assertEqual(radar["tracks_atuais"][0]["cluster"]["front_pixels_medium"], 200)
+        snapshot = analisar_nowcasting(radar, {"stations": []}, {"rain_rate": 0}, config, now=horario)
+        alerta = snapshot["alerta_preventivo"]
+        self.assertEqual(alerta["authorization"], "PROXIMIDADE")
+        self.assertEqual(alerta["alert_level"], "INFORMATIVO")
+        sender = mock.Mock()
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        processar_alerta_teste_admin(snapshot, config, now=horario, sender=sender)
+        sender.assert_called_once()
+        self.assertEqual(sender.call_args.args[0], "67999999999")
+        self.assertNotIn("se aproximando", sender.call_args.args[1])
+        conn = self.database.get_db()
+        try:
+            coluna = next(row for row in conn.execute("PRAGMA table_info(radar_clusters)") if row["name"] == "frente_relevante_json")
+            self.assertEqual(coluna["notnull"], 0)
+            persistido = conn.execute("SELECT frente_relevante_json FROM radar_clusters WHERE frame_id=?", (frame_id,)).fetchone()[0]
+            self.assertEqual(json.loads(persistido), dados_frente)
+            for tabela in ("alertas_fila", "alertas_eventos"):
+                self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {tabela}").fetchone()[0], 0)
+        finally:
+            conn.close()
+
     def test_pagina_e_api_sem_dados(self):
         self.autenticar_admin()
         pagina = self.client.get("/admin/radar")

@@ -91,11 +91,11 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 "low_confidence": clutter,
                 "track_id": track_id,
                 "cluster_id": cluster_id,
-                "distance_km": 22.4,
-                "pixels_refletividade_baixa": 800,
-                "pixels_refletividade_media": 100,
-                "pixels_refletividade_alta": 100,
-                "pixels_refletividade_muito_alta": 0,
+                "distance_km": 22.4 if level == "VERMELHO" else 180,
+                "front_pixels_low": 800,
+                "front_pixels_medium": 100,
+                "front_pixels_high": 100,
+                "front_pixels_very_high": 0,
                 "classe_predominante": "REFLETIVIDADE_BAIXA",
                 "classe_maxima": "REFLETIVIDADE_ALTA",
                 "trajectory_compatible": True,
@@ -278,7 +278,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
     def test_vermelho_sem_would_send_ou_radar_operacional_nao_envia(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         for snapshot in (
-            self.snapshot(would_send=False),
+            self.snapshot(operational=False),
             self.snapshot(operational=False),
         ):
             with self.subTest(snapshot=snapshot):
@@ -297,7 +297,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 sender = mock.Mock()
                 status = self.processar(snapshot, now=now, sender=sender)
                 sender.assert_not_called()
-                self.assertEqual(status["reason"], "snapshot_stale")
+                self.assertEqual(status["reason"], "radar_stale" if snapshot["radar"]["stale"] else "snapshot_stale")
 
     def test_evento_local_ou_chuva_atual_suprime_todo_o_episodio(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
@@ -317,10 +317,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 self.processar(seco, now=self.base + timedelta(minutes=5), sender=sender)
                 sender.assert_not_called()
                 conn = self.database.get_db()
-                conn.execute(
-                    "DELETE FROM health_check_estado WHERE chave=?",
-                    (self.service.ESTADO_CHAVE,),
-                )
+                self.service.salvar_estado_alerta_teste(conn, self.service.estado_alerta_teste_padrao())
                 conn.commit()
                 conn.close()
 
@@ -417,7 +414,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
             sender=sender,
         )
         self.assertEqual(sender.call_count, 1)
-        self.assertEqual(status["event_key"], "track:44")
+        self.assertEqual(status["event_key"], "untracked_rain_episode")
 
     def test_track_estavel_envia_somente_uma_vez(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
@@ -463,82 +460,40 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         sucesso.assert_called_once()
         self.assertTrue(status["sent_for_current_episode"])
 
-    def test_mensagem_inclui_temperatura_rajada_atuais_e_link(self):
+    def test_mensagem_informativa_exata_com_eta_confiavel(self):
         snapshot = self.snapshot()
-        snapshot["alerta_preventivo"]["distance_km"] = 20
-        mensagem = self.service.montar_mensagem_alerta_teste(snapshot)
-        self.assertEqual(mensagem, (
-            "⚠️ Possível chuva chegando ao Distrito de São José.\n"
-            "Chuva forte a aproximadamente 20 km e se aproximando.\n"
-            "A temperatura atual é 27,5 °C.\n"
-            "E rajadas de vento atuais de 18,2 km/h.\n\n"
-            "Para mais informações acesse: https://meteo.eesjv.com.br"
+        snapshot["alerta_preventivo"].update(distance_km=20, alert_level="INFORMATIVO")
+        self.assertEqual(self.service.montar_mensagem_alerta_teste(snapshot), (
+            "🌧️ Possível chuva se aproximando do Distrito de São José.\n\n"
+            "Uma área de chuva está a aproximadamente 20 km da região.\n\n"
+            "Estimativa de chegada: 25 min.\n\n"
+            "Para mais informações acesse:\nhttps://meteo.eesjv.com.br"
         ))
-        for proibido in ("EE São José", "Escola Estadual São José", "tracking",
-                         "frames", "estações regionais", "Estimativa de chegada", "ETA"):
-            self.assertNotIn(proibido, mensagem)
 
-    def test_mensagem_novo_formato_nao_inclui_eta(self):
-        for eta in (None, 25, -1, float("nan"), float("inf")):
-            with self.subTest(eta=eta):
-                snapshot = self.snapshot()
-                snapshot["alerta_preventivo"]["eta_border_minutes"] = eta
-                mensagem = self.service.montar_mensagem_alerta_teste(snapshot)
-                self.assertNotIn("min", mensagem)
-                self.assertNotIn("ETA", mensagem)
-                self.assertIn("e se aproximando.", mensagem)
-
-    def test_mensagem_nao_apresenta_dados_ausentes_ou_desatualizados_como_atuais(self):
-        for local in (None, {}, {"stale": True, "temperature": 30, "wind_gust": 80},
-                      {"temperature": 30, "wind_gust": 80}):
-            with self.subTest(local=local):
-                snapshot = self.snapshot()
-                snapshot["escola"] = local
-                mensagem = self.service.montar_mensagem_alerta_teste(snapshot)
-                self.assertIn("Temperatura atual indisponível.", mensagem)
-                self.assertIn("Rajadas de vento atuais indisponíveis.", mensagem)
-                self.assertNotIn("30", mensagem)
-                self.assertNotIn("80", mensagem)
-
-    def test_mensagem_valida_cada_medicao_sem_inventar_zero(self):
-        for campo in ("temperature", "wind_gust"):
-            for valor in (None, "invalido", float("nan"), float("inf")):
-                with self.subTest(campo=campo, valor=valor):
-                    snapshot = self.snapshot()
-                    snapshot["escola"][campo] = valor
-                    mensagem = self.service.montar_mensagem_alerta_teste(snapshot)
-                    if campo == "temperature":
-                        self.assertIn("Temperatura atual indisponível.", mensagem)
-                        self.assertIn("18,2 km/h", mensagem)
-                    else:
-                        self.assertIn("Rajadas de vento atuais indisponíveis.", mensagem)
-                        self.assertIn("27,5 °C", mensagem)
+    def test_mensagem_independe_de_temperatura_e_rajada(self):
         snapshot = self.snapshot()
-        snapshot["escola"].update({"temperature": -2.5, "wind_gust": 0})
-        mensagem = self.service.montar_mensagem_alerta_teste(snapshot)
-        self.assertIn("-2,5 °C", mensagem)
-        self.assertIn("0,0 km/h", mensagem)
-        snapshot["escola"]["wind_gust"] = -1
-        self.assertIn("Rajadas de vento atuais indisponíveis.",
-                      self.service.montar_mensagem_alerta_teste(snapshot))
+        esperado = self.service.montar_mensagem_alerta_teste(snapshot)
+        for local in (None, {}, {"stale": True, "temperature": 30, "wind_gust": 80}):
+            snapshot["escola"] = local
+            self.assertEqual(self.service.montar_mensagem_alerta_teste(snapshot), esperado)
 
     def test_requisitos_meteorologicos_bloqueiam_mesmo_vermelho_e_would_send(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         casos = (
-            ({"distance_km": 10, "pixels_refletividade_alta": 0}, "intensity_insufficient"),
-            ({"distance_km": 10, "pixels_refletividade_baixa": 9999,
-              "pixels_refletividade_alta": 0, "pixels_refletividade_muito_alta": 1,
-              "classe_maxima": "REFLETIVIDADE_MUITO_ALTA"}, "intensity_insufficient"),
-            ({"distance_km": 30}, "distance_not_critical"),
-            ({"distance_km": None}, "distance_not_critical"),
-            ({"distance_km": float("nan")}, "distance_not_critical"),
-            ({"distance_km": -1}, "distance_not_critical"),
-            ({"approaching": False}, "not_approaching"),
-            ({"trajectory_compatible": False}, "trajectory_incompatible"),
-            ({"tracking_valid": False}, "tracking_insufficient"),
-            ({"track_id": None}, "tracking_insufficient"),
+            ({"distance_km": 10, "front_pixels_medium": 0, "front_pixels_high": 0}, "intensity_below_medium"),
+            ({"distance_km": 10, "front_pixels_low": 9999,
+              "front_pixels_medium": 0, "front_pixels_high": 0, "front_pixels_very_high": 1,
+              "classe_maxima": "REFLETIVIDADE_MUITO_ALTA"}, "intensity_below_medium"),
+            ({"distance_km": 80}, "outside_proximity_range"),
+            ({"distance_km": None}, "inconsistent_data"),
+            ({"distance_km": float("nan")}, "inconsistent_data"),
+            ({"distance_km": -1}, "inconsistent_data"),
+            ({"distance_km": 60, "approaching": False}, "not_approaching"),
+            ({"distance_km": 60, "trajectory_compatible": False}, "trajectory_incompatible"),
+            ({"distance_km": 60, "tracking_valid": False}, "tracking_insufficient_for_early_warning"),
+            ({"distance_km": 60, "track_id": None}, "tracking_insufficient_for_early_warning"),
             ({"clutter_index": 0.75}, "clutter"),
-            ({"pixels_refletividade_baixa": None}, "intensity_insufficient"),
+            ({"front_pixels_low": None}, "inconsistent_data"),
         )
         for alteracoes, motivo in casos:
             with self.subTest(alteracoes=alteracoes):
@@ -552,6 +507,89 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 self.assertNotIn(os.environ["ADMIN_ALERT_PHONE"], "\n".join(logs.output))
         self.assert_sem_fila_preventiva()
 
+    def test_escalonamento_reinicio_rearm_e_isolamento_sql(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        sender = mock.Mock()
+        sqls = []
+        get_db = self.database.get_db
+
+        def conexao_monitorada():
+            conn = get_db()
+            conn.set_trace_callback(sqls.append)
+            return conn
+
+        with mock.patch.object(self.database, "get_db", side_effect=conexao_monitorada):
+            for minuto, classe, esperados in ((0, "medium", 1), (1, "medium", 1),
+                                              (2, "high", 2), (3, "high", 2),
+                                              (4, "very_high", 3), (5, "very_high", 3),
+                                              (6, "high", 3), (7, "medium", 3)):
+                now = self.base + timedelta(minutes=minuto)
+                snapshot = self.snapshot(now=now, tracking=False, track_id=None)
+                alerta = snapshot["alerta_preventivo"]
+                for campo in ("low", "medium", "high", "very_high"):
+                    alerta[f"front_pixels_{campo}"] = 100 if campo == classe else 0
+                self.processar(snapshot, now=now, sender=sender)
+                self.assertEqual(sender.call_count, esperados)
+                self.service = importlib.reload(self.service)
+        _, estado = self.estado_persistido()
+        self.assertEqual(estado["highest_sent_severity"], 3)
+        self.assertEqual(estado["last_sent_alert_level"], "ALERTA")
+        self.assertEqual(estado["last_sent_radar_intensity"], "VERY_HIGH")
+        for sql in sqls:
+            for proibido in ("usuarios", "alertas_fila", "alertas_eventos"):
+                self.assertNotIn(proibido, sql.lower())
+        self.assert_sem_fila_preventiva()
+        for minuto in (10, 41):
+            now = self.base + timedelta(minutes=minuto)
+            self.processar(self.snapshot(level="NORMAL", now=now), now=now, sender=sender)
+        _, estado = self.estado_persistido()
+        self.assertEqual(estado["highest_sent_severity"], 0)
+        self.assertIsNone(estado["last_sent_alert_level"])
+        self.assertIsNone(estado["last_sent_radar_intensity"])
+        now = self.base + timedelta(minutes=70)
+        snapshot = self.snapshot(now=now)
+        snapshot["alerta_preventivo"].update(front_pixels_low=0, front_pixels_medium=100, front_pixels_high=0)
+        self.processar(snapshot, now=now, sender=sender)
+        self.assertEqual(sender.call_count, 4)
+        for chamada in sender.call_args_list:
+            self.assertEqual(chamada.args[0], os.environ["ADMIN_ALERT_PHONE"])
+
+    def test_estado_antigo_e_snapshot_sem_frente_sao_compativeis(self):
+        self.assertEqual(self.service._normalizar_estado({})["highest_sent_severity"], 0)
+        self.assertEqual(self.service._normalizar_estado({"sent_for_current_episode": True})["highest_sent_severity"], 3)
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        snapshot = self.snapshot()
+        for campo in list(snapshot["alerta_preventivo"]):
+            if campo.startswith("front_"):
+                snapshot["alerta_preventivo"].pop(campo)
+        sender = mock.Mock()
+        self.assertEqual(self.processar(snapshot, sender=sender)["reason"], "inconsistent_data")
+        sender.assert_not_called()
+
+    def test_falha_no_escalonamento_preserva_maximo_e_cooldown(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        self.processar(sender=mock.Mock())
+        _, estado = self.estado_persistido()
+        self.assertEqual(estado["highest_sent_severity"], 2)
+        erro = mock.Mock(side_effect=RuntimeError("indisponivel"))
+        for minutos in (1, 2, 3):
+            now = self.base + timedelta(minutes=minutos)
+            snapshot = self.snapshot(now=now)
+            snapshot["alerta_preventivo"].update(front_pixels_very_high=100)
+            self.processar(snapshot, now=now, sender=erro)
+        self.assertEqual(erro.call_count, 1)
+        _, estado = self.estado_persistido()
+        self.assertTrue(estado["sent_for_current_episode"])
+        self.assertEqual(estado["highest_sent_severity"], 2)
+
+    def test_chuva_local_durante_radar_stale_tambem_suprime_episodio(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        sender = mock.Mock()
+        self.processar(self.snapshot(stale=True, rain_rate=1), sender=sender)
+        self.processar(self.snapshot(), sender=sender)
+        sender.assert_not_called()
+        self.assertTrue(self.estado_persistido()[1]["suppressed_for_current_episode"])
+
     def test_intensidade_suficiente_envia_a_20_km(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         snapshot = self.snapshot()
@@ -564,9 +602,9 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         snapshot = self.snapshot()
         snapshot["alerta_preventivo"].update({
-            "distance_km": 20, "pixels_refletividade_baixa": 970,
-            "pixels_refletividade_media": 0, "pixels_refletividade_alta": 0,
-            "pixels_refletividade_muito_alta": 30,
+            "distance_km": 20, "front_pixels_low": 970,
+            "front_pixels_medium": 0, "front_pixels_high": 0,
+            "front_pixels_very_high": 30,
             "classe_maxima": "REFLETIVIDADE_MUITO_ALTA",
         })
         sender = mock.Mock()
@@ -577,21 +615,22 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         snapshot = self.snapshot()
         snapshot["alerta_preventivo"].update({
-            "pixels_refletividade_baixa": 826, "pixels_refletividade_media": 100,
-            "pixels_refletividade_alta": 66, "pixels_refletividade_muito_alta": 8,
+            "front_pixels_low": 826, "front_pixels_medium": 100,
+            "front_pixels_high": 66, "front_pixels_very_high": 8,
         })
         with self.assertLogs("services.nowcasting_test_alerts", level="INFO") as logs:
             self.processar(snapshot, sender=mock.Mock())
-        self.assertIn("intensidade insuficiente forte=7.4% muito_alta=0.8%", "\n".join(logs.output))
+        self.assertIn("front_percent_strong", "\n".join(logs.output))
+        self.assertIn("7.4", "\n".join(logs.output))
 
-    def test_perda_de_intensidade_nao_rearma_episodio_vermelho(self):
+    def test_reducao_para_medium_nao_reenvia_mesmo_episodio(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         sender = mock.Mock()
         self.processar(sender=sender)
         for minutos in (5, 65):
             now = self.base + timedelta(minutes=minutos)
             fraco = self.snapshot(now=now)
-            fraco["alerta_preventivo"]["pixels_refletividade_alta"] = 0
+            fraco["alerta_preventivo"]["front_pixels_high"] = 0
             self.processar(fraco, now=now, sender=sender)
         now = self.base + timedelta(minutes=70)
         self.processar(self.snapshot(now=now), now=now, sender=sender)

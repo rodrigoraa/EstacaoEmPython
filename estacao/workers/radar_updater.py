@@ -107,6 +107,7 @@ def processar_frame(client, frame, config, coletado_em_utc=None) -> tuple[int, i
                 dilate_iterations=config["dilate_iterations"],
                 clutter_radius_km=config["clutter_radius_km"],
                 valid_radius_km=frame.raio_km,
+                alert_front_depth_km=config.get("alert_front_depth_km", 15),
             ),
         )
         derivada = gerar_imagem_analisada(

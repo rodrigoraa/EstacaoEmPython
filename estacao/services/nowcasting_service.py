@@ -12,11 +12,12 @@ from services.preventive_alerts import (
     possui_clutter_forte,
     qualidade_tracking,
     selecionar_eco_alerta_proximidade,
+    ALERT_SEVERITY,
 )
 from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.5"
+NOWCASTING_ALGORITHM_VERSION = "1.6"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -236,7 +237,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
     distance = cluster.get("distancia_borda_escola_km")
     track_valid = bool(
         radar_fresh
-        and track.get("quantidade_frames", 0) >= config["track_min_frames"]
+        and (track.get("quantidade_frames") or 0) >= config["track_min_frames"]
         and track.get("velocidade_kmh") is not None
         and track.get("bearing_movimento") is not None
     )
@@ -468,17 +469,24 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         if principal else {"confirmada": False, "stations": [], "evidence_count": 0}
     )
     eco_alerta = selecionar_eco_alerta_proximidade(ameacas)
-    confirmacao_alerta = (
-        eco_alerta.get("confirmacao_regional")
-        if eco_alerta
-        else {"confirmada": False, "stations": [], "evidence_count": 0}
-    )
-    alerta_preventivo = criar_alerta_preventivo(
-        eco_alerta,
-        radar_atualizado=radar_fresh,
-        evento_local=evento_local,
-        confirmacao_regional=confirmacao_alerta,
-    )
+    def alerta_para(ameaca):
+        return criar_alerta_preventivo(
+            ameaca, radar_atualizado=radar_fresh, evento_local=evento_local,
+            confirmacao_regional=(ameaca or {}).get("confirmacao_regional"), config=config,
+            radar_stale=radar.get("stale") is True, frame_valido=not timestamp_suspect,
+        )
+
+    # Um azul próximo não pode ocultar um candidato relevante de outro sistema.
+    alertas = [alerta_para(ameaca) for ameaca in ameacas]
+    candidatos = [alerta for alerta in alertas if alerta["would_send"]]
+    if candidatos:
+        alerta_preventivo = min(candidatos, key=lambda a: (
+            -ALERT_SEVERITY[a["alert_level"]], a["distance_km"]
+        ))
+    else:
+        alerta_preventivo = next((a for a in alertas if a["cluster_id"] == (eco_alerta or {}).get("cluster_id")), None)
+        if alerta_preventivo is None:
+            alerta_preventivo = alerta_para(None)
     radar_publico = {
         "disponivel": bool(radar.get("disponivel")),
         "operacional": radar_fresh,

@@ -19,6 +19,8 @@ class PreventiveAlertsTest(unittest.TestCase):
     def ameaca(self, distancia, clutter=None):
         return {
             "cluster_id": 109,
+            "front_pixels_low": 0, "front_pixels_medium": 100,
+            "front_pixels_high": 0, "front_pixels_very_high": 0,
             "track_id": 9,
             "distance_km": distancia,
             "intensidade_suficiente": True,
@@ -106,7 +108,7 @@ class PreventiveAlertsTest(unittest.TestCase):
         self.assertEqual(alerta["nivel"], "VERMELHO")
         self.assertIsNone(alerta["speed_kmh"])
         self.assertIsNone(alerta["eta_minutes"])
-        self.assertFalse(alerta["would_send"])
+        self.assertTrue(alerta["would_send"])
 
     def test_selecao_ignora_clutter_proximo_quando_ha_eco_confiavel(self):
         clutter = self.ameaca(8, clutter=0.96)
@@ -227,7 +229,7 @@ class PreventiveAlertsTest(unittest.TestCase):
             radar_atualizado=True,
             evento_local=True,
         )
-        self.assertEqual(alerta["message"], "Chuva já observada na EE São José.")
+        self.assertEqual(alerta["message"], "Chuva já observada no Distrito de São José.")
         self.assertTrue(alerta["local_event"])
 
     def test_eta_borda_usa_tendencia_robusta_do_mesmo_track(self):

@@ -72,6 +72,7 @@ class DetectionConfig:
     dilate_iterations: int = 1
     clutter_radius_km: float = 50.0
     valid_radius_km: float | None = None
+    alert_front_depth_km: float = 15.0
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ class RadarCluster:
     pixels_refletividade_muito_alta: int = 0
     classe_predominante: str | None = None
     classe_maxima: str | None = None
+    frente_relevante: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -271,6 +273,28 @@ def criar_mascara_eco(rgb: np.ndarray, config: DetectionConfig) -> np.ndarray:
     return criar_mascaras_eco(rgb, config)[1]
 
 
+def calcular_frente_relevante(classes, distancias_km, profundidade_km=15):
+    """Recebe apenas pixels meteorológicos originais e reutiliza suas distâncias."""
+    from config import numero_alerta_valido
+    from services.nowcasting_intensity import FRONT_COUNT_FIELDS, classificar_intensidade_frente
+
+    profundidade = numero_alerta_valido(profundidade_km, 15)
+    classes = np.asarray(classes)
+    distancias = np.asarray(distancias_km)
+    if classes.shape != distancias.shape:
+        raise ValueError("Classes e distâncias incompatíveis")
+    reais = (classes >= 1) & (classes <= 4) & np.isfinite(distancias) & (distancias >= 0)
+    selecionados = classes[reais & (distancias <= np.min(distancias[reais]) + profundidade)] if reais.any() else []
+    contagens = {
+        campo: int(np.count_nonzero(np.asarray(selecionados) == codigo))
+        for codigo, campo in enumerate(FRONT_COUNT_FIELDS, 1)
+    }
+    dados = classificar_intensidade_frente(contagens)
+    return {**contagens, **{chave: dados[chave] for chave in (
+        "front_pixels_total", "front_percent_medium_or_higher", "front_percent_strong", "front_percent_very_high"
+    )}, "front_depth_km": profundidade}
+
+
 def detectar_clusters(
     imagem: Image.Image,
     bounds: GeoBounds,
@@ -319,14 +343,10 @@ def detectar_clusters(
         # A morfologia apenas descobre quais fragmentos pertencem ao mesmo
         # sistema. Centro, intensidade e borda meteorológica usam somente os
         # pixels realmente presentes no PNG original.
-        componente = componente_original.astype(np.uint8)
-        interior = cv2.erode(componente, np.ones((3, 3), np.uint8), iterations=1)
-        borda_y, borda_x = np.nonzero(componente - interior)
-        lons = bounds.lon_min + borda_x / (width - 1) * (bounds.lon_max - bounds.lon_min)
-        lats = bounds.lat_max - borda_y / (height - 1) * (bounds.lat_max - bounds.lat_min)
-        distancia_borda = float(
-            np.min(_distancias_vetorizadas(lats, lons, target_lat, target_lon))
-        )
+        lons = bounds.lon_min + orig_x / (width - 1) * (bounds.lon_max - bounds.lon_min)
+        lats = bounds.lat_max - orig_y / (height - 1) * (bounds.lat_max - bounds.lat_min)
+        distancias = _distancias_vetorizadas(lats, lons, target_lat, target_lon)
+        distancia_borda = float(np.min(distancias))
         distancia_centro = haversine_km(
             centro_lat, centro_lon, target_lat, target_lon
         )
@@ -370,6 +390,9 @@ def detectar_clusters(
                 pixels_refletividade_muito_alta=contagens[4],
                 classe_predominante=classe_predominante,
                 classe_maxima=classe_maxima,
+                frente_relevante=calcular_frente_relevante(
+                    classes_cluster, distancias, config.alert_front_depth_km
+                ),
             )
         )
     return sorted(clusters, key=lambda item: item.distancia_borda_escola_km)

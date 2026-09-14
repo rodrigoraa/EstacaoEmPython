@@ -643,7 +643,21 @@ class NowcastingIntegrationTest(unittest.TestCase):
             len({item["track"]["track_id"] for item in radar["tracks_atuais"]}), 2
         )
 
-    def test_alertas_preventivos_nunca_enfileiram_com_flag_false_ou_true(self):
+    def test_status_publico_admin_sem_telefone(self):
+        self.autenticar_admin()
+        os.environ["NOWCASTING_ALERTS_ENABLED"] = "true"
+        response = self.client.get("/admin/api/nowcasting/status")
+        self.assertEqual(response.status_code, 200)
+        status = response.get_json()["public_alert"]
+        self.assertTrue(status["enabled"])
+        self.assertFalse(status["active"])
+        self.assertNotIn("telefone", status)
+        for route in ("/admin/monitoramento", "/admin/radar"):
+            page = self.client.get(route)
+            self.assertEqual(page.status_code, 200)
+            self.assertIn("Alertas públicos por radar: ATIVADO", page.get_data(as_text=True))
+
+    def test_snapshot_incompleto_nao_enfileira_com_flag_false_ou_true(self):
         from workers.nowcasting_updater import enfileirar_alertas_nowcasting
 
         vermelho_simulado = {
@@ -666,7 +680,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)
         conn.close()
 
-    def test_worker_vermelho_com_alerts_true_ainda_nao_cria_fila(self):
+    def test_worker_snapshot_sem_frente_elegivel_nao_cria_fila(self):
         from config import nowcasting_config
         from workers import nowcasting_updater
 
@@ -709,7 +723,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
 
         telefone = "67987654321"
         os.environ["NOWCASTING_ENABLED"] = "true"
-        os.environ["NOWCASTING_ALERTS_ENABLED"] = "true"
+        os.environ["NOWCASTING_ALERTS_ENABLED"] = "false"
         os.environ["NOWCASTING_TEST_ALERTS_ENABLED"] = "true"
         os.environ["ADMIN_ALERT_PHONE"] = telefone
         conn = self.database.get_db()

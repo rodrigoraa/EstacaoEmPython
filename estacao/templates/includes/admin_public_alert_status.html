@@ -1,0 +1,12 @@
+<aside class="admin-test-alert-status" aria-label="Alertas públicos por radar">
+  <strong>Alertas públicos por radar: {{ 'ATIVADO' if public_alert.enabled else 'DESATIVADO' }}</strong>
+  <p>Episódio: {{ 'ativo' if public_alert.active else 'inativo' }}.</p>
+  <p>Último nível enfileirado: {{ public_alert.last_enqueued_alert_level or '—' }}.
+    Último horário: {{ public_alert.last_enqueued_at or '—' }}.</p>
+  <p>Maior severidade do episódio: {{ public_alert.highest_enqueued_severity }}.
+    Motivo atual: {{ public_alert.last_result }}.</p>
+  {% if public_alert.enabled %}
+  <p>O nowcasting enfileira os alertas; a entrega ocorre pelo worker de WhatsApp.
+    O envio experimental direto ao administrador fica suprimido.</p>
+  {% endif %}
+</aside>

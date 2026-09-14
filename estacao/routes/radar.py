@@ -10,6 +10,7 @@ from config import nowcasting_config, radar_config
 from services.nowcasting_repository import obter_ultimo_snapshot
 from services.nowcasting_service import snapshot_operacionalmente_atual
 from services.nowcasting_test_alerts import obter_status_alerta_teste_admin
+from services.nowcasting_public_alerts import obter_status_alerta_publico
 from services.preventive_alerts import criar_alerta_preventivo
 from services.radar_repository import obter_arquivo_frame, obter_estado_radar
 from time_utils import formatar_local
@@ -112,6 +113,7 @@ def radar_admin():
         test_alert=obter_status_alerta_teste_admin(
             snapshot_contextual, config_nowcasting
         ),
+        public_alert=obter_status_alerta_publico(config_nowcasting),
         titulo="Radar Meteorológico",
         radar_track_min_frames=radar_config()["track_min_frames"],
         aba_ativa="radar",

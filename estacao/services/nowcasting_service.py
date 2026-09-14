@@ -507,6 +507,7 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         "stale": radar.get("stale"),
         "timestamp_status": frame.get("timestamp_status"),
         "frame_id": frame.get("id"),
+        "data_frame": frame.get("data_frame_utc") or frame.get("data_frame"),
         "track_id": principal.get("track_id") if principal else None,
         "distancia_borda_km": principal.get("distance_km") if principal else None,
         "faixa_distancia": principal.get("faixa_distancia") if principal else None,

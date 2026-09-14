@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 from datetime import timezone
 
@@ -18,9 +17,13 @@ from services.admin_notification_service import (
     enviar_mensagem_admin,
     obter_admin_alert_phone,
 )
-from services.nowcasting_service import chuva_local_atual, snapshot_operacionalmente_atual
-from services.preventive_alerts import decidir_alerta_preventivo, tracking_confirmado, ALERT_SEVERITY
-from time_utils import agora_utc, iso_utc, parse_datetime
+from services.preventive_alerts import ALERT_SEVERITY
+from services.nowcasting_alert_evaluation import (
+    avaliar_alerta_preventivo_snapshot,
+    montar_mensagem_preventiva as montar_mensagem_alerta_teste,
+    _numero_finito, _minutos_desde_utc, _evento_local_observado,
+)
+from time_utils import agora_utc, iso_utc
 
 
 logger = logging.getLogger(__name__)
@@ -156,33 +159,6 @@ def salvar_estado_alerta_teste(conn, estado):
     )
 
 
-def _numero_finito(valor):
-    try:
-        numero = float(valor)
-    except (TypeError, ValueError):
-        return None
-    return numero if math.isfinite(numero) else None
-
-
-def _minutos_desde_utc(valor, agora):
-    momento = parse_datetime(valor, assume_utc=True)
-    if not momento:
-        return None
-    return max(
-        0.0,
-        (
-            agora.astimezone(timezone.utc) - momento.astimezone(timezone.utc)
-        ).total_seconds()
-        / 60.0,
-    )
-
-
-def _evento_local_observado(snapshot):
-    if snapshot.get("evento_local_observado") is True:
-        return True
-    return chuva_local_atual(snapshot.get("escola"))
-
-
 def _event_key(alerta):
     track_id = alerta.get("track_id")
     return f"track:{track_id}" if track_id is not None else "untracked_rain_episode"
@@ -192,55 +168,17 @@ def avaliar_alerta_teste_admin(snapshot, config, *, admin_phone=None, now=None):
     """Avalia apenas os requisitos meteorologicos e de configuracao."""
     snapshot = snapshot or {}
     agora = (now or agora_utc()).astimezone(timezone.utc)
+    if config.get("alerts_enabled") is True:
+        return {"eligible": False, "reason": "public_alerts_enabled", "event_key": None}
     habilitado = config.get("test_alerts_enabled") is True
     if not habilitado:
         return {"eligible": False, "reason": "disabled", "event_key": None}
     if not (admin_phone or "").strip():
         return {"eligible": False, "reason": "admin_phone_missing", "event_key": None}
+    avaliacao = avaliar_alerta_preventivo_snapshot(snapshot, config, now=agora)
     alerta = snapshot.get("alerta_preventivo") or {}
-    radar = snapshot.get("radar") or {}
-    if radar.get("stale") is True:
-        return {"eligible": False, "reason": "radar_stale", "event_key": None}
-    if radar.get("operacional") is not True:
-        return {"eligible": False, "reason": "radar_unavailable", "event_key": None}
-    if not snapshot_operacionalmente_atual(snapshot, config, now=agora):
-        return {"eligible": False, "reason": "snapshot_stale", "event_key": None}
-    decisao = decidir_alerta_preventivo(
-        alerta, config=config, radar_atualizado=True,
-        frame_valido=radar.get("timestamp_status") != "suspect" and radar.get("frame_id") is not None,
-        evento_local=_evento_local_observado(snapshot),
-    )
-    return {
-        "eligible": decisao["would_send"], "reason": decisao["block_reason"] or "eligible",
-        "event_key": _event_key(alerta) if decisao["block_reason"] in (None, "local_event_observed") else None,
-        "decision": decisao,
-    }
-
-
-def montar_mensagem_alerta_teste(snapshot):
-    """Texto público probabilístico, sem detalhes técnicos do diagnóstico."""
-    alerta = (snapshot or {}).get("alerta_preventivo") or {}
-    confirmado = tracking_confirmado(alerta)
-    distancia = _numero_finito(alerta.get("distance_km"))
-    movimento = "se aproximando da" if confirmado else "próxima da"
-    nivel = alerta.get("alert_level")
-    if nivel == "ALERTA":
-        titulo = "🔴 Atenção para possibilidade de chuva forte no Distrito de São José."
-        corpo = f"Uma área de chuva intensa está {movimento} região."
-    elif nivel == "ATENCAO":
-        titulo = "⚠️ Atenção para possível chuva no Distrito de São José."
-        corpo = f"Uma área de chuva com maior intensidade está {movimento} região."
-    else:
-        titulo = ("🌧️ Possível chuva se aproximando do Distrito de São José." if confirmado
-                  else "🌧️ Possível chuva próxima ao Distrito de São José.")
-        corpo = (f"Uma área de chuva está a aproximadamente {distancia:.0f} km da região."
-                 if distancia is not None else "Uma área de chuva está próxima da região.")
-    partes = [titulo, corpo]
-    eta = _numero_finito(alerta.get("eta_border_minutes"))
-    if confirmado and eta is not None and 0 <= eta <= 360 and alerta.get("eta_border_quality") in {"BOA", "MODERADA"}:
-        partes.append(f"Estimativa de chegada: {eta:.0f} min.")
-    partes.append("Para mais informações acesse:\nhttps://meteo.eesjv.com.br")
-    return "\n\n".join(partes)
+    return {**avaliacao, "event_key": _event_key(alerta)
+            if avaliacao["reason"] in {"eligible", "local_event_observed"} else None}
 
 
 def _erro_resumido(erro):
@@ -317,6 +255,9 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
     avaliacao = avaliar_alerta_teste_admin(
         snapshot, config, admin_phone=admin_phone, now=agora
     )
+    if avaliacao["reason"] == "public_alerts_enabled":
+        logger.info("Nowcasting teste admin: envio direto suprimido pelo modo público")
+        return obter_status_alerta_teste_admin(snapshot, config, now=agora)
     if avaliacao["reason"] == "disabled":
         logger.info("Nowcasting teste admin: teste desabilitado")
         return obter_status_alerta_teste_admin(snapshot, config, now=agora)

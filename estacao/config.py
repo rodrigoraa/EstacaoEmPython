@@ -180,6 +180,8 @@ def nowcasting_config():
         "enabled": env_bool("NOWCASTING_ENABLED", False),
         "poll_seconds": max(60, env_int("NOWCASTING_POLL_SECONDS", 300)),
         "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", False),
+        "alert_cooldown_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_COOLDOWN_MINUTES"), 60),
+        "alert_rearm_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_REARM_MINUTES"), 30),
         "test_alerts_enabled": env_bool(
             "NOWCASTING_TEST_ALERTS_ENABLED", False
         ),

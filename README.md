@@ -217,7 +217,9 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 |---|---:|---|
 | `NOWCASTING_ENABLED` | `false` | ativa o worker de fusão persistida |
 | `NOWCASTING_POLL_SECONDS` | `300` | intervalo entre análises |
-| `NOWCASTING_ALERTS_ENABLED` | `false` | reservado; sempre ignorado nesta versão |
+| `NOWCASTING_ALERTS_ENABLED` | `false` | habilita enfileiramento público preventivo para usuários com opt-in ativo |
+| `NOWCASTING_ALERT_COOLDOWN_MINUTES` | `60` | intervalo entre novos episódios; escalonamento no mesmo episódio é imediato |
+| `NOWCASTING_ALERT_REARM_MINUTES` | `30` | ausência confirmada contínua necessária para encerrar o episódio |
 | `NOWCASTING_TEST_ALERTS_ENABLED` | `false` | envia preventivos elegíveis somente ao administrador |
 | `NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES` | `60` | proteção global mínima entre testes enviados |
 | `NOWCASTING_TEST_ALERT_REARM_MINUTES` | `30` | tempo contínuo fora do vermelho para encerrar um episódio |
@@ -560,13 +562,68 @@ histórico próprio da camada 0 ou, apenas durante bootstrap, de uma camada 2 re
 Alteração fora do corredor, estação stale ou histórico ainda em formação não
 confirma a ameaça. Chuva local gera a evidência separada “Evento já observado na
 estação local”, sem aumentar o score preventivo. `confirmacao_regional`, `radar_only`,
-`ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria. Mesmo assim,
-`NOWCASTING_ALERTS_ENABLED=true` continua retornando zero e não grava filas.
+`ameaca_principal` e `ameacas` ficam no snapshot/API para auditoria.
+`NOWCASTING_ALERTS_ENABLED=true` permite enfileirar candidatos meteorologicamente
+elegíveis para usuários com opt-in ativo.
 O campo legado `nivel` mantém as faixas visuais de distância para compatibilidade
 administrativa. Ele não determina intensidade nem nível do alerta público.
 `would_send` agora usa a frente relevante e as rotas descritas abaixo.
-`preventive_sending` permanece `DESATIVADO` para usuários; `alertas_fila` e
-`alertas_eventos` não participam do envio experimental.
+O modo público usa `alertas_eventos` e `alertas_fila`. Essas tabelas não
+participam do envio experimental direto ao administrador.
+
+### Alertas preventivos públicos por WhatsApp
+
+`NOWCASTING_ALERTS_ENABLED=false` (default) desabilita novos eventos e filas
+públicos. Com `true`, o nowcasting revalida o snapshot pela mesma avaliação
+meteorológica usada pelo modo experimental e enfileira somente candidatos elegíveis.
+O fluxo é assíncrono: `nowcasting → alertas_eventos → alertas_fila → whatsapp_sender
+→ Evolution API`. O processamento público não chama HTTP. Desabilitar a flag
+interrompe novos enfileiramentos; itens já na fila continuam sob responsabilidade
+do sender, sem limpeza automática.
+
+Destinatários seguem exatamente o opt-in existente:
+`(ativo = 1 OR ativo IS NULL) AND receber_whatsapp = 1 AND
+(status_cadastro = 'ativo' OR status_cadastro IS NULL)`.
+Não há cadastro, reativação ou consentimento separado para radar.
+Saudação personalizada é acrescentada pela fila; local e link aparecem uma vez
+no texto preventivo. Mensagens são probabilísticas e não substituem avisos oficiais.
+
+| Intensidade | Nível público | Prioridade |
+| --- | --- | --- |
+| LOW | sem mensagem | — |
+| MEDIUM | INFORMATIVO | 50 |
+| HIGH | ATENCAO | 80 |
+| VERY_HIGH | ALERTA | 100 |
+
+O estado usa `health_check_estado`, chave `nowcasting_public_alert`, separado do
+administrador. Cada episódio recebe UUID aleatório persistente; o evento é
+`nowcasting:<episode_id>:informativo`, `:atencao` ou `:alerta`. Uma transação
+`BEGIN IMMEDIATE` grava estado, evento e fan-out integralmente ou faz rollback.
+Os índices únicos existentes impedem duplicação por evento e usuário. Um nível
+sem destinatários também é consumido, sem reenvio posterior para novos cadastros.
+
+Aumentos INFORMATIVO → ATENCAO → ALERTA são imediatos no mesmo episódio;
+repetições, reduções e trocas de track/cluster não geram novos envios.
+`NOWCASTING_ALERT_REARM_MINUTES=30` exige ausência confirmada contínua por baixa
+intensidade, pixels insuficientes ou saída das faixas. Stale, indisponibilidade,
+clutter, perda de tracking e snapshot inválido interrompem a contagem de ausência.
+Chuva local atual suprime novos preventivos até rearm; leitura local stale não
+comprova chuva atual. `NOWCASTING_ALERT_COOLDOWN_MINUTES=60` protege o início de
+novos episódios, contado do último enfileiramento; não bloqueia escalonamentos
+de um episódio já enfileirado. Estado inválido bloqueia o processamento público.
+
+Para habilitar em produção, com os coletores e workers existentes funcionando:
+
+```dotenv
+NOWCASTING_ENABLED=true
+NOWCASTING_ALERTS_ENABLED=true
+NOWCASTING_ALERT_COOLDOWN_MINUTES=60
+NOWCASTING_ALERT_REARM_MINUTES=30
+```
+
+`RADAR_ALERTS_ENABLED` continua sem enviar mensagens públicas. Nenhum ajuste de
+deploy ou mudança de `.env` é realizado automaticamente. O painel administrativo
+de radar/monitoramento mostra flag, episódio, último nível enfileirado e motivo.
 
 ### Alertas preventivos experimentais para o administrador
 
@@ -648,7 +705,9 @@ O nível público é calculado separadamente de confiança e urgência.
 
 `NOWCASTING_TEST_ALERTS_ENABLED=false` continua sendo o default. Quando habilitado,
 o envio usa exclusivamente `ADMIN_ALERT_PHONE`, sem consultar usuários nem usar
-filas normais. `NOWCASTING_ALERTS_ENABLED` continua sem habilitar envio público.
+filas normais, somente enquanto `NOWCASTING_ALERTS_ENABLED=false`.
+Quando o modo público está ativo, o teste direto é suprimido, inclusive quando
+não há destinatários elegíveis; o administrador só recebe se tiver opt-in como usuário.
 O estado JSON em `health_check_estado`, chave `nowcasting_test_alert`, adiciona
 `highest_sent_severity`, `last_sent_alert_level` e `last_sent_radar_intensity`.
 INFORMATIVO=1, ATENCAO=2 e ALERTA=3: o primeiro envia, aumentos enviam atualizações,

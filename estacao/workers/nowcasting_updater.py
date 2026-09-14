@@ -26,16 +26,15 @@ from services.nowcasting_repository import (
 )
 from services.nowcasting_service import analisar_nowcasting
 from services.nowcasting_test_alerts import processar_alerta_teste_admin
+from services.nowcasting_public_alerts import processar_alerta_publico
 
 
 logger = logging.getLogger(__name__)
 
 
-def enfileirar_alertas_nowcasting(config, _estado):
-    """Trava deliberada: esta versao nunca cria fila ou envia mensagens."""
-    if config.get("alerts_enabled"):
-        logger.warning("alertas preventivos ainda não habilitados")
-    return 0
+def enfileirar_alertas_nowcasting(config, estado):
+    """Enfileira candidatos elegiveis somente quando o kill switch permite."""
+    return processar_alerta_publico(estado, config)["enfileirados"]
 
 
 def executar_ciclo(config=None):
@@ -46,7 +45,7 @@ def executar_ciclo(config=None):
     radar, regional, local, fingerprint = carregar_entradas_nowcasting(config)
     estado = analisar_nowcasting(radar, regional, local, config)
     snapshot_id = salvar_snapshot(estado, fingerprint)
-    enfileirar_alertas_nowcasting(config, estado)
+    enfileirados = enfileirar_alertas_nowcasting(config, estado)
     test_alert = processar_alerta_teste_admin(estado, config)
     codigos = ",".join(
         station["code"] for station in estado["estacoes_relevantes"]
@@ -71,6 +70,7 @@ def executar_ciclo(config=None):
         "new": snapshot_id is not None,
         "snapshot_id": snapshot_id,
         "test_alert": test_alert,
+        "public_enqueued": enfileirados,
     }
 
 
@@ -85,7 +85,7 @@ def imprimir_resumo(result):
     print(
         "Alerta visual: "
         f"{state['alerta_preventivo']['nivel']} "
-        "(envio preventivo desativado)"
+        f"(preventivos enfileirados neste ciclo: {result.get('public_enqueued', 0)})"
     )
     print(f"Ameacas em monitoramento: {len(state.get('ameacas', []))}")
     print(f"Snapshot: {'novo' if result['new'] else 'entrada inalterada'}")

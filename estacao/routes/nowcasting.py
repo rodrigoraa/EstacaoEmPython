@@ -11,6 +11,7 @@ from services.nowcasting_service import (
     preparar_estado_nowcasting_admin,
 )
 from services.nowcasting_test_alerts import obter_status_alerta_teste_admin
+from services.nowcasting_public_alerts import obter_status_alerta_publico
 
 
 nowcasting_routes = Blueprint("nowcasting", __name__)
@@ -38,6 +39,7 @@ def monitoramento_admin():
         ultimo_nivel_calculado=preparado["ultimo_nivel_calculado"],
         janela_snapshot_minutos=preparado["janela_snapshot_minutos"],
         test_alert=obter_status_alerta_teste_admin(snapshot, config),
+        public_alert=obter_status_alerta_publico(config),
         titulo="Monitoramento Regional",
         aba_ativa="monitoramento",
     )
@@ -65,6 +67,7 @@ def api_nowcasting_status_admin():
     ):
         payload[campo] = preparado[campo]
     payload["test_alert"] = obter_status_alerta_teste_admin(snapshot, config)
+    payload["public_alert"] = obter_status_alerta_publico(config)
     return jsonify(payload)
 
 

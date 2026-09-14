@@ -3,6 +3,8 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from contextlib import closing
+from threading import Event, Thread
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -43,28 +45,74 @@ class BackupSQLiteTest(unittest.TestCase):
 
     def test_escrita_concorrente_em_wal_e_delete(self):
         for modo in ("WAL", "DELETE"):
-            with self.subTest(modo=modo):
-                writer = sqlite3.connect(self.origem, timeout=1)
-                try:
-                    writer.execute(f"PRAGMA journal_mode={modo}")
-                    inserido = False
-                    def progresso(status, remaining, total):
-                        nonlocal inserido
-                        if remaining > 0 and not inserido:
+            with self.subTest(modo=modo), tempfile.TemporaryDirectory(dir=self.root) as pasta:
+                origem = Path(pasta) / "origem.db"
+                destino = Path(pasta) / "destino.db"
+                with closing(sqlite3.connect(self.origem)) as inicial, closing(sqlite3.connect(origem)) as conn:
+                    inicial.backup(conn)
+                    self.assertEqual(conn.execute(f"PRAGMA journal_mode={modo}").fetchone(),
+                                     (modo.lower(),))
+                    self.assertEqual(conn.execute("SELECT COUNT(*) FROM leituras").fetchone(), (1100,))
+
+                iniciar_escrita = Event()
+                insert_executado = Event()
+                escrita_finalizada = Event()
+                erros = []
+
+                def escrever():
+                    try:
+                        # Os prazos são apenas proteção contra travamento; a ordem
+                        # das operações depende dos eventos, não da velocidade.
+                        if not iniciar_escrita.wait(30):
+                            raise TimeoutError("Backup não iniciou a escrita concorrente")
+                        with closing(sqlite3.connect(origem, timeout=30)) as writer:
                             writer.execute("INSERT INTO leituras (valor) VALUES ('nova')")
+                            insert_executado.set()
                             writer.commit()
-                            inserido = True
-                    with mock.patch.object(backup_db, "progresso_backup", return_value=progresso):
-                        self.backup()
-                    self.assertTrue(inserido, "Banco precisa ocupar mais que um lote")
-                    with sqlite3.connect(self.destino) as copia:
-                        self.assertEqual(copia.execute("PRAGMA quick_check").fetchone(), ("ok",))
-                        self.assertEqual(copia.execute("SELECT COUNT(*) FROM leituras").fetchone(),
-                                         writer.execute("SELECT COUNT(*) FROM leituras").fetchone())
-                    copia.close()
-                    self.destino.unlink()
+                    except Exception as erro:
+                        erros.append(erro)
+                    finally:
+                        escrita_finalizada.set()
+
+                progresso_real = backup_db.progresso_backup(max_segundos=30)
+
+                def progresso(status, remaining, total):
+                    progresso_real(status, remaining, total)
+                    if status == sqlite3.SQLITE_OK and remaining > 0 and not iniciar_escrita.is_set():
+                        # A produção já fixou o snapshot e copiou o primeiro lote.
+                        iniciar_escrita.set()
+                        self.assertTrue(insert_executado.wait(30), "INSERT concorrente não iniciou")
+                        if modo == "WAL":
+                            # WAL permite concluir o commit mantendo o snapshot antigo.
+                            self.assertTrue(escrita_finalizada.wait(30), "Commit WAL não concluiu")
+                            self.assertEqual(erros, [])
+                        # Em DELETE, não aguardar commit aqui: ele precisa que a
+                        # transação de leitura do backup seja liberada primeiro.
+
+                thread = Thread(target=escrever)
+                thread.start()
+                try:
+                    with (mock.patch.object(backup_db, "progresso_backup", return_value=progresso),
+                          mock.patch.object(backup_db, "PAGINAS_POR_LOTE", 64)):
+                        backup_db.criar_backup(destino, origem=origem, max_segundos=30)
+                    self.assertTrue(iniciar_escrita.is_set(), "Backup precisa copiar mais de um lote")
                 finally:
-                    writer.close()
+                    # Inclusive se uma assertion falhar, liberar/aguardar o escritor
+                    # antes de limpar a pasta exclusiva deste journal mode.
+                    iniciar_escrita.set()
+                    thread.join(timeout=60)
+
+                self.assertFalse(thread.is_alive(), "Escritor não terminou após liberar o snapshot")
+                self.assertTrue(escrita_finalizada.is_set())
+                self.assertEqual(erros, [])
+                with closing(sqlite3.connect(destino)) as copia, closing(sqlite3.connect(origem)) as fonte:
+                    self.assertEqual(copia.execute("PRAGMA quick_check").fetchone(), ("ok",))
+                    self.assertEqual(copia.execute("SELECT COUNT(*) FROM leituras").fetchone(), (1100,))
+                    self.assertEqual(copia.execute("SELECT COUNT(*) FROM leituras WHERE valor = 'nova'").fetchone(),
+                                     (0,))
+                    self.assertEqual(fonte.execute("SELECT COUNT(*) FROM leituras").fetchone(), (1101,))
+                    self.assertEqual(fonte.execute("SELECT COUNT(*) FROM leituras WHERE valor = 'nova'").fetchone(),
+                                     (1,))
 
     def test_falha_real_no_callback_remove_parciais_e_auxiliares(self):
         anterior = self.root / "anterior.db-journal"

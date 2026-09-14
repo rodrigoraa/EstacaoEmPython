@@ -321,6 +321,69 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 conn.commit()
                 conn.close()
 
+    def test_chuva_local_exige_leitura_atual_na_avaliacao(self):
+        casos = (
+            (True, None, True),
+            (True, {"rain_rate": 1, "stale": True}, True),
+            (False, {"rain_rate": 1, "stale": False}, True),
+            (False, {"rain_rate": 1, "stale": True}, False),
+            (False, {"rain_rate": 0, "stale": False}, False),
+            (False, {"rain_rate": None, "stale": False}, False),
+            (False, {"rain_rate": "invalido", "stale": False}, False),
+            (False, {"rain_rate": float("nan"), "stale": False}, False),
+            (False, {"rain_rate": float("inf"), "stale": False}, False),
+            (False, {"rain_rate": -1, "stale": False}, False),
+            (False, {"rain_rate": True, "stale": False}, False),
+            (False, None, False),
+            (False, {}, False),
+            (False, {"rain_rate": 1}, False),
+            (False, {"rain_rate": 1, "stale": None}, False),
+        )
+        from config import nowcasting_config
+        from services.nowcasting_service import analisar_nowcasting
+
+        for flag, local, observado in casos:
+            with self.subTest(flag=flag, local=local):
+                snapshot = self.snapshot(local_event=flag, tracking=False, track_id=None)
+                snapshot["escola"] = local
+                if local is None:
+                    snapshot.pop("escola")
+                self.assertEqual(self.service._evento_local_observado(snapshot), observado)
+                avaliacao = self.service.avaliar_alerta_teste_admin(
+                    snapshot, self.config(), admin_phone="67999999999", now=self.base
+                )
+                self.assertEqual(avaliacao["eligible"], not observado)
+                self.assertEqual(avaliacao["reason"], "local_event_observed" if observado else "eligible")
+                if not flag:
+                    radar = {"disponivel": True, "stale": False, "frame": {"id": 70},
+                             "cluster_mais_proximo": {**snapshot["alerta_preventivo"],
+                                                     "id": 101, "distancia_borda_escola_km": 20}}
+                    criado = analisar_nowcasting(radar, {"stations": []}, local, nowcasting_config(), now=self.base)
+                    self.assertEqual(criado["evento_local_observado"], observado)
+                    self.assertEqual(criado["alerta_preventivo"]["local_event"], observado)
+                    self.assertEqual(self.service._evento_local_observado(criado), observado)
+
+    def test_regressao_chuva_local_stale_nao_suprime_medium_por_proximidade(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        snapshot = self.snapshot(tracking=False, track_id=None, rain_rate=2)
+        snapshot["escola"]["stale"] = True
+        snapshot["alerta_preventivo"].update(
+            front_pixels_low=0, front_pixels_medium=100, front_pixels_high=0,
+        )
+        avaliacao = self.service.avaliar_alerta_teste_admin(
+            snapshot, self.config(), admin_phone="67999999999", now=self.base
+        )
+        self.assertEqual(avaliacao["decision"]["authorization"], "PROXIMIDADE")
+        self.assertEqual(avaliacao["decision"]["radar_intensity"], "MEDIUM")
+        sender = mock.Mock()
+        status = self.processar(snapshot, sender=sender)
+        sender.assert_called_once()
+        self.assertEqual(status["reason"], "sent")
+        _, estado = self.estado_persistido()
+        self.assertFalse(estado["suppressed_for_current_episode"])
+        self.assertEqual(estado["last_sent_alert_level"], "INFORMATIVO")
+        self.assert_sem_fila_preventiva()
+
     def test_mesmo_episodio_e_reinicio_nao_reenviam(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         sender = mock.Mock()

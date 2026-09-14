@@ -90,7 +90,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
             "current_fingerprint_last_seen", "last_layer2_poll_utc",
         } <= state_columns)
 
-    def test_migration_7_para_8_adiciona_estado_sem_perder_linha(self):
+    def test_migration_7_para_atual_adiciona_estado_sem_perder_linha(self):
         legacy_path = Path(self.tmp.name) / "legacy-schema-7.db"
         conn = sqlite3.connect(legacy_path)
         conn.executescript(
@@ -141,7 +141,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
                 "current_fingerprint_last_seen", "last_layer2_poll_utc",
             } <= columns)
             self.assertEqual(tuple(row), ("OK", "STALE"))
-            self.assertEqual(version, 8)
+            self.assertEqual(version, database.SCHEMA_VERSION)
         finally:
             os.environ["ESTACAO_DB"] = original_path
             self.database = importlib.reload(self.database)

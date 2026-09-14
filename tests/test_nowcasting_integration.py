@@ -146,14 +146,14 @@ class NowcastingIntegrationTest(unittest.TestCase):
         }
         return state
 
-    def test_migration_aditiva_idempotente_cria_snapshot_schema_8(self):
+    def test_migration_aditiva_idempotente_cria_snapshot_schema_atual(self):
         self.database.init_db()
         conn = self.database.get_db()
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
         conn.close()
         self.assertIn("nowcasting_snapshots", tables)
-        self.assertEqual(version, 8)
+        self.assertEqual(version, self.database.SCHEMA_VERSION)
         conn = self.database.get_db()
         frame_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_frames)")}
         cluster_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_clusters)")}
@@ -165,7 +165,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertTrue({"classe_predominante", "classe_maxima"} <= cluster_columns)
         self.assertIn("idx_radar_track_points_track_data", indexes)
 
-    def test_migration_7_para_8_preserva_snapshot_existente(self):
+    def test_migration_7_para_atual_preserva_snapshot_existente(self):
         from services.nowcasting_repository import salvar_snapshot
 
         self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-7"))
@@ -190,8 +190,69 @@ class NowcastingIntegrationTest(unittest.TestCase):
         ).fetchone()[0]
         conn.close()
         self.assertEqual(count, 1)
-        self.assertEqual(version, 8)
+        self.assertEqual(version, self.database.SCHEMA_VERSION)
         self.assertEqual(external_status, "STALE")
+
+    def test_migration_8_para_9_adiciona_frente_nullable_sem_alterar_dados(self):
+        from services.radar_repository import salvar_resultado_frame
+        from services.radar_service import RadarFrame
+        from services.nowcasting_repository import salvar_snapshot
+
+        garantir_coluna = self.database.garantir_coluna
+
+        def colunas_schema_8(conn, tabela, coluna, definicao):
+            if (tabela, coluna) != ("radar_clusters", "frente_relevante_json"):
+                garantir_coluna(conn, tabela, coluna, definicao)
+
+        # Cria um banco separado com o schema anterior, sem remover colunas/tabelas.
+        legado = str(Path(self.tmp.name) / "schema-8.db")
+        with mock.patch.object(self.database, "DATABASE", legado):
+            with mock.patch.object(self.database, "SCHEMA_VERSION", 8), mock.patch.object(
+                self.database, "garantir_coluna", side_effect=colunas_schema_8
+            ):
+                self.database.init_db()
+            frame_id, _ = salvar_resultado_frame(
+                RadarFrame("jr", "maxcappi", datetime(2026, 9, 1, tzinfo=timezone.utc),
+                           "https://example.test/schema-8.png", -20.2, -54.4,
+                           -23.8, -16.6, -58.2, -50.5, 400, 1000),
+                None, None, 100, 100, [],
+            )
+            salvar_snapshot(self.state(), "snapshot-schema-8")
+            conn = self.database.get_db()
+            try:
+                self.assertFalse(self.database.coluna_existe(conn, "radar_clusters", "frente_relevante_json"))
+                self.assertEqual(conn.execute("SELECT versao FROM schema_version").fetchone()[0], 8)
+                conn.execute("""
+                    INSERT INTO radar_clusters (
+                        frame_id, cluster_numero, pixels_eco, centro_x, centro_y,
+                        centro_lat, centro_lon, bbox_x, bbox_y, bbox_width, bbox_height,
+                        distancia_centro_escola_km, distancia_borda_escola_km,
+                        distancia_radar_km, direcao_relativa_escola
+                    ) VALUES (?, 1, 100, 10, 10, -22.4, -54.4, 5, 5, 10, 10, 20, 12, 200, 'N')
+                """, (frame_id,))
+                conn.commit()
+                antes = {tabela: [dict(row) for row in conn.execute(f"SELECT * FROM {tabela}")]
+                         for tabela in ("radar_frames", "radar_clusters", "nowcasting_snapshots")}
+            finally:
+                conn.close()
+            self.assertEqual(self.database.SCHEMA_VERSION, 9)
+            for _ in range(2):
+                self.database.init_db()
+                conn = self.database.get_db()
+                try:
+                    self.assertEqual(conn.execute("SELECT versao FROM schema_version").fetchone()[0], 9)
+                    coluna = next(row for row in conn.execute("PRAGMA table_info(radar_clusters)")
+                                  if row["name"] == "frente_relevante_json")
+                    self.assertEqual(coluna["type"], "TEXT")
+                    self.assertEqual(coluna["notnull"], 0)
+                    for tabela, esperado in antes.items():
+                        depois = [dict(row) for row in conn.execute(f"SELECT * FROM {tabela}")]
+                        if tabela == "radar_clusters":
+                            for row in depois:
+                                self.assertIsNone(row.pop("frente_relevante_json"))
+                        self.assertEqual(depois, esperado)
+                finally:
+                    conn.close()
 
     def test_pagina_e_api_antes_do_primeiro_snapshot(self):
         self.autenticar_admin()

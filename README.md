@@ -260,7 +260,7 @@ A fila mantém semântica at-least-once. Se a Evolution aceitar uma mensagem e a
 
 ## Banco e migrations
 
-O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `8`, registrada na pequena tabela `schema_version`.
+O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `9`, registrada na pequena tabela `schema_version`.
 
 Execute a migration leve explicitamente antes de reiniciar os serviços:
 
@@ -639,7 +639,10 @@ continua no diagnóstico e não é requisito obrigatório.
 
 `certainty` é `POSSIVEL` sem aproximação confirmada, `PROVAVEL` com tracking válido,
 aproximação e trajetória compatível, ou `OBSERVADO` quando já chove localmente.
-`rain_rate >0` bloqueia novos preventivos do episódio. `urgency` é `IMEDIATO` para
+`evento_local_observado=True` ou `rain_rate` finito >0 com leitura local
+explicitamente atual (`stale=False`) bloqueiam novos preventivos do episódio.
+Leituras locais stale ou legadas sem `stale` não comprovam chuva atual pelo
+`rain_rate`. `urgency` é `IMEDIATO` para
 PROXIMIDADE, `ESPERADO` para TRACKING e `MONITORAMENTO` fora das rotas autorizadas.
 O nível público é calculado separadamente de confiança e urgência.
 

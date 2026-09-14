@@ -18,7 +18,7 @@ from services.admin_notification_service import (
     enviar_mensagem_admin,
     obter_admin_alert_phone,
 )
-from services.nowcasting_service import snapshot_operacionalmente_atual
+from services.nowcasting_service import chuva_local_atual, snapshot_operacionalmente_atual
 from services.preventive_alerts import decidir_alerta_preventivo, tracking_confirmado, ALERT_SEVERITY
 from time_utils import agora_utc, iso_utc, parse_datetime
 
@@ -180,8 +180,7 @@ def _minutos_desde_utc(valor, agora):
 def _evento_local_observado(snapshot):
     if snapshot.get("evento_local_observado") is True:
         return True
-    chuva = _numero_finito((snapshot.get("escola") or {}).get("rain_rate"))
-    return bool(chuva is not None and chuva > 0)
+    return chuva_local_atual(snapshot.get("escola"))
 
 
 def _event_key(alerta):

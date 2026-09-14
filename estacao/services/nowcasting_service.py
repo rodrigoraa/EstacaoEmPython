@@ -35,6 +35,20 @@ THREAT_STATUS_PRIORITY = {
 }
 
 
+def chuva_local_atual(local):
+    """Leituras legadas sem stale explícito não comprovam chuva atual."""
+    if not isinstance(local, dict) or local.get("stale") is not False:
+        return False
+    valor = local.get("rain_rate")
+    if isinstance(valor, bool):
+        return False
+    try:
+        chuva = float(valor)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(chuva) and chuva > 0
+
+
 def janela_snapshot_operacional_minutos(config):
     """Aceita ao menos 10 minutos ou dois ciclos completos do nowcasting."""
     try:
@@ -430,7 +444,7 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
     )
     principal = ameacas[0] if ameacas else None
     local_fresh = bool(local and not local.get("stale"))
-    evento_local = bool(local_fresh and (local.get("rain_rate") or 0) > 0)
+    evento_local = chuva_local_atual(local)
     regional_usable = any(
         station.get("status") == "OK"
         and station.get("age_minutes") is not None

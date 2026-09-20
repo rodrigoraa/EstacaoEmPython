@@ -218,8 +218,8 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_ENABLED` | `false` | ativa o worker de fusão persistida |
 | `NOWCASTING_POLL_SECONDS` | `300` | intervalo entre análises |
 | `NOWCASTING_ALERTS_ENABLED` | `false` | habilita enfileiramento público preventivo para usuários com opt-in ativo |
-| `NOWCASTING_ALERT_COOLDOWN_MINUTES` | `60` | intervalo entre novos episódios; escalonamento no mesmo episódio é imediato |
-| `NOWCASTING_ALERT_REARM_MINUTES` | `30` | ausência confirmada contínua necessária para encerrar o episódio |
+| `NOWCASTING_ALERT_COOLDOWN_MINUTES` | `180` | intervalo entre novos episódios; escalonamento no mesmo episódio é imediato |
+| `NOWCASTING_ALERT_REARM_MINUTES` | `60` | ausência confirmada contínua necessária para encerrar o episódio |
 | `NOWCASTING_TEST_ALERTS_ENABLED` | `false` | envia preventivos elegíveis somente ao administrador |
 | `NOWCASTING_TEST_ALERT_COOLDOWN_MINUTES` | `60` | proteção global mínima entre testes enviados |
 | `NOWCASTING_TEST_ALERT_REARM_MINUTES` | `30` | tempo contínuo fora do vermelho para encerrar um episódio |
@@ -604,12 +604,23 @@ sem destinatários também é consumido, sem reenvio posterior para novos cadast
 
 Aumentos INFORMATIVO → ATENCAO → ALERTA são imediatos no mesmo episódio;
 repetições, reduções e trocas de track/cluster não geram novos envios.
-`NOWCASTING_ALERT_REARM_MINUTES=30` exige ausência confirmada contínua por baixa
-intensidade, pixels insuficientes ou saída das faixas. Stale, indisponibilidade,
-clutter, perda de tracking e snapshot inválido interrompem a contagem de ausência.
+`NOWCASTING_ALERT_REARM_MINUTES=60` exige ausência confirmada contínua por
+intensidade abaixo de MEDIUM ou pixels insuficientes em dados válidos. Stale,
+indisponibilidade, frame/snapshot inválido, dados inconsistentes, clutter, perda
+de tracking, falta de aproximação e trajetória incompatível interrompem a contagem
+de ausência sem encerrar o episódio. `outside_proximity_range` também interrompe
+a contagem e nunca encerra um episódio sozinho, mesmo após 60 minutos.
+
+A histerese é conservadora, por retenção do estado: os limites de distância
+autorizam envio, mas nenhuma distância isolada autoriza encerramento. MEDIUM
+a 24 → 30 → 24 km mantém o mesmo `episode_id`, sem repetir INFORMATIVO; a mesma
+proteção vale para HIGH e VERY_HIGH e para trocas de cluster/track. Não há rearm
+por distância: é necessário confirmar ausência meteorológica por todo o período.
+
 Chuva local atual suprime novos preventivos até rearm; leitura local stale não
-comprova chuva atual. `NOWCASTING_ALERT_COOLDOWN_MINUTES=60` protege o início de
-novos episódios, contado do último enfileiramento; não bloqueia escalonamentos
+comprova chuva atual. `NOWCASTING_ALERT_COOLDOWN_MINUTES=180` define o intervalo
+mínimo para um novo episódio gerar seu alerta inicial, contado do último
+enfileiramento (`last_enqueued_at` é preservado no rearm); não bloqueia escalonamentos
 de um episódio já enfileirado. Estado inválido bloqueia o processamento público.
 
 Para habilitar em produção, com os coletores e workers existentes funcionando:
@@ -617,8 +628,8 @@ Para habilitar em produção, com os coletores e workers existentes funcionando:
 ```dotenv
 NOWCASTING_ENABLED=true
 NOWCASTING_ALERTS_ENABLED=true
-NOWCASTING_ALERT_COOLDOWN_MINUTES=60
-NOWCASTING_ALERT_REARM_MINUTES=30
+NOWCASTING_ALERT_COOLDOWN_MINUTES=180
+NOWCASTING_ALERT_REARM_MINUTES=60
 ```
 
 `RADAR_ALERTS_ENABLED` continua sem enviar mensagens públicas. Nenhum ajuste de
@@ -653,15 +664,18 @@ A classificação testa, nesta ordem, quantidade **e** percentual da frente:
 |---|---|---:|---:|
 | VERY_HIGH | muito alta | 2 | 2% |
 | HIGH | alta + muito alta | 2 | 10% |
-| MEDIUM | média + alta + muito alta | 3 | 10% |
+| MEDIUM | média + alta + muito alta | 10 | 20% |
 | LOW / NONE | abaixo dos critérios / ausência | — | — |
 
-Os nomes completos das configurações e seus defaults são:
+O filtro de tamanho do cluster continua em `RADAR_MIN_CLUSTER_PIXELS=100`,
+independente dos limiares de intensidade da frente. HIGH e VERY_HIGH mantêm seus
+limiares. Os nomes completos das configurações e seus defaults, sobrescritos
+quando definidos no `.env`, são:
 
 ```dotenv
 RADAR_ALERT_FRONT_DEPTH_KM=15
-NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PERCENT=10
-NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PIXELS=3
+NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PERCENT=20
+NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PIXELS=10
 NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT=10
 NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PIXELS=2
 NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT=2

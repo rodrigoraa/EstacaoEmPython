@@ -16,8 +16,11 @@ from time_utils import agora_utc, iso_utc, iso_local, data_local, parse_datetime
 logger = logging.getLogger(__name__)
 ESTADO_CHAVE = "nowcasting_public_alert"
 AUSENCIA_CONFIRMADA = {
-    "intensity_below_medium", "insufficient_pixels", "outside_proximity_range",
+    "intensity_below_medium", "insufficient_pixels",
 }
+# Histerese conservadora: cruzar qualquer limite de distância só muda a
+# autorização de envio. O episódio fica retido até ausência meteorológica
+# persistente; distância, tracking e falhas de dados não provam dissipação.
 
 
 def estado_padrao():
@@ -120,7 +123,7 @@ def processar_alerta_publico(snapshot, config, *, now=None):
                 estado["clear_since"] = estado["clear_since"] or iso_utc(agora)
                 minutos = _minutos_desde_utc(estado["clear_since"], agora)
                 estado["last_result"] = "rearm_pending"
-                if minutos >= config.get("alert_rearm_minutes", 30):
+                if minutos >= config.get("alert_rearm_minutes", 60):
                     ultimo = estado["last_enqueued_at"]
                     estado = {**estado_padrao(), "last_enqueued_at": ultimo,
                               "last_seen_at": iso_utc(agora), "last_result": "rearmed"}
@@ -136,7 +139,7 @@ def processar_alerta_publico(snapshot, config, *, now=None):
                 estado["last_result"] = "local_event_observed"
             elif severity <= highest:
                 estado["last_result"] = "same_or_lower_severity"
-            elif highest == 0 and idade is not None and idade < config.get("alert_cooldown_minutes", 60):
+            elif highest == 0 and idade is not None and idade < config.get("alert_cooldown_minutes", 180):
                 estado["last_result"] = "cooldown"
             else:
                 evento_id = f"nowcasting:{estado['episode_id']}:{decisao['alert_level'].lower()}"

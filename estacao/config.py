@@ -59,7 +59,7 @@ def numero_alerta_valido(valor, padrao, *, percentual=False, pixels=False):
 
 def config_alerta_preventivo():
     resultado = {}
-    for classe, percentual, pixels in (("medium", 10, 3), ("strong", 10, 2), ("very_high", 2, 2)):
+    for classe, percentual, pixels in (("medium", 20, 10), ("strong", 10, 2), ("very_high", 2, 2)):
         for sufixo, padrao in (("percent", percentual), ("pixels", pixels)):
             chave = f"alert_min_{classe}_reflectivity_{sufixo}"
             resultado[chave] = numero_alerta_valido(
@@ -180,8 +180,8 @@ def nowcasting_config():
         "enabled": env_bool("NOWCASTING_ENABLED", False),
         "poll_seconds": max(60, env_int("NOWCASTING_POLL_SECONDS", 300)),
         "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", False),
-        "alert_cooldown_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_COOLDOWN_MINUTES"), 60),
-        "alert_rearm_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_REARM_MINUTES"), 30),
+        "alert_cooldown_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_COOLDOWN_MINUTES"), 180),
+        "alert_rearm_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_REARM_MINUTES"), 60),
         "test_alerts_enabled": env_bool(
             "NOWCASTING_TEST_ALERTS_ENABLED", False
         ),

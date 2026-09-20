@@ -28,8 +28,7 @@ class PublicAlertsTest(unittest.TestCase):
         self.db.init_db()
         self.service = importlib.reload(nowcasting_public_alerts)
         self.now = datetime(2026, 9, 14, 12, tzinfo=timezone.utc)
-        self.config = {"alerts_enabled": True, "alert_cooldown_minutes": 60,
-                       "alert_rearm_minutes": 30, "poll_seconds": 300}
+        self.config = {"alerts_enabled": True, "poll_seconds": 300}
         conn = self.db.get_db()
         for i, (ativo, optin, status) in enumerate([
             (1, 1, "ativo"), (1, 0, "ativo"), (0, 1, "ativo"),
@@ -112,17 +111,94 @@ class PublicAlertsTest(unittest.TestCase):
     def test_rearm_cooldown_novo_episodio(self):
         old = self.process()["state"]["episode_id"]
         self.process(self.snapshot("LOW", minute=1), minute=1)
-        result = self.process(self.snapshot("LOW", minute=31), minute=31)
+        result = self.process(self.snapshot("LOW", minute=60), minute=60)
+        self.assertTrue(result["state"]["active"])
+        self.assertEqual(result["state"]["episode_id"], old)
+        self.assertEqual(result["reason"], "rearm_pending")
+        result = self.process(self.snapshot("LOW", minute=61), minute=61)
         self.assertEqual(result["reason"], "rearmed")
         self.assertFalse(result["state"]["active"])
         self.assertIsNone(result["state"]["episode_id"])
-        result = self.process(minute=32)
+        self.assertEqual(result["state"]["last_enqueued_at"], self.now.isoformat())
+        result = self.process(minute=62)
         self.assertEqual(result["reason"], "cooldown")
         new = result["state"]["episode_id"]
         self.assertNotEqual(old, new)
-        result = self.process(minute=60)
+        self.assertEqual(self.process(minute=179)["reason"], "cooldown")
+        self.assertEqual(len(self.rows("alertas_eventos")), 1)
+        result = self.process(minute=180)
         self.assertEqual(result["enfileirados"], 2)
         self.assertEqual(result["state"]["episode_id"], new)
+
+    def test_histerese_preserva_episodio_em_todas_as_distancias(self):
+        for i, (intensity, near, far) in enumerate((("MEDIUM", 24, 51), ("HIGH", 34, 76),
+                                                   ("VERY_HIGH", 49, 101))):
+            with self.subTest(intensity=intensity):
+                start = i * 200
+                first = self.process(self.snapshot(intensity, start, near), start)
+                episode = first["state"]["episode_id"]
+                self.assertEqual(first["enfileirados"], 2)
+                for minute, distance in ((1, near + 6), (61, near + 11),
+                                         (62, far), (122, far), (181, far)):
+                    minute += start
+                    snap = self.snapshot(intensity, minute, distance)
+                    snap["alerta_preventivo"].update(cluster_id=minute, track_id=minute)
+                    result = self.process(snap, minute)
+                    self.assertEqual(result["enfileirados"], 0)
+                    self.assertEqual(result["state"]["episode_id"], episode)
+                    self.assertTrue(result["state"]["active"])
+                    self.assertIsNone(result["state"]["clear_since"])
+                    if distance == far:
+                        self.assertEqual(result["reason"], "outside_proximity_range")
+                back = self.process(self.snapshot(intensity, start + 182, near), start + 182)
+                self.assertEqual(back["state"]["episode_id"], episode)
+                self.assertEqual(back["reason"], "same_or_lower_severity")
+                self.assertEqual(back["enfileirados"], 0)
+        self.assertEqual([r["nivel"] for r in self.rows("alertas_eventos")], [1, 2, 3])
+
+    def test_bloqueios_interrompem_ausencia_sem_encerrar_episodio(self):
+        old = self.process()["state"]["episode_id"]
+        changes = [
+            ("radar", "stale", True, "radar_stale"),
+            ("radar", "operacional", False, "radar_unavailable"),
+            ("radar", "frame_id", None, "invalid_frame"),
+            ("alerta_preventivo", "front_pixels_medium", -1, "inconsistent_data"),
+            ("alerta_preventivo", "clutter", True, "clutter"),
+            ("alerta_preventivo", "tracking_valid", False, "tracking_insufficient_for_early_warning"),
+            ("alerta_preventivo", "approaching", False, "not_approaching"),
+            ("alerta_preventivo", "trajectory_compatible", False, "trajectory_incompatible"),
+            ("alerta_preventivo", "distance_km", 90, "outside_proximity_range"),
+        ]
+        for i, (section, key, value, reason) in enumerate(changes):
+            with self.subTest(reason=reason):
+                start = 1 + i * 200
+                self.process(minute=start - 1)
+                self.process(self.snapshot("LOW", start), start)
+                for minute in (start + 60, start + 120):
+                    snap = self.snapshot(minute=minute, distance=40, tracking=True)
+                    snap[section][key] = value
+                    result = self.process(snap, minute)
+                    self.assertEqual(result["reason"], reason)
+                    self.assertTrue(result["state"]["active"])
+                    self.assertEqual(result["state"]["episode_id"], old)
+                    self.assertIsNone(result["state"]["clear_since"])
+                result = self.process(self.snapshot("LOW", start + 121), start + 121)
+                self.assertEqual(result["reason"], "rearm_pending")
+                self.assertEqual(result["state"]["episode_id"], old)
+        self.assertEqual(len(self.rows("alertas_eventos")), 1)
+
+    def test_pixels_insuficientes_exigem_ausencia_persistente(self):
+        old = self.process()["state"]["episode_id"]
+        for minute in (1, 60, 61):
+            snap = self.snapshot(minute=minute)
+            snap["alerta_preventivo"]["front_pixels_medium"] = 0
+            result = self.process(snap, minute)
+            if minute < 61:
+                self.assertEqual(result["reason"], "rearm_pending")
+                self.assertEqual(result["state"]["episode_id"], old)
+            else:
+                self.assertEqual(result["reason"], "rearmed")
+                self.assertEqual(result["state"]["last_enqueued_at"], self.now.isoformat())
 
     def test_interrupcoes_nao_confirmam_ausencia(self):
         old = self.process()["state"]["episode_id"]
@@ -166,9 +242,9 @@ class PublicAlertsTest(unittest.TestCase):
                                                ("HIGH", 30, False), ("VERY_HIGH", 45, False)]:
             with self.subTest(intensity=intensity, tracking=tracking):
                 # Rearm e cooldown entre episódios, sem apagar qualquer histórico.
-                minute = len(self.rows("alertas_eventos")) * 100
+                minute = len(self.rows("alertas_eventos")) * 200
                 if minute:
-                    self.process(self.snapshot("LOW", minute=minute-31), minute=minute-31)
+                    self.process(self.snapshot("LOW", minute=minute-61), minute=minute-61)
                     self.process(self.snapshot("LOW", minute=minute-1), minute=minute-1)
                 snap = self.snapshot(intensity, minute, distance, tracking)
                 snap["escola"].update(rain_rate=2, stale=True)
@@ -261,8 +337,24 @@ class PublicAlertsTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             config = nowcasting_config()
         self.assertFalse(config["alerts_enabled"])
-        self.assertEqual(config["alert_cooldown_minutes"], 60)
-        self.assertEqual(config["alert_rearm_minutes"], 30)
+        self.assertEqual(config["alert_cooldown_minutes"], 180)
+        self.assertEqual(config["alert_rearm_minutes"], 60)
+
+    def test_config_sobrescrita_env_aplicada_ao_rearm_e_cooldown(self):
+        from config import nowcasting_config
+        with mock.patch.dict(os.environ, {
+            "NOWCASTING_ALERTS_ENABLED": "true",
+            "NOWCASTING_ALERT_COOLDOWN_MINUTES": "20",
+            "NOWCASTING_ALERT_REARM_MINUTES": "10",
+        }, clear=True):
+            config = nowcasting_config()
+        old = self.process(config=config)["state"]["episode_id"]
+        self.process(self.snapshot("LOW", 1), 1, config)
+        self.assertEqual(self.process(self.snapshot("LOW", 11), 11, config)["reason"], "rearmed")
+        self.assertEqual(self.process(minute=12, config=config)["reason"], "cooldown")
+        result = self.process(minute=20, config=config)
+        self.assertEqual(result["enfileirados"], 2)
+        self.assertNotEqual(result["state"]["episode_id"], old)
 
     def test_snapshot_invalido_interrompe_rearm(self):
         self.process()

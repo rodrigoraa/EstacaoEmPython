@@ -80,7 +80,8 @@ class NowcastingIntensityTest(unittest.TestCase):
             os.environ.update(dict(zip(nomes, ("12.5", "3.5"))))
             config = nowcasting_config()
             self.assertEqual([config[chave] for chave in chaves], [12.5, 3.5])
-            self.assertEqual(analisar_intensidade_cluster(cluster(), config)["radar_intensity"], "MEDIUM")
+            # 10% forte não alcança HIGH configurado em 12,5% nem MEDIUM em 20%.
+            self.assertEqual(analisar_intensidade_cluster(cluster(), config)["radar_intensity"], "LOW")
             os.environ.update(dict.fromkeys(nomes, "100"))
             config = nowcasting_config()
             self.assertTrue(analisar_intensidade_cluster(cluster(0, 0, 0, 100), config)["intensidade_suficiente"])

@@ -693,7 +693,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         for minutos in (5, 65):
             now = self.base + timedelta(minutes=minutos)
             fraco = self.snapshot(now=now)
-            fraco["alerta_preventivo"]["front_pixels_high"] = 0
+            fraco["alerta_preventivo"].update(front_pixels_high=0, front_pixels_medium=200)
             self.processar(fraco, now=now, sender=sender)
         now = self.base + timedelta(minutes=70)
         self.processar(self.snapshot(now=now), now=now, sender=sender)

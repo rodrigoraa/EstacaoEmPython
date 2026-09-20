@@ -30,6 +30,39 @@ def decidir(alerta, **kwargs):
 
 
 class PreventiveFrontTest(unittest.TestCase):
+    def test_thresholds_medium_e_preservacao_high_very_high(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            config = nowcasting_config()
+            self.assertEqual(radar_config()["min_cluster_pixels"], 100)
+            self.assertEqual(radar_config()["alert_front_depth_km"], 15)
+        for name, pixels, percent in (("medium", 10, 20), ("strong", 2, 10), ("very_high", 2, 2)):
+            self.assertEqual(config[f"alert_min_{name}_reflectivity_pixels"], pixels)
+            self.assertEqual(config[f"alert_min_{name}_reflectivity_percent"], percent)
+        for low, medium, high, very_high, expected in (
+            (0, 9, 0, 0, "LOW"), (41, 10, 0, 0, "LOW"),
+            (40, 10, 0, 0, "MEDIUM"), (0, 10, 0, 0, "MEDIUM"),
+            (80, 20, 0, 0, "MEDIUM"),
+            (0, 0, 1, 0, "LOW"), (19, 0, 2, 0, "LOW"),
+            (18, 0, 2, 0, "HIGH"),
+            (0, 0, 0, 1, "LOW"), (99, 0, 0, 2, "LOW"),
+            (98, 0, 0, 2, "VERY_HIGH"),
+        ):
+            data = dict(zip(("front_pixels_low", "front_pixels_medium", "front_pixels_high",
+                             "front_pixels_very_high"), (low, medium, high, very_high)))
+            for settings in (None, config):
+                with self.subTest(data=data, configured=settings is not None):
+                    self.assertEqual(classificar_intensidade_frente(data, settings)["radar_intensity"], expected)
+
+    def test_threshold_medium_sobrescrito_via_env(self):
+        with mock.patch.dict(os.environ, {
+            "NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PIXELS": "3",
+            "NOWCASTING_ALERT_MIN_MEDIUM_REFLECTIVITY_PERCENT": "10",
+        }, clear=True):
+            config = nowcasting_config()
+        data = {**frente(), "front_pixels_low": 27, "front_pixels_medium": 3}
+        self.assertEqual(classificar_intensidade_frente(data, config)["radar_intensity"], "MEDIUM")
+        self.assertEqual(classificar_intensidade_frente(data)["radar_intensity"], "LOW")
+
     def test_matriz_intensidade_distancia_tracking(self):
         for classe, distancia, tracked, rota in (
             ("LOW", 10, False, "NENHUMA"),

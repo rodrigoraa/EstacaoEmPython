@@ -31,7 +31,7 @@ def classificar_intensidade_frente(frente, config=None):
         for nome, quantidade, percentual, pixels, classe in (
             ("very_high", muito_alta, 2, 2, RADAR_INTENSITY_VERY_HIGH),
             ("strong", alta + muito_alta, 10, 2, RADAR_INTENSITY_HIGH),
-            ("medium", media + alta + muito_alta, 10, 3, RADAR_INTENSITY_MEDIUM),
+            ("medium", media + alta + muito_alta, 20, 10, RADAR_INTENSITY_MEDIUM),
         ):
             minimo_pixels = numero_alerta_valido(config.get(f"alert_min_{nome}_reflectivity_pixels"), pixels, pixels=True)
             minimo_percent = numero_alerta_valido(config.get(f"alert_min_{nome}_reflectivity_percent"), percentual, percentual=True)

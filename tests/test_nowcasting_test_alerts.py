@@ -661,6 +661,22 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         self.processar(snapshot, sender=sender)
         sender.assert_called_once()
 
+    def test_medium_tracking_distante_continua_elegivel_para_admin(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        snapshot = self.snapshot()
+        snapshot["alerta_preventivo"].update(
+            distance_km=40, closest_approach_km=13,
+            front_pixels_high=0, front_pixels_medium=200)
+        config = {**self.config(), "alerts_enabled": False, "test_alerts_enabled": True}
+        avaliacao = self.service.avaliar_alerta_teste_admin(
+            snapshot, config, admin_phone=os.environ["ADMIN_ALERT_PHONE"], now=self.base)
+        self.assertTrue(avaliacao["eligible"])
+        self.assertEqual(avaliacao["decision"]["authorization"], "TRACKING")
+        sender = mock.Mock()
+        self.processar(snapshot, config=config, sender=sender)
+        sender.assert_called_once()
+        self.assert_sem_fila_preventiva()
+
     def test_muito_alta_acima_do_minimo_envia_sem_10_porcento_forte(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         snapshot = self.snapshot()

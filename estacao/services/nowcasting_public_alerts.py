@@ -126,6 +126,15 @@ def _mensagem_usuario(usuario, mensagem):
     return (f"ATENÇÃO, {nome},\n" if nome else "") + mensagem
 
 
+def _aplicar_politica_publica(avaliacao):
+    """Mantém a decisão meteorológica; restringe apenas a notificação pública."""
+    decisao = avaliacao.get("decision") or {}
+    if (avaliacao["eligible"] and decisao.get("radar_intensity") == "MEDIUM"
+            and decisao.get("authorization") == "TRACKING"):
+        return {**avaliacao, "eligible": False, "reason": "medium_tracking_monitor_only"}
+    return avaliacao
+
+
 def processar_alerta_publico(snapshot, config, *, now=None):
     habilitado = config.get("alerts_enabled") is True
     logger.info("Nowcasting público: enabled=%s", habilitado)
@@ -133,7 +142,8 @@ def processar_alerta_publico(snapshot, config, *, now=None):
         return {"enabled": False, "enfileirados": 0, "reason": "disabled"}
     agora = now or agora_utc()
     snapshot = snapshot or {}
-    avaliacao = avaliar_alerta_preventivo_snapshot(snapshot, config, now=agora)
+    avaliacao = _aplicar_politica_publica(
+        avaliar_alerta_preventivo_snapshot(snapshot, config, now=agora))
     if avaliacao["reason"] == "invalid_snapshot":
         snapshot = {}
     decisao = avaliacao.get("decision") or {}

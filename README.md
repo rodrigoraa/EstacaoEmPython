@@ -692,8 +692,10 @@ NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM=15
 O raio público de 15 km limita somente o WhatsApp antecipado via TRACKING;
 `RADAR_INTERCEPT_RADIUS_KM=25` continua na análise geral e nas telas. HIGH
 distante via TRACKING requer confirmação em dois frames reais distintos e
-consecutivos do mesmo track. HIGH por PROXIMIDADE e VERY_HIGH qualificado
-continuam imediatos; MEDIUM mantém seus limiares e envio atual.
+consecutivos do mesmo track. MEDIUM por PROXIMIDADE pode gerar INFORMATIVO
+público; MEDIUM distante por TRACKING fica somente em monitoramento, sem
+WhatsApp público, mas permanece visível na análise e no modo de teste do
+administrador. HIGH por PROXIMIDADE e VERY_HIGH qualificado continuam imediatos.
 
 Percentuais aceitam 0–100 inclusive; pixels exigem inteiros >=1; profundidade e
 distâncias exigem valores >0. NaN, infinito e valores inválidos voltam ao default.
@@ -704,7 +706,7 @@ os próximos frames e os critérios de decisão são revalidados antes do envio.
 
 | Intensidade | Nível público | PROXIMIDADE | TRACKING |
 |---|---|---:|---:|
-| MEDIUM | INFORMATIVO | <=25 km | <=50 km |
+| MEDIUM | INFORMATIVO | <=25 km | monitoramento até 50 km, sem envio público |
 | HIGH | ATENCAO | <=35 km | <=75 km |
 | VERY_HIGH | ALERTA | <=50 km | <=100 km |
 

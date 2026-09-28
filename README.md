@@ -692,10 +692,12 @@ NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM=15
 O raio público de 15 km limita somente o WhatsApp antecipado via TRACKING;
 `RADAR_INTERCEPT_RADIUS_KM=25` continua na análise geral e nas telas. HIGH
 distante via TRACKING requer confirmação em dois frames reais distintos e
-consecutivos do mesmo track. MEDIUM por PROXIMIDADE pode gerar INFORMATIVO
-público; MEDIUM distante por TRACKING fica somente em monitoramento, sem
+consecutivos do mesmo track. MEDIUM por PROXIMIDADE (até 25 km) só gera
+INFORMATIVO público após dois frames reais distintos e consecutivos do mesmo
+track; reprocessar um frame não conta novamente. MEDIUM distante por TRACKING fica somente em monitoramento, sem
 WhatsApp público, mas permanece visível na análise e no modo de teste do
-administrador. HIGH por PROXIMIDADE e VERY_HIGH qualificado continuam imediatos.
+administrador, que continua mais sensível para calibração. HIGH por PROXIMIDADE
+e VERY_HIGH qualificado continuam imediatos.
 
 Percentuais aceitam 0–100 inclusive; pixels exigem inteiros >=1; profundidade e
 distâncias exigem valores >0. NaN, infinito e valores inválidos voltam ao default.
@@ -711,8 +713,9 @@ os próximos frames e os critérios de decisão são revalidados antes do envio.
 | VERY_HIGH | ALERTA | <=50 km | <=100 km |
 
 A distância usada é a mínima dos pixels originais até o Distrito, mantendo a borda
-como gatilho. Dentro da proximidade não se exige track, três frames, aproximação ou
-trajetória. Fora dela, a rota TRACKING exige track_id, tracking válido, aproximação
+como gatilho. Dentro da proximidade não se exige aproximação ou
+trajetória; o INFORMATIVO público de MEDIUM exige track_id para conferir os
+dois frames. Fora dela, a rota TRACKING exige track_id, tracking válido, aproximação
 e trajetória compatível. Radar operacional, atual, frame válido, ausência de clutter
 forte e chuva local ainda não observada valem para ambas. Confirmação regional
 continua no diagnóstico e não é requisito obrigatório.

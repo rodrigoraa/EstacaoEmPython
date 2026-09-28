@@ -30,7 +30,10 @@ def estado_padrao():
                 last_seen_at=None, last_distance_km=None, clear_since=None,
                 last_result="never", suppressed_for_current_episode=False,
                 pending_tracking_track_id=None, pending_tracking_frame_id=None,
-                pending_tracking_count=0)
+                pending_tracking_count=0,
+                pending_medium_proximity_track_id=None,
+                pending_medium_proximity_frame_id=None,
+                pending_medium_proximity_count=0)
 
 
 def carregar_estado(conn):
@@ -39,7 +42,11 @@ def carregar_estado(conn):
     if row is None:
         return estado_padrao()
     estado = json.loads(row["mensagem"])
-    antigos = estado_padrao().keys() - {"pending_tracking_track_id", "pending_tracking_frame_id", "pending_tracking_count"}
+    antigos = estado_padrao().keys() - {
+        "pending_tracking_track_id", "pending_tracking_frame_id", "pending_tracking_count",
+        "pending_medium_proximity_track_id", "pending_medium_proximity_frame_id",
+        "pending_medium_proximity_count",
+    }
     if not isinstance(estado, dict) or not antigos <= estado.keys():
         raise ValueError("Estado público inválido")
     for campo in estado_padrao().keys() - estado.keys():
@@ -50,6 +57,12 @@ def carregar_estado(conn):
                 type(estado["pending_tracking_track_id"]) is not int
                 or type(estado["pending_tracking_frame_id"]) is not int))):
         raise ValueError("Confirmação pública inválida")
+    if (type(estado["pending_medium_proximity_count"]) is not int
+            or estado["pending_medium_proximity_count"] not in (0, 1, 2)
+            or (estado["pending_medium_proximity_count"] and (
+                type(estado["pending_medium_proximity_track_id"]) is not int
+                or type(estado["pending_medium_proximity_frame_id"]) is not int))):
+        raise ValueError("Confirmação MEDIUM pública inválida")
     severity = estado["highest_enqueued_severity"]
     if (type(estado["active"]) is not bool
             or type(estado["suppressed_for_current_episode"]) is not bool
@@ -120,6 +133,31 @@ def _atualizar_confirmacao_high(estado, avaliacao, snapshot):
     return count >= 2
 
 
+def _atualizar_confirmacao_medium(estado, avaliacao, snapshot):
+    decisao = avaliacao.get("decision") or {}
+    alerta = snapshot.get("alerta_preventivo") or {}
+    frame = (snapshot.get("radar") or {}).get("frame_id")
+    track = alerta.get("track_id")
+    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") == "MEDIUM"
+                 and decisao.get("authorization") == "PROXIMIDADE"
+                 and type(frame) is int and type(track) is int)
+    if not candidato:
+        estado.update(pending_medium_proximity_track_id=None,
+                      pending_medium_proximity_frame_id=None,
+                      pending_medium_proximity_count=0)
+        return False
+    anterior = estado["pending_medium_proximity_frame_id"]
+    if track == estado["pending_medium_proximity_track_id"] and frame == anterior:
+        return estado["pending_medium_proximity_count"] >= 2
+    count = 2 if (track == estado["pending_medium_proximity_track_id"]
+                  and type(anterior) is int and frame == anterior + 1
+                  and estado["pending_medium_proximity_count"] >= 1) else 1
+    estado.update(pending_medium_proximity_track_id=track,
+                  pending_medium_proximity_frame_id=frame,
+                  pending_medium_proximity_count=count)
+    return count >= 2
+
+
 def _mensagem_usuario(usuario, mensagem):
     # O texto preventivo já contém local e link; aqui só entra a saudação.
     nome = (usuario["nome"] or "").strip()
@@ -158,6 +196,7 @@ def processar_alerta_publico(snapshot, config, *, now=None):
                       last_distance_km=_numero_finito(alerta.get("distance_km")),
                       last_result=avaliacao["reason"])
         high_confirmado = _atualizar_confirmacao_high(estado, avaliacao, snapshot)
+        medium_confirmado = _atualizar_confirmacao_medium(estado, avaliacao, snapshot)
         if _evento_local_observado(snapshot) or avaliacao["reason"] == "local_event_observed":
             if not estado["active"]:
                 _iniciar(estado, agora)
@@ -190,6 +229,10 @@ def processar_alerta_publico(snapshot, config, *, now=None):
                 estado["last_result"] = "same_or_lower_severity"
             elif highest == 0 and idade is not None and idade < config.get("alert_cooldown_minutes", 180):
                 estado["last_result"] = "cooldown"
+            elif (decisao.get("radar_intensity") == "MEDIUM"
+                  and decisao.get("authorization") == "PROXIMIDADE"
+                  and not medium_confirmado):
+                estado["last_result"] = "awaiting_medium_proximity_confirmation"
             else:
                 evento_id = f"nowcasting:{estado['episode_id']}:{decisao['alert_level'].lower()}"
                 radar = snapshot.get("radar") or {}

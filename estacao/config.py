@@ -59,6 +59,8 @@ def numero_alerta_valido(valor, padrao, *, percentual=False, pixels=False):
 
 def config_alerta_preventivo():
     resultado = {}
+    resultado["public_track_intercept_km"] = numero_alerta_valido(
+        env_str("NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM"), 15)
     for classe, percentual, pixels in (("medium", 20, 10), ("strong", 10, 2), ("very_high", 2, 2)):
         for sufixo, padrao in (("percent", percentual), ("pixels", pixels)):
             chave = f"alert_min_{classe}_reflectivity_{sufixo}"

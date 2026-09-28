@@ -28,7 +28,9 @@ def estado_padrao():
                 highest_enqueued_severity=0, last_enqueued_alert_level=None,
                 last_enqueued_radar_intensity=None, last_enqueued_at=None,
                 last_seen_at=None, last_distance_km=None, clear_since=None,
-                last_result="never", suppressed_for_current_episode=False)
+                last_result="never", suppressed_for_current_episode=False,
+                pending_tracking_track_id=None, pending_tracking_frame_id=None,
+                pending_tracking_count=0)
 
 
 def carregar_estado(conn):
@@ -37,8 +39,17 @@ def carregar_estado(conn):
     if row is None:
         return estado_padrao()
     estado = json.loads(row["mensagem"])
-    if not isinstance(estado, dict) or not estado_padrao().keys() <= estado.keys():
+    antigos = estado_padrao().keys() - {"pending_tracking_track_id", "pending_tracking_frame_id", "pending_tracking_count"}
+    if not isinstance(estado, dict) or not antigos <= estado.keys():
         raise ValueError("Estado público inválido")
+    for campo in estado_padrao().keys() - estado.keys():
+        estado[campo] = estado_padrao()[campo]
+    if (type(estado["pending_tracking_count"]) is not int
+            or estado["pending_tracking_count"] not in (0, 1, 2)
+            or (estado["pending_tracking_count"] and (
+                type(estado["pending_tracking_track_id"]) is not int
+                or type(estado["pending_tracking_frame_id"]) is not int))):
+        raise ValueError("Confirmação pública inválida")
     severity = estado["highest_enqueued_severity"]
     if (type(estado["active"]) is not bool
             or type(estado["suppressed_for_current_episode"]) is not bool
@@ -86,6 +97,29 @@ def _iniciar(estado, agora):
                   episode_started_at=iso_utc(agora), clear_since=None)
 
 
+def _atualizar_confirmacao_high(estado, avaliacao, snapshot):
+    decisao = avaliacao.get("decision") or {}
+    alerta = snapshot.get("alerta_preventivo") or {}
+    frame = (snapshot.get("radar") or {}).get("frame_id")
+    track = alerta.get("track_id")
+    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") == "HIGH"
+                 and decisao.get("authorization") == "TRACKING"
+                 and type(frame) is int and type(track) is int)
+    if not candidato:
+        estado.update(pending_tracking_track_id=None, pending_tracking_frame_id=None,
+                      pending_tracking_count=0)
+        return False
+    anterior = estado["pending_tracking_frame_id"]
+    if track == estado["pending_tracking_track_id"] and frame == anterior:
+        return estado["pending_tracking_count"] >= 2
+    count = 2 if (track == estado["pending_tracking_track_id"]
+                  and type(anterior) is int and frame == anterior + 1
+                  and estado["pending_tracking_count"] >= 1) else 1
+    estado.update(pending_tracking_track_id=track, pending_tracking_frame_id=frame,
+                  pending_tracking_count=count)
+    return count >= 2
+
+
 def _mensagem_usuario(usuario, mensagem):
     # O texto preventivo já contém local e link; aqui só entra a saudação.
     nome = (usuario["nome"] or "").strip()
@@ -113,6 +147,7 @@ def processar_alerta_publico(snapshot, config, *, now=None):
         estado.update(last_seen_at=iso_utc(agora),
                       last_distance_km=_numero_finito(alerta.get("distance_km")),
                       last_result=avaliacao["reason"])
+        high_confirmado = _atualizar_confirmacao_high(estado, avaliacao, snapshot)
         if _evento_local_observado(snapshot) or avaliacao["reason"] == "local_event_observed":
             if not estado["active"]:
                 _iniciar(estado, agora)
@@ -137,6 +172,10 @@ def processar_alerta_publico(snapshot, config, *, now=None):
             idade = _minutos_desde_utc(estado["last_enqueued_at"], agora)
             if estado["suppressed_for_current_episode"]:
                 estado["last_result"] = "local_event_observed"
+            elif (decisao.get("radar_intensity") == "HIGH"
+                  and decisao.get("authorization") == "TRACKING"
+                  and not high_confirmado):
+                estado["last_result"] = "awaiting_high_frame_confirmation"
             elif severity <= highest:
                 estado["last_result"] = "same_or_lower_severity"
             elif highest == 0 and idade is not None and idade < config.get("alert_cooldown_minutes", 180):

@@ -22,6 +22,7 @@ def frente(classe="MEDIUM", distance=20, tracked=False):
         "distance_km": distance, "tracking_valid": tracked,
         "track_id": 1 if tracked else None, "approaching": tracked,
         "trajectory_compatible": tracked,
+        "closest_approach_km": 13 if tracked else None,
     }
 
 

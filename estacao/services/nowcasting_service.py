@@ -378,6 +378,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         "faixa_distancia": _faixa_distancia(distance),
         "approaching": track.get("aproximando") if track_valid else None,
         "trajectory_compatible": bool(track_valid and track.get("trajetoria_compativel")),
+        "closest_approach_km": track.get("menor_aproximacao_km"),
         "tracking_valid": track_valid,
         "tracking_quality": tracking_quality,
         "eta_minutes": eta,

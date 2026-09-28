@@ -55,6 +55,7 @@ class PublicAlertsTest(unittest.TestCase):
                 "front_pixels_very_high": 100 if intensity == "VERY_HIGH" else 0,
                 "track_id": 27 if tracking else None, "tracking_valid": tracking,
                 "approaching": tracking, "trajectory_compatible": tracking,
+                "closest_approach_km": 13 if tracking else None,
                 "clutter": False, "eta_border_minutes": 25,
                 "eta_border_quality": "BOA",
             },
@@ -339,6 +340,86 @@ class PublicAlertsTest(unittest.TestCase):
         self.assertFalse(config["alerts_enabled"])
         self.assertEqual(config["alert_cooldown_minutes"], 180)
         self.assertEqual(config["alert_rearm_minutes"], 60)
+        self.assertEqual(config["public_track_intercept_km"], 15)
+
+    def distant(self, intensity="HIGH", frame=100, track=2146, approach=13.4, minute=0):
+        snap = self.snapshot(intensity, minute=minute, distance=55.9, tracking=True)
+        snap["radar"]["frame_id"] = frame
+        snap["alerta_preventivo"].update(track_id=track, closest_approach_km=approach)
+        return snap
+
+    def test_high_distante_exige_dois_frames_do_mesmo_track(self):
+        first = self.process(self.distant(), 0)
+        self.assertEqual(first["reason"], "awaiting_high_frame_confirmation")
+        self.assertEqual(first["state"]["pending_tracking_count"], 1)
+        for minute in (1, 2, 3):
+            repeat = self.process(self.distant(minute=minute), minute)
+            self.assertEqual(repeat["state"]["pending_tracking_count"], 1)
+            self.assertEqual(repeat["enfileirados"], 0)
+        confirmed = self.process(self.distant(frame=101, minute=4), 4)
+        self.assertEqual(confirmed["enfileirados"], 2)
+        for frame in (102, 103):
+            self.assertEqual(self.process(self.distant(frame=frame, minute=frame-96), frame-96)["enfileirados"], 0)
+        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [2])
+
+    def test_high_isolado_real_cai_para_medium(self):
+        first = self.distant()
+        first["alerta_preventivo"].update(front_pixels_low=50, front_pixels_medium=42,
+                                           front_pixels_high=18, front_pixels_very_high=0)
+        self.assertEqual(self.process(first)["reason"], "awaiting_high_frame_confirmation")
+        medium = self.distant("MEDIUM", frame=101, minute=5)
+        medium["alerta_preventivo"]["distance_km"] = 48.7
+        result = self.process(medium, 5)
+        self.assertEqual(result["state"]["pending_tracking_count"], 0)
+        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [1])
+
+    def test_track_novo_e_frame_pulado_reiniciam_confirmacao(self):
+        self.process(self.distant())
+        changed = self.process(self.distant(frame=101, track=77, minute=1), 1)
+        self.assertEqual(changed["state"]["pending_tracking_count"], 1)
+        skipped = self.process(self.distant(frame=103, track=77, minute=2), 2)
+        self.assertEqual(skipped["state"]["pending_tracking_count"], 1)
+        self.assertEqual(self.rows("alertas_eventos"), [])
+
+    def test_trajetoria_publica_por_intensidade_e_proximidade(self):
+        for intensity in ("MEDIUM", "HIGH", "VERY_HIGH"):
+            with self.subTest(intensity=intensity):
+                snap = self.distant(intensity, approach=20)
+                if intensity == "MEDIUM":
+                    snap["alerta_preventivo"]["distance_km"] = 40
+                result = self.process(snap)
+                self.assertEqual(result["reason"], "public_trajectory_too_far")
+                snap["alerta_preventivo"]["closest_approach_km"] = None
+                self.assertEqual(self.process(snap)["reason"], "public_trajectory_too_far")
+        near = self.distant(approach=None)
+        near["alerta_preventivo"]["distance_km"] = 25
+        self.assertEqual(self.process(near)["enfileirados"], 2)
+
+    def test_very_high_e_medium_tracking_imediatos(self):
+        medium = self.distant("MEDIUM", frame=100)
+        medium["alerta_preventivo"]["distance_km"] = 40
+        self.assertEqual(self.process(medium)["enfileirados"], 2)
+        self.assertEqual(self.process(self.distant("VERY_HIGH", frame=101, minute=1), 1)["enfileirados"], 2)
+
+    def test_escalonamento_high_confirmado_ignora_cooldown(self):
+        self.process(self.snapshot("MEDIUM"))
+        self.assertEqual(self.process(self.distant(frame=100, minute=1), 1)["enfileirados"], 0)
+        self.assertEqual(self.process(self.distant(frame=101, minute=2), 2)["enfileirados"], 2)
+        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [1, 2])
+
+    def test_estado_antigo_carrega_sem_campos_de_confirmacao(self):
+        self.process()
+        conn = self.db.get_db()
+        row = conn.execute("SELECT mensagem FROM health_check_estado WHERE chave=?",
+                           (self.service.ESTADO_CHAVE,)).fetchone()
+        old = json.loads(row["mensagem"])
+        for key in ("pending_tracking_track_id", "pending_tracking_frame_id", "pending_tracking_count"):
+            old.pop(key)
+        conn.execute("UPDATE health_check_estado SET mensagem=? WHERE chave=?",
+                     (json.dumps(old), self.service.ESTADO_CHAVE))
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.process(self.distant(frame=100, minute=1), 1)["state"]["pending_tracking_count"], 1)
 
     def test_config_sobrescrita_env_aplicada_ao_rearm_e_cooldown(self):
         from config import nowcasting_config

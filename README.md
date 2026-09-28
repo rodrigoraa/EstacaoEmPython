@@ -167,7 +167,7 @@ Também permanecem os limites `ALERTA_CALOR_*`, `ALERTA_FRIO_*`, `ALERTA_VENTO_*
 | `RADAR_TRACK_MAX_DIRECTION_CHANGE_DEG` | `90` | mudança máxima de trajetória associável |
 | `RADAR_TRACK_PREDICTION_WEIGHT` | `0.65` | peso da posição prevista no custo geométrico |
 | `RADAR_TRACK_TIMEOUT_MINUTES` | `180` | tempo para manter track sem nova associação |
-| `RADAR_INTERCEPT_RADIUS_KM` | `25` | raio da trajetória compatível |
+| `RADAR_INTERCEPT_RADIUS_KM` | `25` | raio de interceptação do tracking e análise geral |
 | `RADAR_STALE_MINUTES` | `45` | idade para aviso visual |
 | `RADAR_MAX_FUTURE_MINUTES` | `30` | tolerância antes de marcar timestamp futuro como `suspect` |
 | `RADAR_DATA_DIR` | `estacao/data/radar` | originais e imagens anotadas |
@@ -686,7 +686,14 @@ NOWCASTING_ALERT_HIGH_NEAR_KM=35
 NOWCASTING_ALERT_HIGH_TRACKED_KM=75
 NOWCASTING_ALERT_VERY_HIGH_NEAR_KM=50
 NOWCASTING_ALERT_VERY_HIGH_TRACKED_KM=100
+NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM=15
 ```
+
+O raio público de 15 km limita somente o WhatsApp antecipado via TRACKING;
+`RADAR_INTERCEPT_RADIUS_KM=25` continua na análise geral e nas telas. HIGH
+distante via TRACKING requer confirmação em dois frames reais distintos e
+consecutivos do mesmo track. HIGH por PROXIMIDADE e VERY_HIGH qualificado
+continuam imediatos; MEDIUM mantém seus limiares e envio atual.
 
 Percentuais aceitam 0–100 inclusive; pixels exigem inteiros >=1; profundidade e
 distâncias exigem valores >0. NaN, infinito e valores inválidos voltam ao default.

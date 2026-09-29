@@ -31,21 +31,21 @@
     {% include "includes/common_head_assets.html" %}
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 </head>
-<body class="bg-slate-50 font-sans text-slate-800 pb-12">
+<body class="admin-app bg-slate-50 font-sans text-slate-800 pb-12">
     {% include "includes/admin_navigation.html" %}
 
-    <main class="max-w-7xl mx-auto px-4 mt-6 md:mt-8 space-y-6">
+    <main class="admin-main max-w-7xl mx-auto px-4 mt-6 md:mt-8 space-y-6">
         {% with messages = get_flashed_messages() %}{% if messages %}<div class="bg-blue-50 border border-blue-100 text-blue-800 px-4 py-3 rounded-lg text-sm flex items-center gap-3 shadow-sm" role="alert"><i class="fa-solid fa-circle-info text-blue-500"></i><span class="font-medium">{{ messages[0] }}</span></div>{% endif %}{% endwith %}
 
         {% if aba_ativa == 'visao-geral' %}
         <div><h2 class="text-2xl font-extrabold text-slate-900">Visão geral</h2><p class="text-sm text-slate-500 mt-1">Situação atual dos usuários, integrações e processos da estação.</p></div>
-        <section class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <section class="admin-summary-grid grid grid-cols-2 xl:grid-cols-4 gap-4">
             <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Usuários</span><i class="fa-solid fa-users text-slate-400"></i></div><p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.total_usuarios }}</p></a>
             <a href="{{ url_for('admin.admin', aba='usuarios', filtro='ativos') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Ativos</span><i class="fa-solid fa-circle-check text-emerald-500"></i></div><p class="mt-3 text-3xl font-extrabold text-emerald-700">{{ resumo_usuarios.usuarios_ativos }}</p></a>
             <a href="{{ url_for('admin.admin', aba='usuarios', filtro='whatsapp') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Com WhatsApp</span><i class="fa-brands fa-whatsapp text-emerald-500"></i></div><p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.usuarios_whatsapp }}</p></a>
             <a href="{{ url_for('admin.admin', aba='usuarios', filtro='pausados') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Pausados</span><i class="fa-solid fa-pause text-amber-500"></i></div><p class="mt-3 text-3xl font-extrabold text-amber-700">{{ resumo_usuarios.usuarios_pausados }}</p></a>
         </section>
-        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section class="admin-system-grid grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><i class="fa-brands fa-whatsapp text-xl"></i></div><div><h3 class="font-bold text-slate-800">Evolution API</h3><p class="text-sm text-slate-500">{{ evolution_status.estado }}</p></div></div><div class="text-left sm:text-right"><span class="inline-flex items-center gap-2 {% if evolution_status.ok %}bg-emerald-50 text-emerald-700 border-emerald-100{% else %}bg-rose-50 text-rose-700 border-rose-100{% endif %} text-sm font-bold px-3 py-2 rounded-lg border"><i class="fa-solid {% if evolution_status.ok %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>{{ 'Conectada' if evolution_status.ok else 'Atenção' }}</span><p class="text-xs font-mono text-slate-500 mt-2">{{ evolution_status.detalhe }}</p></div></div>
             <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-50 text-rose-500"><i class="fa-solid fa-heart-pulse text-xl"></i></div><div><h3 class="font-bold text-slate-800">Saúde do sistema</h3><p class="text-sm text-slate-500">Coleta, fila e entregas</p></div></div><span class="w-fit inline-flex items-center gap-2 {% if saude_sistema.status_geral == 'ok' %}bg-emerald-50 text-emerald-700 border-emerald-100{% else %}bg-amber-50 text-amber-700 border-amber-100{% endif %} text-sm font-bold px-3 py-2 rounded-lg border"><i class="fa-solid {% if saude_sistema.status_geral == 'ok' %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>{{ saude_sistema.status_texto }}</span></div>
         </section>

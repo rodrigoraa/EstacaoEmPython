@@ -1,4 +1,4 @@
-<nav class="bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
+<nav class="admin-topbar bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
     <div class="flex items-center gap-3 min-w-0"><i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i><div class="min-w-0"><h1 class="text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1><p class="text-xs font-medium text-slate-400 uppercase">Estação Meteorológica</p></div></div>
     <form action="{{ url_for('admin.admin_logout') }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Sair"><i class="fa-solid fa-right-from-bracket"></i><span class="hidden sm:inline">Sair</span></button></form>
 </nav>

@@ -1442,3 +1442,101 @@ body.modal-open {
     .monitor-hero-header, .monitor-panel-heading { flex-direction: column; }
 }
 @media (max-width: 560px) { .monitor-page .admin-overview-grid { grid-template-columns: 1fr; } .monitor-action { width: 100%; } .monitor-control-item form { width: 100%; } }
+
+/* Identidade visual exclusiva da administração. */
+.admin-app, .admin-login {
+    --admin-ink: #142637;
+    --admin-muted: #526477;
+    --admin-line: #dbe5eb;
+    --admin-accent: #087f77;
+    background: #f3f7f8;
+    background-image: radial-gradient(circle at 92% 0%, rgba(13, 148, 136, .09), transparent 31rem),
+                      linear-gradient(180deg, #edf4f5 0, #f6f8f9 20rem, #f3f7f8 100%);
+    color: var(--admin-ink);
+}
+.admin-main { padding-bottom: 2rem; }
+.admin-topbar {
+    min-height: 4.75rem;
+    background: #102b37;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    box-shadow: 0 8px 24px rgba(16,43,55,.13);
+}
+.admin-topbar > div > i { color: #67e8d0; }
+.admin-topbar h1 { letter-spacing: -.025em; }
+.admin-topbar form button { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); box-shadow: none; }
+.admin-topbar form button:hover { background: rgba(255,255,255,.18); }
+.admin-tabs-shell { top: 4.75rem; background: rgba(255,255,255,.96); border-color: var(--admin-line); box-shadow: 0 5px 16px rgba(16,43,55,.04); }
+.admin-tabs-shell nav { gap: .25rem; scrollbar-width: thin; }
+.admin-tab { margin: .35rem 0; padding: .75rem .9rem; border: 0; border-radius: .6rem; color: #526477; font-size: .82rem; }
+.admin-tab:hover { background: #edf6f5; color: #075f59; }
+.admin-tab-active, .admin-tab-active:hover { background: #dff3ef; color: #075f59; box-shadow: inset 0 0 0 1px #bce4dc; }
+.admin-tab:focus-visible, .admin-topbar button:focus-visible { outline: 3px solid #14b8a6; outline-offset: 2px; }
+.admin-tab-count { background: rgba(16,43,55,.07); color: inherit; }
+.admin-app .admin-weather-header { align-items: center; padding: .4rem 0 .25rem; }
+.admin-app .admin-weather-header h1, .admin-app .admin-main > div:first-child h2 { color: var(--admin-ink); letter-spacing: -.035em; }
+.admin-app .admin-weather-header h1 { font-size: clamp(1.55rem, 2.5vw, 2.15rem); }
+.admin-app .card, .admin-app .admin-main > section.bg-white, .admin-app .admin-main > div > section.bg-white {
+    border: 1px solid var(--admin-line);
+    border-radius: 1rem;
+    box-shadow: 0 8px 28px rgba(18,49,63,.055);
+    background: #fff;
+}
+.admin-app .card:hover { box-shadow: 0 8px 28px rgba(18,49,63,.055); }
+.admin-app .admin-section-heading { padding: 1.25rem 1.5rem; background: #fff; border-bottom-color: var(--admin-line); }
+.admin-app .admin-section-heading h2 { color: var(--admin-ink); font-size: 1.1rem; }
+.admin-app .admin-section-heading h2 i { color: var(--admin-accent); }
+.admin-app .admin-total-badge { border-color: #cce5e0; background: #edf8f5; color: #09675f; }
+.admin-app .admin-filter-bar { gap: .9rem; padding: 1.1rem 1.5rem; background: #f8fbfb; border-bottom-color: var(--admin-line); }
+.admin-app .admin-filter-bar label { color: #385266; }
+.admin-app .admin-filter-bar input, .admin-app .admin-filter-bar select, .admin-app .admin-table-input {
+    border-color: #cbd9df; border-radius: .6rem; background: #fff; color: var(--admin-ink);
+}
+.admin-app .admin-filter-bar input:focus, .admin-app .admin-filter-bar select:focus, .admin-app .admin-table-input:focus {
+    border-color: var(--admin-accent); box-shadow: 0 0 0 3px rgba(13,148,136,.15);
+}
+.admin-app .admin-filter-button { background: #087f77; border-radius: .6rem; }
+.admin-app .admin-filter-button:hover { background: #086b65; }
+.admin-app .admin-clear-button { background: #fff; border-radius: .6rem; }
+.admin-app .admin-clear-button:hover { background: #edf6f5; color: #075f59; }
+.admin-app .admin-data-table { border-collapse: separate; border-spacing: 0; }
+.admin-app .admin-data-table thead { background: #edf4f5; color: #3b5366; }
+.admin-app .admin-data-table th { padding-top: .9rem; padding-bottom: .9rem; border-bottom-color: var(--admin-line); font-weight: 800; letter-spacing: .045em; }
+.admin-app .admin-data-table tbody tr:nth-child(even) { background: #fbfdfd; }
+.admin-app .admin-data-table tbody tr:hover { background: #edf8f5; }
+.admin-app .admin-data-table tbody td { border-bottom: 1px solid #edf1f3; }
+.admin-app .admin-page-link-active { border-color: var(--admin-accent); background: var(--admin-accent); }
+.admin-app .admin-check input { accent-color: var(--admin-accent); }
+.admin-app .admin-metric { border-color: var(--admin-line); border-radius: .8rem; background: #fff; }
+.admin-app .admin-metric-muted { background: #f7fafb; }
+.admin-summary-grid > a, .admin-system-grid > div {
+    border-color: var(--admin-line); border-radius: 1rem;
+    box-shadow: 0 8px 24px rgba(18,49,63,.055);
+}
+.admin-summary-grid > a { min-height: 8rem; background: #fff; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+.admin-summary-grid > a:hover { transform: translateY(-2px); border-color: #9acfc5; box-shadow: 0 12px 30px rgba(18,49,63,.1); background: #fff; }
+.admin-summary-grid > a:focus-visible { outline: 3px solid var(--admin-accent); outline-offset: 2px; }
+.admin-summary-grid > a p { letter-spacing: -.035em; }
+.admin-system-grid > div { background: #fff; }
+.admin-app .admin-overview-item { border-color: var(--admin-line); border-top-color: var(--admin-accent); border-radius: 1rem; box-shadow: 0 8px 22px rgba(18,49,63,.05); }
+.admin-app .admin-overview-item--success { border-top-color: #16a34a; }
+.admin-app .admin-overview-item--warning { border-top-color: #d97706; }
+.admin-app .admin-section-kicker { color: #087f77; }
+.admin-app .monitor-controls { border-color: #b9ded8; box-shadow: 0 10px 30px rgba(8,127,119,.09); }
+.admin-app .monitor-control-item { background: #f7fbfa; border-color: #d5e8e4; }
+.admin-app .monitor-control-badge { background: #e2efed; color: #204d4a; }
+.admin-app .monitor-controls-link { color: #075f59; }
+.admin-app .monitor-action--on { background: #087f77; }
+.admin-app .monitor-action--off { color: #a02647; border-color: #c76b81; }
+.admin-app .monitor-action--cancel { background: #e8eff1; }
+.admin-app .monitor-stations section, .admin-app .monitor-technical-values > div { background: #f7fafb; border-color: var(--admin-line); }
+.admin-app .regional-status { font-size: .75rem; }
+.admin-login > div { border: 1px solid #d5e5e6; border-radius: 1.25rem; box-shadow: 0 24px 70px rgba(16,43,55,.14); }
+.admin-login > div > div:first-child > div { background: #e0f3ef; color: #087f77; }
+.admin-login button[type="submit"] { background: #087f77; }
+.admin-login button[type="submit"]:hover { background: #086b65; }
+.admin-login input:focus { border-color: #087f77; box-shadow: 0 0 0 3px rgba(13,148,136,.16); }
+@media (max-width: 639px) {
+    .admin-tabs-shell { top: 4.75rem; }
+    .admin-tab { margin: .3rem 0; padding: .7rem .75rem; }
+    .admin-app .admin-section-heading, .admin-app .admin-filter-bar { padding-right: 1rem; padding-left: 1rem; }
+}

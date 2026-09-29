@@ -56,6 +56,7 @@ def monitoramento_admin():
         test_alert=obter_status_alerta_teste_admin(snapshot, config),
         public_alert=obter_status_alerta_publico(config),
         controls=controls,
+        public_trajectory_min_frames=config.get("public_trajectory_min_frames", 4),
         regional_stations=_resumo_regional(preparado["estado"]),
         titulo="Monitoramento Meteorológico",
         aba_ativa="monitoramento",

@@ -17,7 +17,7 @@ def _read(conn):
         "SELECT valor_json, atualizado_em FROM estado_alertas WHERE chave=?", (STATE_KEY,)
     ).fetchone()
     if row is None:
-        return {}, None
+        return {}, None, "missing"
     try:
         value = json.loads(row["valor_json"])
         if not isinstance(value, dict) or set(value) - {*FIELDS.values(), *TIMESTAMPS.values(), "updated_at", "source"}:
@@ -26,30 +26,31 @@ def _read(conn):
             raise ValueError("Valor de controle inválido")
         if value.get("source", "admin") != "admin":
             raise ValueError("Origem de controle inválida")
-        return value, value.get("updated_at") or row["atualizado_em"]
+        return value, value.get("updated_at") or row["atualizado_em"], "ok"
     except (TypeError, ValueError, json.JSONDecodeError):
-        logger.warning("Controles do nowcasting inválidos; usando configuração do servidor")
-        return {}, None
+        logger.warning("Controles do nowcasting inválidos; proteção pública ativada")
+        return {}, None, "invalid"
 
 
 def obter_controles(config):
-    """Falha de leitura usa exclusivamente os dois valores do ambiente."""
+    """Ausência usa o ambiente; falha de leitura bloqueia alertas públicos."""
     try:
         conn = database.get_db_readonly()
         try:
-            overrides, updated_at = _read(conn)
+            overrides, updated_at, read_status = _read(conn)
         finally:
             conn.close()
     except Exception as error:
         logger.warning("Controles do nowcasting indisponíveis (%s)", type(error).__name__)
-        overrides, updated_at = {}, None
+        overrides, updated_at, read_status = {}, None, "error"
     result = {}
     for name, field in FIELDS.items():
         key = "alerts_enabled" if name == "public" else "test_alerts_enabled"
         overridden = field in overrides
+        fail_safe = name == "public" and read_status in ("invalid", "error")
         result[name] = {
-            "enabled": overrides[field] if overridden else config.get(key) is True,
-            "source": "admin" if overridden else "server",
+            "enabled": False if fail_safe else overrides[field] if overridden else config.get(key) is True,
+            "source": "fail_safe" if fail_safe else "admin" if overridden else "server",
             "updated_at": (overrides.get(TIMESTAMPS[name]) or updated_at) if overridden else None,
         }
     return result
@@ -67,7 +68,7 @@ def salvar_controle(name, enabled):
     conn = database.get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
-        overrides, _ = _read(conn)
+        overrides, _, _ = _read(conn)
         overrides = {field: overrides[field] for field in (*FIELDS.values(), *TIMESTAMPS.values())
                      if field in overrides}
         overrides[FIELDS[name]] = enabled

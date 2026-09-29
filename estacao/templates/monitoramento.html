@@ -4,7 +4,8 @@
 {% set principal = estado.get('ameaca_principal') or {} if estado else {} %}
 {% set alerta = estado.get('alerta_preventivo') or {} if estado else {} %}
 {% set confianca = principal.get('trajectory_confidence') %}
-{% set projecao_util = monitoramento_atual and confianca in ('MODERADA', 'ALTA') and (principal.get('trajectory_frames_used') or 0) >= 4 %}
+{% set min_frames_public = public_trajectory_min_frames|default(4) %}
+{% set projecao_util = monitoramento_atual and confianca in ('MODERADA', 'ALTA') and (principal.get('trajectory_frames_used') or 0) >= min_frames_public %}
 <section class="monitor-page admin-weather-page max-w-7xl mx-auto space-y-6">
   <header class="admin-weather-header">
     <div>
@@ -15,6 +16,7 @@
     <div class="flex flex-wrap gap-2" aria-label="Estado dos alertas">
       <span class="regional-status">Alertas públicos: {{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</span>
       <span class="regional-status">Teste admin: {{ 'ATIVADO' if controls.test.enabled else 'DESATIVADO' }}</span>
+      <a class="monitor-controls-link" href="#controle-alertas">Gerenciar alertas ↓</a>
     </div>
   </header>
 
@@ -52,7 +54,40 @@
     {% if not controls.public.enabled %}<p class="mt-3 text-sm">Monitoramento ativo — alertas públicos desativados.</p>{% endif %}
   </article>
 
-  <section aria-label="Resumo visual" class="admin-overview-grid">
+  <article class="card monitor-panel monitor-controls" aria-labelledby="controle-alertas">
+    <h2 id="controle-alertas" class="text-xl font-bold">Controle de alertas</h2>
+    <p class="text-sm text-slate-600">Esses controles afetam somente alertas preventivos do radar/nowcasting. Os alertas oficiais da estação continuam independentes.</p>
+    <div class="monitor-grid mt-4">
+      <section class="monitor-control-item">
+        <h3 class="font-bold">Alertas públicos preventivos <span class="monitor-control-badge">{{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</span></h3>
+        <p>Envia aos usuários cadastrados apenas quando os critérios públicos do nowcasting forem atendidos.</p>
+        <p class="text-sm">Origem: {{ 'Proteção de segurança' if controls.public.source == 'fail_safe' else 'Painel administrativo' if controls.public.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.public.updated_at or '—' }}.</p>
+        <button type="button" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}" onclick="document.getElementById('public-confirm').showModal()">{{ 'Desativar alertas públicos' if controls.public.enabled else 'Ativar alertas públicos' }}</button>
+      </section>
+      <section class="monitor-control-item">
+        <h3 class="font-bold">Alertas de teste ao administrador <span class="monitor-control-badge">{{ 'ATIVADOS' if controls.test.enabled else 'DESATIVADOS' }}</span></h3>
+        <p>Envia alertas experimentais somente ao telefone administrativo para calibração; fica suprimido nos ciclos com alertas públicos ativos.</p>
+        <p class="text-sm">Origem: {{ 'Painel administrativo' if controls.test.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.test.updated_at or '—' }}.</p>
+        <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='test') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="enabled" value="{{ 'false' if controls.test.enabled else 'true' }}">
+          <button type="submit" class="monitor-action {{ 'monitor-action--off' if controls.test.enabled else 'monitor-action--on' }}">{{ 'Desativar teste admin' if controls.test.enabled else 'Ativar teste admin' }}</button>
+        </form>
+      </section>
+    </div>
+    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos no próximo ciclo. Mensagens preventivas já pendentes na fila podem continuar sendo entregues; nenhum registro anterior é cancelado.</p>
+  </article>
+  <dialog id="public-confirm" class="monitor-dialog" aria-labelledby="public-confirm-title">
+    <h2 id="public-confirm-title" class="text-xl font-bold">{{ 'Desativar' if controls.public.enabled else 'Ativar' }} alertas públicos preventivos?</h2>
+    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando, mas novos alertas preventivos não serão enviados aos usuários. Mensagens já pendentes podem ser entregues.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
+    <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='public') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="enabled" value="{{ 'false' if controls.public.enabled else 'true' }}">
+      <div class="monitor-dialog-actions"><button type="button" onclick="this.closest('dialog').close()" class="monitor-action monitor-action--cancel">Cancelar</button><button type="submit" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}">{{ 'Desativar alertas' if controls.public.enabled else 'Ativar alertas' }}</button></div>
+    </form>
+  </dialog>
+
+  <section aria-label="Resumo visual" class="admin-overview-grid monitor-overview">
     <article class="admin-overview-item"><div><small>Chuva detectada</small><strong>{{ 'SIM' if monitoramento_atual and principal else 'NÃO' if monitoramento_atual else 'INDEFINIDO' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Distância</small><strong>{{ '%.0f km'|format(principal.distance_km) if monitoramento_atual and principal.get('distance_km') is not none else 'Indisponível' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Movimento</small><strong>{{ 'APROXIMANDO' if monitoramento_atual and principal.get('approaching') is true else 'AFASTANDO' if monitoramento_atual and principal.get('approaching') is false else 'INDEFINIDO' }}</strong></div></article>
@@ -60,39 +95,6 @@
     <article class="admin-overview-item"><div><small>Confiança</small><strong>{{ confianca if monitoramento_atual and confianca in ('ALTA', 'MODERADA', 'BAIXA') else 'INDEFINIDA' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Estimativa</small><strong>{{ '~%.0f min'|format(principal.projected_impact_eta_minutes) if projecao_util and principal.get('projected_impact') is true and principal.get('projected_impact_eta_minutes') is not none else 'Indisponível' }}</strong></div></article>
   </section>
-
-  <article class="card monitor-panel" aria-labelledby="controle-alertas">
-    <h2 id="controle-alertas" class="text-xl font-bold">Controle de alertas</h2>
-    <p class="text-sm text-slate-600">Esses controles afetam somente alertas preventivos do radar/nowcasting. Os alertas oficiais da estação continuam independentes.</p>
-    <div class="monitor-grid mt-4">
-      <section>
-        <h3 class="font-bold">Alertas públicos preventivos — {{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</h3>
-        <p>Envia aos usuários cadastrados apenas quando os critérios públicos do nowcasting forem atendidos.</p>
-        <p class="text-sm">Origem: {{ 'Painel administrativo' if controls.public.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.public.updated_at or '—' }}.</p>
-        <button type="button" class="admin-tab" onclick="document.getElementById('public-confirm').showModal()">{{ 'Desativar alertas públicos' if controls.public.enabled else 'Ativar alertas públicos' }}</button>
-      </section>
-      <section>
-        <h3 class="font-bold">Alertas de teste ao administrador — {{ 'ATIVADOS' if controls.test.enabled else 'DESATIVADOS' }}</h3>
-        <p>Envia alertas experimentais somente ao telefone administrativo para calibração; fica suprimido nos ciclos com alertas públicos ativos.</p>
-        <p class="text-sm">Origem: {{ 'Painel administrativo' if controls.test.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.test.updated_at or '—' }}.</p>
-        <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='test') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="enabled" value="{{ 'false' if controls.test.enabled else 'true' }}">
-          <button type="submit" class="admin-tab">{{ 'Desativar teste admin' if controls.test.enabled else 'Ativar teste admin' }}</button>
-        </form>
-      </section>
-    </div>
-    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos no próximo ciclo. Mensagens preventivas já pendentes na fila podem continuar sendo entregues; nenhum registro anterior é cancelado.</p>
-  </article>
-  <dialog id="public-confirm" class="card p-6 rounded-lg max-w-md" aria-labelledby="public-confirm-title">
-    <h2 id="public-confirm-title" class="text-xl font-bold">{{ 'Desativar' if controls.public.enabled else 'Ativar' }} alertas públicos preventivos?</h2>
-    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando, mas novos alertas preventivos não serão enviados aos usuários. Mensagens já pendentes podem ser entregues.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
-    <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='public') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="enabled" value="{{ 'false' if controls.public.enabled else 'true' }}">
-      <div class="flex gap-3"><button type="button" onclick="this.closest('dialog').close()" class="admin-tab">Cancelar</button><button type="submit" class="admin-tab admin-tab-active">{{ 'Desativar alertas' if controls.public.enabled else 'Ativar alertas' }}</button></div>
-    </form>
-  </dialog>
 
   <div class="monitor-grid">
     <article class="card monitor-panel">
@@ -133,18 +135,31 @@
     <p><a href="{{ url_for('radar.radar_admin') }}">Diagnóstico técnico do radar</a> · <a href="{{ url_for('regional_stations.pagina_estacoes_regionais_admin') }}">Estações regionais</a></p>
     {% include "includes/admin_public_alert_status.html" %}
     {% include "includes/admin_test_alert_status.html" %}
-    <p>Último nível calculado: {{ ultimo_nivel_calculado or alerta.get('nivel') or '—' }}.</p>
-    <p>Índice interno de evidência — não é probabilidade: {{ estado.indice_evidencia if estado else '—' }}.</p>
-    <p>Proximidade: NORMAL acima de 100 km; AMARELO até 100 km; LARANJA até 50 km; VERMELHO até 25 km.</p>
+    <div class="monitor-technical-note">
+      <p>Último nível calculado: {{ ultimo_nivel_calculado or alerta.get('nivel') or '—' }}.</p>
+      <p>Índice interno de evidência — não é probabilidade: {{ estado.indice_evidencia if estado else '—' }}.</p>
+      <p>Proximidade: NORMAL acima de 100 km; AMARELO até 100 km; LARANJA até 50 km; VERMELHO até 25 km.</p>
+    </div>
     {% if estado %}
-    <dl class="regional-values">
+    <h3 class="monitor-technical-heading">Movimento e projeção</h3>
+    <dl class="regional-values monitor-technical-values">
       {% for label, value in [('track_id', principal.get('track_id')), ('cluster_id', principal.get('cluster_id')), ('quantidade de frames', principal.get('frame_count')), ('duração', principal.get('duration_minutes')), ('velocidade', principal.get('speed_kmh')), ('bearing', principal.get('trajectory_bearing_degrees')), ('trajectory_method', principal.get('trajectory_method')), ('trajectory_frames_used', principal.get('trajectory_frames_used')), ('trajectory_confidence', principal.get('trajectory_confidence')), ('trajectory_residual_km', principal.get('trajectory_residual_km')), ('projected_impact', principal.get('projected_impact')), ('projected_impact_eta_minutes', principal.get('projected_impact_eta_minutes')), ('projected_impact_min_distance_km', principal.get('projected_impact_min_distance_km')), ('closest_approach_km', principal.get('closest_approach_km')), ('clutter', principal.get('suspeito_clutter')), ('índice de clutter', principal.get('indice_persistencia_clutter'))] %}
-      <div><dt>{{ label }}</dt><dd>{{ value if value is not none else '—' }}</dd></div>{% endfor %}
+      <div><dt>{{ label }}</dt><dd>{{ '%.1f'|format(value) if value is number and value is not sameas true and value is not sameas false else value if value is not none else '—' }}</dd></div>{% endfor %}
     </dl>
-    <p>Projeções: {{ principal.get('projections') or [] }}</p>
-    <p>Confirmação regional detalhada: {{ estado.get('confirmacao_regional') or {} }}</p>
-    <p>Evidências: {{ estado.get('evidencias') or [] }}</p>
-    {% include "includes/admin_alert_intensity.html" %}
+    <h3 class="monitor-technical-heading">Projeções</h3>
+    {% if principal.get('projections') %}
+    <dl class="regional-values monitor-technical-values">
+      {% for projection in principal.projections %}
+      <div><dt>Em {{ projection.get('minutes', '—') }} min</dt><dd>{{ 'Intercepta a região' if projection.get('intersects') else 'Passa ao lado' }} · {{ '%.1f km'|format(projection.min_distance_km) if projection.get('min_distance_km') is not none else 'Distância indisponível' }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% else %}<p>Nenhuma projeção disponível.</p>{% endif %}
+    <h3 class="monitor-technical-heading">Intensidade e critérios de alerta</h3>
+    <dl class="regional-values monitor-technical-values">{% include "includes/admin_alert_intensity.html" %}</dl>
+    <h3 class="monitor-technical-heading">Confirmação regional detalhada</h3>
+    <pre class="monitor-technical-data">{{ estado.get('confirmacao_regional') or {} }}</pre>
+    <h3 class="monitor-technical-heading">Evidências</h3>
+    <pre class="monitor-technical-data">{{ estado.get('evidencias') or [] }}</pre>
     {% endif %}
     <details class="admin-glossary"><summary>Glossário do monitoramento</summary><p>ETA é uma estimativa de curto prazo, nunca garantia de chuva. O índice interno reúne sinais observados.</p></details>
   </details>

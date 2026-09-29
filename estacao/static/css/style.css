@@ -1410,7 +1410,35 @@ body.modal-open {
 .monitor-stations { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; margin-top: 1rem; }
 .monitor-stations section { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: .9rem; padding: .9rem; color: #475569; }
 .monitor-stations p, .monitor-stations ul { margin-top: .4rem; font-size: .85rem; }
+.monitor-page .admin-weather-header .regional-status { padding: .55rem .8rem; font-size: .76rem; line-height: 1.25; }
+.monitor-controls-link { padding: .45rem .3rem; color: #3730a3; font-size: .8rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.monitor-controls-link:focus-visible { outline: 3px solid #4f46e5; outline-offset: 2px; }
+.monitor-page .admin-overview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.monitor-page .admin-overview-item { min-height: 5.8rem; }
+.monitor-controls { border: 1px solid #cbd5e1; }
+.monitor-control-item { display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; padding: 1rem; border: 1px solid #dbe4ef; border-radius: .8rem; background: #f8fafc; }
+.monitor-control-item h3 { line-height: 1.5; }
+.monitor-control-item p { margin: 0; }
+.monitor-control-item form { margin-top: auto; }
+.monitor-control-item > button { margin-top: auto; }
+.monitor-control-badge { display: inline-block; margin-left: .3rem; padding: .15rem .45rem; border-radius: .35rem; background: #e2e8f0; color: #1e293b; font-size: .75rem; vertical-align: middle; }
+.monitor-action { display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; padding: .55rem 1rem; border: 1px solid transparent; border-radius: .55rem; font-weight: 800; line-height: 1.25; cursor: pointer; }
+.monitor-action--on { background: #166534; color: #fff; }
+.monitor-action--off { background: #fff; color: #9f1239; border-color: #be123c; }
+.monitor-action--cancel { background: #e2e8f0; color: #1e293b; }
+.monitor-action:hover { filter: brightness(.92); }
+.monitor-action:focus-visible { outline: 3px solid #4f46e5; outline-offset: 2px; }
+.monitor-dialog { width: min(92vw, 29rem); padding: 1.5rem; border: 1px solid #cbd5e1; border-radius: .8rem; box-shadow: 0 20px 60px rgba(15,23,42,.25); color: #1e293b; }
+.monitor-dialog::backdrop { background: rgba(15,23,42,.55); }
+.monitor-dialog-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.monitor-technical-heading { margin: 1.25rem 0 .6rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; color: #1e293b; font-weight: 800; }
+.monitor-technical-note { display: grid; gap: .35rem; margin-top: 1rem; font-size: .85rem; color: #475569; }
+.monitor-technical-values > div { min-width: 0; padding: .7rem; border: 1px solid #e2e8f0; border-radius: .6rem; background: #f8fafc; }
+.monitor-technical-values dd { overflow-wrap: anywhere; font-size: .9rem; }
+.monitor-technical-data { max-height: 15rem; overflow: auto; padding: .75rem; border-radius: .6rem; background: #f8fafc; color: #334155; font: .78rem/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .monitor-page .admin-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 800px) {
     .monitor-grid { grid-template-columns: 1fr; }
     .monitor-hero-header, .monitor-panel-heading { flex-direction: column; }
 }
+@media (max-width: 560px) { .monitor-page .admin-overview-grid { grid-template-columns: 1fr; } .monitor-action { width: 100%; } .monitor-control-item form { width: 100%; } }

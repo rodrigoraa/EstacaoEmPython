@@ -68,9 +68,40 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         fallback = self.controls.obter_controles(base)
         self.assertFalse(fallback["public"]["enabled"])
         self.assertTrue(fallback["test"]["enabled"])
-        self.assertEqual(fallback["public"]["source"], "server")
+        self.assertEqual(fallback["public"]["source"], "fail_safe")
         with mock.patch.object(self.database, "get_db_readonly", side_effect=OSError("unavailable")):
             self.assertEqual(self.controls.obter_controles(base)["public"]["enabled"], False)
+
+    def test_falha_de_leitura_bloqueia_publico_mas_preserva_teste_e_monitoramento(self):
+        base = {"enabled": True, "radar_enabled": True, "alerts_enabled": True,
+                "test_alerts_enabled": True}
+        self.assertEqual(self.controls.obter_controles(base)["public"]["source"], "server")
+        self.assertTrue(self.controls.aplicar_controles(base)["alerts_enabled"])
+        self.controls.salvar_controle("test", False)
+        self.assertFalse(self.controls.aplicar_controles(base)["test_alerts_enabled"])
+        conn = self.database.get_db()
+        conn.execute("UPDATE estado_alertas SET valor_json=? WHERE chave=?",
+                     ('{"public_alerts_enabled": "true"}', self.controls.STATE_KEY))
+        conn.commit()
+        conn.close()
+        effective = self.controls.aplicar_controles(base)
+        self.assertFalse(effective["alerts_enabled"])
+        self.assertTrue(effective["test_alerts_enabled"])
+        self.assertTrue(effective["enabled"])
+        self.assertTrue(effective["radar_enabled"])
+        with mock.patch.object(self.database, "get_db_readonly", side_effect=OSError("unavailable")):
+            controls = self.controls.obter_controles(base)
+            self.assertEqual(controls["public"], {"enabled": False, "source": "fail_safe",
+                                                  "updated_at": None})
+            self.assertTrue(controls["test"]["enabled"])
+            self.login()
+            api = self.client.get("/admin/api/alert-controls").get_json()
+            self.assertEqual(api["public"]["source"], "fail_safe")
+            self.assertNotIn("SECRET_KEY", json.dumps(api))
+            self.assertIn("Proteção de segurança".encode(),
+                          self.client.get("/admin/monitoramento").data)
+        self.controls.salvar_controle("public", True)
+        self.assertTrue(self.controls.aplicar_controles(base)["alerts_enabled"])
 
     def test_post_auth_csrf_boolean_estrito_e_chave_separada(self):
         self.assertEqual(self.post("public", "true").status_code, 401)
@@ -209,6 +240,30 @@ class RuntimeAlertControlsTest(unittest.TestCase):
             state["evento_local_observado"] = True
             self.assertIn("Chuva observada em São José".encode(),
                           self.client.get("/admin/monitoramento").data)
+
+    def test_projecao_respeita_minimo_publico_configurado(self):
+        from config import nowcasting_config
+        self.login()
+        now = datetime.now(timezone.utc).isoformat()
+        state = {"gerado_em_utc": now, "gerado_em": now,
+                 "radar": {"operacional": True, "stale": False},
+                 "ameaca_principal": {"distance_km": 42, "approaching": True,
+                                       "trajectory_confidence": "ALTA",
+                                       "projected_impact": True,
+                                       "projected_impact_eta_minutes": 30},
+                 "ameacas": [], "escola": None, "evento_local_observado": False}
+        with mock.patch("routes.nowcasting._estado_seguro", return_value=state):
+            for minimum in (4, 5, 6):
+                with self.subTest(minimum=minimum):
+                    config = {**nowcasting_config(), "public_trajectory_min_frames": minimum}
+                    with mock.patch("routes.nowcasting.nowcasting_config", return_value=config):
+                        for frames in (minimum - 1, minimum):
+                            state["ameaca_principal"]["trajectory_frames_used"] = frames
+                            page = self.client.get("/admin/monitoramento")
+                            self.assertEqual(page.status_code, 200)
+                            self.assertEqual("Possível chuva em aproximação".encode() in page.data,
+                                             frames >= minimum)
+                            self.assertEqual(b"~30 min" in page.data, frames >= minimum)
 
 
 if __name__ == "__main__":

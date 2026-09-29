@@ -90,7 +90,9 @@ def decidir_alerta_preventivo(alerta, *, radar_atualizado, evento_local, config=
             motivo = "trajectory_incompatible"
         elif (_distancia_valida(alerta.get("closest_approach_km")) is None
               or _distancia_valida(alerta.get("closest_approach_km")) >
-              numero_alerta_valido(config.get("public_track_intercept_km"), 15)):
+              numero_alerta_valido(config.get("public_track_intercept_km"), 15)) and not (
+                  config.get("public_area_intercept_override") is True
+                  and alerta.get("projected_impact") is True):
             motivo = "public_trajectory_too_far"
         else:
             authorization = "TRACKING"
@@ -342,6 +344,12 @@ def criar_alerta_preventivo(
         "tracking_quality": ameaca.get("tracking_quality", "DADOS_INSUFICIENTES"),
         "frame_count": ameaca.get("frame_count"),
         "duration_minutes": ameaca.get("duration_minutes"),
+        **{campo: ameaca.get(campo) for campo in (
+            "trajectory_method", "trajectory_frames_used", "trajectory_confidence",
+            "trajectory_residual_km", "trajectory_duration_minutes", "trajectory_speed_kmh",
+            "trajectory_bearing_degrees", "trajectory_direction",
+            "projected_impact", "projected_impact_eta_minutes", "projected_impact_horizon_minutes",
+            "projected_impact_min_distance_km", "projections")},
         "approaching": ameaca.get("approaching"),
         "trajectory_compatible": ameaca.get("trajectory_compatible"),
         "closest_approach_km": ameaca.get("closest_approach_km"),

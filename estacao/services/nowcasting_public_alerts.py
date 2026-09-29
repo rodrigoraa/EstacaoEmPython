@@ -116,7 +116,7 @@ def _atualizar_confirmacao_high(estado, avaliacao, snapshot):
     alerta = snapshot.get("alerta_preventivo") or {}
     frame = (snapshot.get("radar") or {}).get("frame_id")
     track = alerta.get("track_id")
-    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") == "HIGH"
+    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") in ("HIGH", "VERY_HIGH")
                  and decisao.get("authorization") == "TRACKING"
                  and type(frame) is int and type(track) is int)
     if not candidato:
@@ -179,9 +179,26 @@ def _aplicar_politica_publica(avaliacao, snapshot, config, agora):
         if (avaliacao["reason"] == "tracking_insufficient_for_early_warning"
                 and decisao.get("radar_intensity") == "VERY_HIGH"):
             avaliacao = {**avaliacao, "reason": "very_high_proximity_requires_tracking"}
+    alerta = snapshot.get("alerta_preventivo") or {}
+    # Apenas na rota antecipada, a área projetada pode corrigir o veto
+    # baseado na distância do centro. Os demais gates seguem inalterados.
+    if (not avaliacao["eligible"] and avaliacao["reason"] == "public_trajectory_too_far"
+            and alerta.get("projected_impact") is True):
+        avaliacao = avaliar_alerta_preventivo_snapshot(
+            snapshot, {**config, "public_area_intercept_override": True}, now=agora)
+        decisao = avaliacao.get("decision") or {}
     if (avaliacao["eligible"] and decisao.get("radar_intensity") == "MEDIUM"
             and decisao.get("authorization") == "TRACKING"):
         return {**avaliacao, "eligible": False, "reason": "medium_tracking_monitor_only"}
+    if avaliacao["eligible"] and decisao.get("authorization") == "TRACKING":
+        minimo = config.get("public_trajectory_min_frames", 4)
+        if (alerta.get("tracking_valid") is not True
+                or alerta.get("approaching") is not True
+                or (alerta.get("trajectory_frames_used") or 0) < minimo
+                or alerta.get("trajectory_confidence") not in ("MODERADA", "ALTA")):
+            return {**avaliacao, "eligible": False, "reason": "public_trajectory_low_confidence"}
+        if alerta.get("projected_impact") is not True:
+            return {**avaliacao, "eligible": False, "reason": "public_projected_impact_absent"}
     return avaliacao
 
 
@@ -234,10 +251,10 @@ def processar_alerta_publico(snapshot, config, *, now=None):
             idade = _minutos_desde_utc(estado["last_enqueued_at"], agora)
             if estado["suppressed_for_current_episode"]:
                 estado["last_result"] = "local_event_observed"
-            elif (decisao.get("radar_intensity") == "HIGH"
+            elif (decisao.get("radar_intensity") in ("HIGH", "VERY_HIGH")
                   and decisao.get("authorization") == "TRACKING"
                   and not high_confirmado):
-                estado["last_result"] = "awaiting_high_frame_confirmation"
+                estado["last_result"] = "awaiting_projected_impact_confirmation"
             elif severity <= highest:
                 estado["last_result"] = "same_or_lower_severity"
             elif highest == 0 and idade is not None and idade < config.get("alert_cooldown_minutes", 180):
@@ -251,7 +268,13 @@ def processar_alerta_publico(snapshot, config, *, now=None):
                 radar = snapshot.get("radar") or {}
                 momento = (parse_datetime(radar.get("data_frame"))
                            or parse_datetime(snapshot.get("gerado_em_utc")))
-                mensagem = montar_mensagem_preventiva({**snapshot, "alerta_preventivo": alerta})
+                mensagem_alerta = dict(alerta)
+                if decisao.get("authorization") == "TRACKING":
+                    mensagem_alerta["eta_border_minutes"] = alerta.get("projected_impact_eta_minutes")
+                    mensagem_alerta["eta_border_quality"] = (
+                        "BOA" if alerta.get("trajectory_confidence") == "ALTA" else "MODERADA")
+                mensagem = montar_mensagem_preventiva(
+                    {**snapshot, "alerta_preventivo": mensagem_alerta})
                 evento = dict(evento_id=evento_id, tipo="nowcasting_radar", nivel=severity,
                               data_referencia=data_local(momento), valor=estado["last_distance_km"],
                               unidade="km", fonte="redemet_jaraguari_nowcasting",

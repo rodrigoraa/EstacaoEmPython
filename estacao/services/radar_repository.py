@@ -201,7 +201,9 @@ def salvar_resultado_frame(
                     cluster.pixels_refletividade_muito_alta,
                     cluster.classe_predominante,
                     cluster.classe_maxima,
-                    json.dumps(cluster.frente_relevante) if cluster.frente_relevante is not None else None,
+                    json.dumps({**(cluster.frente_relevante or {}),
+                                **({"footprint": cluster.footprint} if cluster.footprint else {})})
+                    if cluster.frente_relevante is not None or cluster.footprint else None,
                 ),
             )
         _atualizar_clutter_frame(conn, frame_id)
@@ -712,6 +714,7 @@ def obter_estado_radar(stale_minutes: int) -> dict:
             "coletado_em_local": frame["coletado_em_local"],
             "largura": frame["largura"],
             "altura": frame["altura"],
+            "bounds": [frame["lat_min"], frame["lat_max"], frame["lon_min"], frame["lon_max"]],
             "idade_minutos": idade,
             "imagem_disponivel": bool(frame["arquivo_analisado"] or frame["arquivo_local"]),
             "clusters_significativos": total_clusters,

@@ -86,12 +86,17 @@ def _tracks_frame_atual(radar):
         track_ids = [row["id"] for row in rows]
         marcadores = ",".join("?" for _ in track_ids)
         historicos = {track_id: [] for track_id in track_ids}
+        from services.radar_analysis import GeoBounds, TrackPoint, projetar_footprint
+        from time_utils import parse_datetime
+        import json
+        pontos_geometricos = {track_id: [] for track_id in track_ids}
         pontos = conn.execute(
             f"""
             WITH pontos_ordenados AS (
                 SELECT track_id,
                        COALESCE(data_frame_utc, data_frame) AS data_frame,
-                       distancia_borda_escola_km,
+                       distancia_borda_escola_km, centro_lat, centro_lon,
+                       distancia_centro_escola_km, pixels_eco,
                        ROW_NUMBER() OVER (
                            PARTITION BY track_id
                            ORDER BY COALESCE(data_frame_utc, data_frame) DESC, id DESC
@@ -99,7 +104,8 @@ def _tracks_frame_atual(radar):
                 FROM radar_track_points
                 WHERE track_id IN ({marcadores})
             )
-            SELECT track_id, data_frame, distancia_borda_escola_km
+            SELECT track_id, data_frame, distancia_borda_escola_km, centro_lat,
+                   centro_lon, distancia_centro_escola_km, pixels_eco
             FROM pontos_ordenados
             WHERE posicao <= 8
             ORDER BY track_id, posicao DESC
@@ -113,8 +119,25 @@ def _tracks_frame_atual(radar):
                     "distancia_borda_km": ponto["distancia_borda_escola_km"],
                 }
             )
+            momento = parse_datetime(ponto["data_frame"], assume_utc=True)
+            if momento:
+                pontos_geometricos[ponto["track_id"]].append(TrackPoint(
+                    momento, ponto["centro_lat"], ponto["centro_lon"],
+                    ponto["distancia_centro_escola_km"], ponto["distancia_borda_escola_km"],
+                    ponto["pixels_eco"]))
         resultado = []
         for row in rows:
+            try:
+                footprint = json.loads(row["frente_relevante_json"] or "{}").get("footprint")
+            except (ValueError, TypeError, AttributeError):
+                footprint = None
+            frame_bounds = frame.get("bounds")
+            geometria = (projetar_footprint(
+                pontos_geometricos[row["id"]], footprint,
+                GeoBounds(*frame_bounds), frame["largura"], frame["altura"],
+                radar.get("target_lat", -22.4925326), radar.get("target_lon", -54.4610352),
+                radar.get("impact_radius_km", 12), radar.get("projection_minutes", 60))
+                if frame_bounds and row["id"] is not None else {})
             resultado.append(
                 {
                     "track": {
@@ -138,6 +161,7 @@ def _tracks_frame_atual(radar):
                         "indice_persistencia_clutter": row["indice_persistencia_clutter"],
                         "clutter_amostras": row["clutter_amostras"],
                         "historico_borda": historicos[row["id"]],
+                        **geometria,
                     },
                     "cluster": {
                         **ler_frente_relevante(row["frente_relevante_json"]),
@@ -166,6 +190,10 @@ def _tracks_frame_atual(radar):
 
 def carregar_entradas_nowcasting(config):
     radar = obter_estado_radar(config["radar_max_age_minutes"])
+    radar["target_lat"] = config.get("target_lat", -22.4925326)
+    radar["target_lon"] = config.get("target_lon", -54.4610352)
+    radar["impact_radius_km"] = config.get("public_impact_radius_km", 12)
+    radar["projection_minutes"] = config.get("public_projection_minutes", 60)
     tracks_atuais = _tracks_frame_atual(radar)
     radar["tracks_atuais"] = tracks_atuais
 

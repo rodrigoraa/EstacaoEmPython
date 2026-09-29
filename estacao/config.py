@@ -63,6 +63,12 @@ def config_alerta_preventivo():
         env_str("NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM"), 20)
     resultado["public_track_intercept_km"] = numero_alerta_valido(
         env_str("NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM"), 15)
+    impacto = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_IMPACT_RADIUS_KM"), 12)
+    resultado["public_impact_radius_km"] = impacto if 10 <= impacto <= 15 else 12
+    minimo = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_TRAJECTORY_MIN_FRAMES"), 4, pixels=True)
+    resultado["public_trajectory_min_frames"] = minimo if 4 <= minimo <= 6 else 4
+    horizonte = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_PROJECTION_MINUTES"), 60)
+    resultado["public_projection_minutes"] = horizonte if 15 <= horizonte <= 120 else 60
     for classe, percentual, pixels in (("medium", 20, 10), ("strong", 10, 2), ("very_high", 2, 2)):
         for sufixo, padrao in (("percent", percentual), ("pixels", pixels)):
             chave = f"alert_min_{classe}_reflectivity_{sufixo}"

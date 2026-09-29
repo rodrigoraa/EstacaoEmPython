@@ -391,6 +391,12 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
         "speed_kmh": track.get("velocidade_kmh") if track_valid else None,
         "frame_count": track.get("quantidade_frames"),
         "duration_minutes": track.get("duracao_minutos"),
+        **{campo: track.get(campo) for campo in (
+            "trajectory_method", "trajectory_frames_used", "trajectory_confidence",
+            "trajectory_residual_km", "trajectory_duration_minutes", "trajectory_speed_kmh",
+            "trajectory_bearing_degrees", "trajectory_direction",
+            "projected_impact", "projected_impact_eta_minutes", "projected_impact_horizon_minutes",
+            "projected_impact_min_distance_km", "projections")},
         "evidence_level": _nivel_evidencia(score),
         "evidence_index": score,
         "upstream_stations": relevant,

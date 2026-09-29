@@ -100,6 +100,7 @@ class RadarCluster:
     classe_predominante: str | None = None
     classe_maxima: str | None = None
     frente_relevante: dict | None = None
+    footprint: list | None = None
 
 
 @dataclass(frozen=True)
@@ -355,6 +356,10 @@ def detectar_clusters(
         )
 
         classes_cluster = classes_refletividade[componente_original]
+        # O casco usa apenas pixels meteorológicos originais, nunca a dilatação.
+        contorno = cv2.convexHull(np.column_stack((orig_x, orig_y)).astype(np.int32))
+        contorno = cv2.approxPolyDP(contorno, 1.0, True).reshape(-1, 2)
+        footprint = [[int(px), int(py)] for px, py in contorno]
         contagens = {
             codigo: int(np.count_nonzero(classes_cluster == codigo))
             for codigo in REFLECTIVITY_CLASS_NAMES
@@ -393,6 +398,7 @@ def detectar_clusters(
                 frente_relevante=calcular_frente_relevante(
                     classes_cluster, distancias, config.alert_front_depth_km
                 ),
+                footprint=footprint,
             )
         )
     return sorted(clusters, key=lambda item: item.distancia_borda_escola_km)
@@ -595,6 +601,72 @@ def _xy_local(lat: float, lon: float, ref_lat: float, ref_lon: float) -> tuple[f
     norte = (lat - ref_lat) * 111.195
     leste = (lon - ref_lon) * 111.195 * math.cos(math.radians(ref_lat))
     return leste, norte
+
+
+def projetar_footprint(pontos, footprint, bounds, width, height, target_lat, target_lon,
+                       impact_radius_km=12, projection_minutes=60):
+    """Extrapolação linear local dos seis últimos centros e do contorno real."""
+    vazio = dict(trajectory_method="linear_xy_6", trajectory_frames_used=0,
+                 trajectory_confidence="BAIXA", trajectory_residual_km=None,
+                 projected_impact=False, projected_impact_eta_minutes=None,
+                 projected_impact_horizon_minutes=None,
+                 projected_impact_min_distance_km=None, projections=[])
+    if not footprint or width is None or height is None or width < 2 or height < 2:
+        return vazio
+    distintos = {p.data_frame: p for p in pontos}
+    recentes = [distintos[t] for t in sorted(distintos)[-6:]]
+    if len(recentes) < 2:
+        return vazio
+    tempos = np.asarray([(p.data_frame - recentes[-1].data_frame).total_seconds() / 3600
+                        for p in recentes], dtype=float)
+    if np.ptp(tempos) <= 0:
+        return vazio
+    centros = np.asarray([_xy_local(p.centro_lat, p.centro_lon, target_lat, target_lon)
+                          for p in recentes])
+    matriz = np.column_stack((tempos, np.ones(len(tempos))))
+    ajuste = np.linalg.lstsq(matriz, centros, rcond=None)[0]
+    velocidade = ajuste[0]
+    residuos = np.linalg.norm(centros - matriz @ ajuste, axis=1)
+    residual = float(np.sqrt(np.mean(residuos ** 2)))
+    duracao = -tempos[0] * 60
+    velocidade_kmh = float(np.linalg.norm(velocidade))
+    bearing = (math.degrees(math.atan2(velocidade[0], velocidade[1])) + 360) % 360
+    passos = np.diff(centros, axis=0)
+    coerencia = (float(np.linalg.norm(np.sum(passos, axis=0))) /
+                 float(np.sum(np.linalg.norm(passos, axis=1)))) if np.any(passos) else 0
+    confiavel = (len(recentes) >= 4 and duracao >= 10 and 2 <= velocidade_kmh <= 150
+                 and residual <= 5 and coerencia >= 0.7)
+    confianca = ("ALTA" if confiavel and len(recentes) >= 5 and residual <= 2
+                 else "MODERADA" if confiavel else "BAIXA")
+    geometria = []
+    for px, py in footprint:
+        lat, lon = pixel_para_latlon(px, py, bounds, width, height)
+        geometria.append(_xy_local(lat, lon, target_lat, target_lon))
+    if not geometria:
+        return vazio
+    vertices = np.asarray(geometria, dtype=float)
+    horizontes = sorted(set([0, projection_minutes / 4, projection_minutes / 2,
+                             projection_minutes * 3 / 4, projection_minutes]))
+    projecoes = []
+    for minutos in horizontes:
+        deslocado = (vertices + velocidade * (minutos / 60)).astype(np.float32)
+        distancia = abs(float(cv2.pointPolygonTest(deslocado, (0.0, 0.0), True)))
+        if cv2.pointPolygonTest(deslocado, (0.0, 0.0), False) >= 0:
+            distancia = 0.0
+        projecoes.append(dict(minutes=minutos, intersects=distancia <= impact_radius_km,
+                              min_distance_km=round(distancia, 1)))
+    impacto = next((p for p in projecoes if p["intersects"]), None)
+    return dict(trajectory_method="linear_xy_6", trajectory_frames_used=len(recentes),
+                trajectory_confidence=confianca, trajectory_residual_km=round(residual, 1),
+                trajectory_duration_minutes=round(duracao, 1),
+                trajectory_speed_kmh=round(velocidade_kmh, 1),
+                trajectory_bearing_degrees=round(bearing, 1),
+                trajectory_direction=direcao_cardinal(bearing),
+                projected_impact=bool(impacto),
+                projected_impact_eta_minutes=impacto["minutes"] if impacto else None,
+                projected_impact_horizon_minutes=impacto["minutes"] if impacto else None,
+                projected_impact_min_distance_km=min(p["min_distance_km"] for p in projecoes),
+                projections=projecoes)
 
 
 def analisar_track(

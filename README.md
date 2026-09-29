@@ -686,6 +686,7 @@ NOWCASTING_ALERT_HIGH_NEAR_KM=35
 NOWCASTING_ALERT_HIGH_TRACKED_KM=75
 NOWCASTING_ALERT_VERY_HIGH_NEAR_KM=50
 NOWCASTING_ALERT_VERY_HIGH_TRACKED_KM=100
+NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM=20
 NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM=15
 ```
 
@@ -697,7 +698,12 @@ INFORMATIVO público após dois frames reais distintos e consecutivos do mesmo
 track; reprocessar um frame não conta novamente. MEDIUM distante por TRACKING fica somente em monitoramento, sem
 WhatsApp público, mas permanece visível na análise e no modo de teste do
 administrador, que continua mais sensível para calibração. HIGH por PROXIMIDADE
-e VERY_HIGH qualificado continuam imediatos.
+(até 35 km) continua imediato. VERY_HIGH por PROXIMIDADE pública é imediato até
+20 km, inclusive, sem exigir tracking. Acima de 20 km, até o alcance de tracking
+de 100 km, o público exige tracking válido, track_id, aproximação, trajetória
+compatível e passagem prevista dentro de 15 km. O limite diagnóstico de 50 km
+de `NOWCASTING_ALERT_VERY_HIGH_NEAR_KM` continua disponível para telas e teste
+admin; `NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM` controla apenas o envio público.
 
 Percentuais aceitam 0–100 inclusive; pixels exigem inteiros >=1; profundidade e
 distâncias exigem valores >0. NaN, infinito e valores inválidos voltam ao default.
@@ -710,7 +716,7 @@ os próximos frames e os critérios de decisão são revalidados antes do envio.
 |---|---|---:|---:|
 | MEDIUM | INFORMATIVO | <=25 km | monitoramento até 50 km, sem envio público |
 | HIGH | ATENCAO | <=35 km | <=75 km |
-| VERY_HIGH | ALERTA | <=50 km | <=100 km |
+| VERY_HIGH | ALERTA | <=20 km para público (50 km diagnóstico/admin) | >20 a <=100 km, com trajetória pública <=15 km |
 
 A distância usada é a mínima dos pixels originais até o Distrito, mantendo a borda
 como gatilho. Dentro da proximidade não se exige aproximação ou

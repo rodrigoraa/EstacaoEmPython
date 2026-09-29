@@ -144,7 +144,7 @@ class PublicAlertsTest(unittest.TestCase):
 
     def test_histerese_preserva_episodio_em_todas_as_distancias(self):
         for i, (intensity, near, far) in enumerate((("MEDIUM", 24, 51), ("HIGH", 34, 76),
-                                                   ("VERY_HIGH", 49, 101))):
+                                                   ("VERY_HIGH", 19, 101))):
             with self.subTest(intensity=intensity):
                 start = i * 200
                 first = self.process(self.snapshot(intensity, start, near), start)
@@ -255,7 +255,7 @@ class PublicAlertsTest(unittest.TestCase):
 
     def test_rotas_e_leitura_stale(self):
         for intensity, distance, tracking in [("MEDIUM", 20, False),
-                                               ("HIGH", 30, False), ("VERY_HIGH", 45, False)]:
+                                               ("HIGH", 30, False), ("VERY_HIGH", 20, False)]:
             with self.subTest(intensity=intensity, tracking=tracking):
                 # Rearm e cooldown entre episódios, sem apagar qualquer histórico.
                 minute = len(self.rows("alertas_eventos")) * 200
@@ -364,6 +364,77 @@ class PublicAlertsTest(unittest.TestCase):
         self.assertEqual(config["alert_cooldown_minutes"], 180)
         self.assertEqual(config["alert_rearm_minutes"], 60)
         self.assertEqual(config["public_track_intercept_km"], 15)
+        self.assertEqual(config["public_very_high_near_km"], 20)
+        for invalid in ("0", "-1", "nan", "inf", "invalid"):
+            with self.subTest(invalid=invalid), mock.patch.dict(
+                    os.environ, {"NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM": invalid}):
+                self.assertEqual(nowcasting_config()["public_very_high_near_km"], 20)
+
+    def test_very_high_publico_limite_e_trajetoria(self):
+        cases = (
+            (20.1, False, False, False, None, "very_high_proximity_requires_tracking"),
+            (40, True, True, True, 20, "public_trajectory_too_far"),
+            (35, True, False, True, 10, "not_approaching"),
+            (35, True, True, False, 10, "trajectory_incompatible"),
+        )
+        for distance, tracking, approaching, compatible, closest, reason in cases:
+            with self.subTest(distance=distance, tracking=tracking, reason=reason):
+                snap = self.snapshot("VERY_HIGH", distance=distance, tracking=tracking)
+                snap["alerta_preventivo"].update(
+                    approaching=approaching, trajectory_compatible=compatible,
+                    closest_approach_km=closest)
+                result = self.process(snap)
+                self.assertEqual(result["reason"], reason)
+                self.assertEqual(result["enfileirados"], 0)
+                self.assertEqual(self.rows("alertas_eventos"), [])
+                self.assertIsNone(result["state"]["clear_since"])
+        snap = self.snapshot("VERY_HIGH", distance=40, tracking=True)
+        snap["alerta_preventivo"]["closest_approach_km"] = 12
+        result = self.process(snap)
+        self.assertEqual(result["enfileirados"], 2)
+        self.assertEqual(result["state"]["highest_enqueued_severity"], 3)
+
+    def test_very_high_proximo_imediato_no_limite(self):
+        snap = self.snapshot("VERY_HIGH", distance=20.0)
+        result = self.process(snap)
+        self.assertEqual(result["enfileirados"], 2)
+        self.assertEqual(result["state"]["highest_enqueued_severity"], 3)
+
+    def test_very_high_caso_real_e_frame_high_anterior(self):
+        from services.nowcasting_alert_evaluation import avaliar_alerta_preventivo_snapshot
+        high = self.snapshot("HIGH", distance=35.5)
+        high["radar"]["frame_id"] = 7399
+        high["alerta_preventivo"].update(track_id=2321, cluster_id=20071)
+        first = self.process(high)
+        self.assertEqual(first["enfileirados"], 0)
+        very_high = self.snapshot("VERY_HIGH", minute=5, distance=37.6)
+        very_high["radar"]["frame_id"] = 7400
+        very_high["alerta_preventivo"].update(
+            track_id=2321, cluster_id=20071, front_pixels_low=85,
+            front_pixels_medium=124, front_pixels_high=44,
+            front_pixels_very_high=9, tracking_valid=False,
+            approaching=False, trajectory_compatible=False,
+            closest_approach_km=None)
+        diagnostic = avaliar_alerta_preventivo_snapshot(
+            very_high, self.config, now=self.now + timedelta(minutes=5))
+        self.assertEqual(diagnostic["decision"]["radar_intensity"], "VERY_HIGH")
+        self.assertEqual(diagnostic["decision"]["alert_level"], "ALERTA")
+        self.assertEqual(diagnostic["decision"]["authorization"], "PROXIMIDADE")
+        from services.nowcasting_test_alerts import avaliar_alerta_teste_admin
+        admin = avaliar_alerta_teste_admin(
+            very_high, {**self.config, "alerts_enabled": False,
+                        "test_alerts_enabled": True}, admin_phone="5567999999999",
+            now=self.now + timedelta(minutes=5))
+        self.assertTrue(admin["eligible"])
+        self.assertEqual(admin["decision"]["authorization"], "PROXIMIDADE")
+        second = self.process(very_high, 5)
+        self.assertEqual(second["reason"], "very_high_proximity_requires_tracking")
+        self.assertEqual(second["enfileirados"], 0)
+        self.assertFalse(second["state"]["active"])
+        self.assertIsNone(second["state"]["episode_id"])
+        self.assertIsNone(second["state"]["clear_since"])
+        self.assertEqual(self.rows("alertas_eventos"), [])
+        self.assertEqual(self.rows("alertas_fila"), [])
 
     def distant(self, intensity="HIGH", frame=100, track=2146, approach=13.4, minute=0):
         snap = self.snapshot(intensity, minute=minute, distance=55.9, tracking=True)

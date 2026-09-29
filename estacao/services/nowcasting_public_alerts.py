@@ -5,6 +5,7 @@ import re
 import uuid
 
 import database
+from config import numero_alerta_valido
 from services.alert_queue_service import enfileirar_alerta
 from services.nowcasting_alert_evaluation import (
     avaliar_alerta_preventivo_snapshot, montar_mensagem_preventiva,
@@ -164,9 +165,20 @@ def _mensagem_usuario(usuario, mensagem):
     return (f"ATENÇÃO, {nome},\n" if nome else "") + mensagem
 
 
-def _aplicar_politica_publica(avaliacao):
+def _aplicar_politica_publica(avaliacao, snapshot, config, agora):
     """Mantém a decisão meteorológica; restringe apenas a notificação pública."""
     decisao = avaliacao.get("decision") or {}
+    if decisao.get("radar_intensity") == "VERY_HIGH":
+        limite = numero_alerta_valido(config.get("public_very_high_near_km"), 20)
+        # A avaliação compartilhada mantém o raio diagnóstico/admin. Aqui a
+        # rota pública de proximidade termina em 20 km; acima disso a própria
+        # avaliação existente exige tracking e trajetória até 15 km.
+        avaliacao = avaliar_alerta_preventivo_snapshot(
+            snapshot, {**config, "alert_very_high_near_km": limite}, now=agora)
+        decisao = avaliacao.get("decision") or {}
+        if (avaliacao["reason"] == "tracking_insufficient_for_early_warning"
+                and decisao.get("radar_intensity") == "VERY_HIGH"):
+            avaliacao = {**avaliacao, "reason": "very_high_proximity_requires_tracking"}
     if (avaliacao["eligible"] and decisao.get("radar_intensity") == "MEDIUM"
             and decisao.get("authorization") == "TRACKING"):
         return {**avaliacao, "eligible": False, "reason": "medium_tracking_monitor_only"}
@@ -181,7 +193,8 @@ def processar_alerta_publico(snapshot, config, *, now=None):
     agora = now or agora_utc()
     snapshot = snapshot or {}
     avaliacao = _aplicar_politica_publica(
-        avaliar_alerta_preventivo_snapshot(snapshot, config, now=agora))
+        avaliar_alerta_preventivo_snapshot(snapshot, config, now=agora),
+        snapshot, config, agora)
     if avaliacao["reason"] == "invalid_snapshot":
         snapshot = {}
     decisao = avaliacao.get("decision") or {}

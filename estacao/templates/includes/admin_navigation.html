@@ -1,13 +1,56 @@
-<nav class="admin-topbar bg-slate-900 border-b border-slate-800 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
-    <div class="flex items-center gap-3 min-w-0"><i class="fa-solid fa-shield-halved text-blue-400 text-xl"></i><div class="min-w-0"><h1 class="text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1><p class="text-xs font-medium text-slate-400 uppercase">Estação Meteorológica</p></div></div>
-    <form action="{{ url_for('admin.admin_logout') }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm" title="Sair"><i class="fa-solid fa-right-from-bracket"></i><span class="hidden sm:inline">Sair</span></button></form>
+<nav class="admin-topbar bg-slate-900 border-b border-slate-800 px-4 md:px-8 py-3.5 flex justify-between items-center sticky top-0 z-50 shadow-md">
+    <div class="flex items-center gap-3.5 min-w-0">
+        <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-500/30 text-teal-300 shadow-sm shrink-0">
+            <i class="fa-solid fa-shield-halved text-lg"></i>
+        </div>
+        <div class="min-w-0">
+            <div class="flex items-center gap-2">
+                <h1 class="text-base md:text-lg font-bold text-white leading-tight truncate">Painel Administrativo</h1>
+                <span class="hidden md:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> EESJ
+                </span>
+            </div>
+            <p class="text-xs font-medium text-slate-400 truncate">Estação Meteorológica • Distrito de São José</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-2 md:gap-3">
+        <a href="/" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-xs md:text-sm font-medium transition-all border border-slate-700/60 shadow-sm" title="Acessar site público">
+            <i class="fa-solid fa-arrow-up-right-from-square text-xs text-teal-400"></i>
+            <span class="hidden sm:inline">Ver Site Público</span>
+        </a>
+        <form action="{{ url_for('admin.admin_logout') }}" method="POST" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="inline-flex items-center gap-2 bg-rose-600/90 hover:bg-rose-500 text-white px-3 md:px-3.5 py-2 rounded-lg text-xs md:text-sm font-medium transition-all shadow-sm" title="Sair da sessão administrativa">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span class="hidden sm:inline">Sair</span>
+            </button>
+        </form>
+    </div>
 </nav>
 
 {% set totais = contagens|default({}) %}
-<div class="admin-tabs-shell bg-white border-b border-slate-200 shadow-sm">
-    <nav class="max-w-7xl mx-auto px-4 flex overflow-x-auto" aria-label="Seções do painel">
-        {% set abas = [('visao-geral', 'fa-chart-pie', 'Visão geral', none), ('usuarios', 'fa-users', 'Usuários', totais.get('usuarios')), ('cadastros', 'fa-address-book', 'Cadastros', totais.get('cadastros')), ('eventos', 'fa-cloud-bolt', 'Eventos', totais.get('eventos')), ('envios', 'fa-paper-plane', 'Envios', totais.get('envios')), ('historico', 'fa-server', 'Histórico', totais.get('historico'))] %}
-        {% for chave, icone, rotulo, total in abas %}<a href="{{ url_for('admin.admin', aba=chave) }}" class="admin-tab {% if aba_ativa == chave %}admin-tab-active{% endif %}" {% if aba_ativa == chave %}aria-current="page"{% endif %}><i class="fa-solid {{ icone }}"></i><span>{{ rotulo }}</span>{% if total is not none %}<span class="admin-tab-count">{{ total }}</span>{% endif %}</a>{% endfor %}
-        <a href="/admin/monitoramento" class="admin-tab {% if aba_ativa == 'monitoramento' %}admin-tab-active{% endif %}" {% if aba_ativa == 'monitoramento' %}aria-current="page"{% endif %}><i class="fa-solid fa-binoculars"></i><span>Monitoramento</span></a>
+<div class="admin-tabs-shell bg-white border-b border-slate-200/90 shadow-sm">
+    <nav class="max-w-7xl mx-auto px-4 md:px-8 flex overflow-x-auto gap-1 md:gap-1.5 py-1.5" aria-label="Seções do painel">
+        {% set abas = [
+            ('visao-geral', 'fa-chart-pie', 'Visão geral', none),
+            ('usuarios', 'fa-users', 'Usuários', totais.get('usuarios')),
+            ('cadastros', 'fa-address-book', 'Cadastros', totais.get('cadastros')),
+            ('eventos', 'fa-cloud-bolt', 'Eventos', totais.get('eventos')),
+            ('envios', 'fa-paper-plane', 'Envios', totais.get('envios')),
+            ('historico', 'fa-server', 'Histórico', totais.get('historico'))
+        ] %}
+        {% for chave, icone, rotulo, total in abas %}
+            <a href="{{ url_for('admin.admin', aba=chave) }}" class="admin-tab {% if aba_ativa == chave %}admin-tab-active{% endif %}" {% if aba_ativa == chave %}aria-current="page"{% endif %}>
+                <i class="fa-solid {{ icone }}"></i>
+                <span>{{ rotulo }}</span>
+                {% if total is not none %}
+                    <span class="admin-tab-count">{{ total }}</span>
+                {% endif %}
+            </a>
+        {% endfor %}
+        <a href="/admin/monitoramento" class="admin-tab {% if aba_ativa == 'monitoramento' %}admin-tab-active{% endif %}" {% if aba_ativa == 'monitoramento' %}aria-current="page"{% endif %}>
+            <i class="fa-solid fa-binoculars"></i>
+            <span>Monitoramento</span>
+        </a>
     </nav>
 </div>

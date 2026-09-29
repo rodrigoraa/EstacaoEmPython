@@ -1498,24 +1498,94 @@ body.modal-open {
 .admin-app .admin-filter-button:hover { background: #086b65; }
 .admin-app .admin-clear-button { background: #fff; border-radius: .6rem; }
 .admin-app .admin-clear-button:hover { background: #edf6f5; color: #075f59; }
-.admin-app .admin-data-table { border-collapse: separate; border-spacing: 0; }
+.admin-app .admin-data-table { border-collapse: separate; border-spacing: 0; width: 100%; }
 .admin-app .admin-data-table thead { background: #edf4f5; color: #3b5366; }
-.admin-app .admin-data-table th { padding-top: .9rem; padding-bottom: .9rem; border-bottom-color: var(--admin-line); font-weight: 800; letter-spacing: .045em; }
+.admin-app .admin-data-table th { padding: .85rem 1rem; border-bottom: 1px solid var(--admin-line); font-weight: 800; font-size: .75rem; letter-spacing: .045em; text-transform: uppercase; }
 .admin-app .admin-data-table tbody tr:nth-child(even) { background: #fbfdfd; }
 .admin-app .admin-data-table tbody tr:hover { background: #edf8f5; }
-.admin-app .admin-data-table tbody td { border-bottom: 1px solid #edf1f3; }
-.admin-app .admin-page-link-active { border-color: var(--admin-accent); background: var(--admin-accent); }
+.admin-app .admin-data-table tbody td { border-bottom: 1px solid #edf1f3; padding: .85rem 1rem; vertical-align: top; }
+.admin-app .admin-page-link-active { border-color: var(--admin-accent); background: var(--admin-accent); color: #fff; }
 .admin-app .admin-check input { accent-color: var(--admin-accent); }
-.admin-app .admin-metric { border-color: var(--admin-line); border-radius: .8rem; background: #fff; }
-.admin-app .admin-metric-muted { background: #f7fafb; }
+.admin-app .admin-metric {
+    border: 1px solid var(--admin-line);
+    border-radius: .85rem;
+    background: #fff;
+    padding: .9rem 1rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.admin-app .admin-metric:hover {
+    border-color: #a7d7ce;
+    box-shadow: 0 4px 14px rgba(18,49,63,.05);
+}
+.admin-app .admin-metric-muted { background: #f8fafb; }
+.admin-app .admin-metric span {
+    font-size: .72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--admin-muted);
+}
+.admin-app .admin-metric strong {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--admin-ink);
+    margin-top: .35rem;
+}
+.admin-app .admin-metric small {
+    font-size: .75rem;
+    color: #627588;
+    margin-top: .2rem;
+}
+
+/* KPIs Modernos */
+.admin-kpi-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1.25rem 1.35rem;
+    border: 1px solid var(--admin-line);
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 4px 20px rgba(18,49,63,.04);
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    text-decoration: none;
+}
+.admin-kpi-card:hover {
+    transform: translateY(-2px);
+    border-color: #9acfc5;
+    box-shadow: 0 10px 28px rgba(18,49,63,.09);
+    background: #fff;
+}
+.admin-kpi-card:focus-visible { outline: 3px solid var(--admin-accent); outline-offset: 2px; }
+.admin-kpi-icon {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: .75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+    flex-shrink: 0;
+}
+
+/* Indicador Pulsante */
+@keyframes adminPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .4; transform: scale(.85); }
+}
+.admin-pulse-dot {
+    display: inline-block;
+    width: .5rem;
+    height: .5rem;
+    border-radius: 9999px;
+    animation: adminPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    vertical-align: middle;
+}
+
 .admin-summary-grid > a, .admin-system-grid > div {
     border-color: var(--admin-line); border-radius: 1rem;
     box-shadow: 0 8px 24px rgba(18,49,63,.055);
 }
-.admin-summary-grid > a { min-height: 8rem; background: #fff; transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
-.admin-summary-grid > a:hover { transform: translateY(-2px); border-color: #9acfc5; box-shadow: 0 12px 30px rgba(18,49,63,.1); background: #fff; }
-.admin-summary-grid > a:focus-visible { outline: 3px solid var(--admin-accent); outline-offset: 2px; }
-.admin-summary-grid > a p { letter-spacing: -.035em; }
 .admin-system-grid > div { background: #fff; }
 .admin-app .admin-overview-item { border-color: var(--admin-line); border-top-color: var(--admin-accent); border-radius: 1rem; box-shadow: 0 8px 22px rgba(18,49,63,.05); }
 .admin-app .admin-overview-item--success { border-top-color: #16a34a; }

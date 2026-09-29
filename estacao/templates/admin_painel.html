@@ -1,6 +1,6 @@
 {% macro paginador(paginacao) %}
 {% if paginacao %}
-<div class="border-t border-slate-100 px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+<div class="border-t border-slate-100 px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50/50">
     <p class="text-sm text-slate-500">
         {% if paginacao.total %}
         Exibindo <strong class="text-slate-700">{{ paginacao.inicio }}–{{ paginacao.fim }}</strong>
@@ -8,14 +8,14 @@
         {% else %}Nenhum registro encontrado{% endif %}
     </p>
     {% if paginacao.total_paginas > 1 %}
-    <nav class="flex flex-wrap items-center gap-1" aria-label="Paginação">
-        <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=paginacao.pagina - 1, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if not paginacao.tem_anterior %}admin-page-link-disabled{% endif %}" {% if not paginacao.tem_anterior %}aria-disabled="true" tabindex="-1"{% endif %}><i class="fa-solid fa-chevron-left"></i><span class="sr-only">Página anterior</span></a>
+    <nav class="flex flex-wrap items-center gap-1.5" aria-label="Paginação">
+        <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=paginacao.pagina - 1, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if not paginacao.tem_anterior %}admin-page-link-disabled{% endif %}" {% if not paginacao.tem_anterior %}aria-disabled="true" tabindex="-1"{% endif %}><i class="fa-solid fa-chevron-left text-xs"></i><span class="sr-only">Página anterior</span></a>
         {% for numero in paginacao.itens %}
             {% if numero %}
             <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=numero, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if numero == paginacao.pagina %}admin-page-link-active{% endif %}" {% if numero == paginacao.pagina %}aria-current="page"{% endif %}>{{ numero }}</a>
-            {% else %}<span class="px-2 text-slate-400">…</span>{% endif %}
+            {% else %}<span class="px-2 text-slate-400 font-bold select-none">…</span>{% endif %}
         {% endfor %}
-        <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=paginacao.pagina + 1, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if not paginacao.tem_proxima %}admin-page-link-disabled{% endif %}" {% if not paginacao.tem_proxima %}aria-disabled="true" tabindex="-1"{% endif %}><i class="fa-solid fa-chevron-right"></i><span class="sr-only">Próxima página</span></a>
+        <a href="{{ url_for('admin.admin', aba=aba_ativa, pagina=paginacao.pagina + 1, por_pagina=paginacao.por_pagina, busca=filtros.busca, filtro=filtros.filtro, data_inicio=filtros.data_inicio, data_fim=filtros.data_fim) }}" class="admin-page-link {% if not paginacao.tem_proxima %}admin-page-link-disabled{% endif %}" {% if not paginacao.tem_proxima %}aria-disabled="true" tabindex="-1"{% endif %}><i class="fa-solid fa-chevron-right text-xs"></i><span class="sr-only">Próxima página</span></a>
     </nav>
     {% endif %}
 </div>
@@ -34,56 +34,736 @@
 <body class="admin-app bg-slate-50 font-sans text-slate-800 pb-12">
     {% include "includes/admin_navigation.html" %}
 
-    <main class="admin-main max-w-7xl mx-auto px-4 mt-6 md:mt-8 space-y-6">
-        {% with messages = get_flashed_messages() %}{% if messages %}<div class="bg-blue-50 border border-blue-100 text-blue-800 px-4 py-3 rounded-lg text-sm flex items-center gap-3 shadow-sm" role="alert"><i class="fa-solid fa-circle-info text-blue-500"></i><span class="font-medium">{{ messages[0] }}</span></div>{% endif %}{% endwith %}
+    <main class="admin-main max-w-7xl mx-auto px-4 md:px-8 mt-6 md:mt-8 space-y-6">
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="bg-teal-50 border border-teal-200/90 text-teal-900 px-4 py-3 rounded-xl text-sm flex items-center gap-3 shadow-sm" role="alert">
+            <i class="fa-solid fa-circle-check text-teal-600 text-base"></i>
+            <span class="font-medium">{{ messages[0] }}</span>
+        </div>
+        {% endif %}
+        {% endwith %}
 
         {% if aba_ativa == 'visao-geral' %}
-        <div><h2 class="text-2xl font-extrabold text-slate-900">Visão geral</h2><p class="text-sm text-slate-500 mt-1">Situação atual dos usuários, integrações e processos da estação.</p></div>
-        <section class="admin-summary-grid grid grid-cols-2 xl:grid-cols-4 gap-4">
-            <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Usuários</span><i class="fa-solid fa-users text-slate-400"></i></div><p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.total_usuarios }}</p></a>
-            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='ativos') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Ativos</span><i class="fa-solid fa-circle-check text-emerald-500"></i></div><p class="mt-3 text-3xl font-extrabold text-emerald-700">{{ resumo_usuarios.usuarios_ativos }}</p></a>
-            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='whatsapp') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Com WhatsApp</span><i class="fa-brands fa-whatsapp text-emerald-500"></i></div><p class="mt-3 text-3xl font-extrabold text-slate-900">{{ resumo_usuarios.usuarios_whatsapp }}</p></a>
-            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='pausados') }}" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 hover:bg-slate-50 transition-colors"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-slate-500">Pausados</span><i class="fa-solid fa-pause text-amber-500"></i></div><p class="mt-3 text-3xl font-extrabold text-amber-700">{{ resumo_usuarios.usuarios_pausados }}</p></a>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-slate-200/80">
+            <div>
+                <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Visão geral</h2>
+                <p class="text-sm text-slate-500 mt-0.5">Situação atual dos usuários, integrações e processos da estação.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span class="admin-pulse-dot bg-emerald-500"></span> Operacional
+                </span>
+            </div>
+        </div>
+
+        <!-- 4 KPI Cards -->
+        <section class="admin-summary-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="admin-kpi-card group" title="Ver lista completa de usuários">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Usuários</span>
+                    <div class="admin-kpi-icon bg-indigo-50 text-indigo-600 border border-indigo-100 group-hover:scale-105 transition-transform">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <p class="text-3xl font-black text-slate-900 leading-none">{{ resumo_usuarios.total_usuarios }}</p>
+                    <p class="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
+                        <i class="fa-solid fa-address-book text-slate-400"></i> Cadastros registrados
+                    </p>
+                </div>
+            </a>
+
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='ativos') }}" class="admin-kpi-card group" title="Filtrar por usuários ativos">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Ativos</span>
+                    <div class="admin-kpi-icon bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:scale-105 transition-transform">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <p class="text-3xl font-black text-emerald-600 leading-none">{{ resumo_usuarios.usuarios_ativos }}</p>
+                    <p class="text-xs text-emerald-700 mt-2 font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-chart-line text-emerald-500"></i>
+                        {% if resumo_usuarios.total_usuarios > 0 %}
+                            {{ ((resumo_usuarios.usuarios_ativos * 100) / resumo_usuarios.total_usuarios)|round|int }}% da base ativa
+                        {% else %}
+                            Habilitados para alertas
+                        {% endif %}
+                    </p>
+                </div>
+            </a>
+
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='whatsapp') }}" class="admin-kpi-card group" title="Filtrar por usuários com WhatsApp">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Com WhatsApp</span>
+                    <div class="admin-kpi-icon bg-teal-50 text-teal-600 border border-teal-100 group-hover:scale-105 transition-transform">
+                        <i class="fa-brands fa-whatsapp text-lg"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <p class="text-3xl font-black text-slate-900 leading-none">{{ resumo_usuarios.usuarios_whatsapp }}</p>
+                    <p class="text-xs text-slate-500 mt-2 flex items-center gap-1.5">
+                        <i class="fa-solid fa-mobile-screen-button text-slate-400"></i> Alertas por WhatsApp
+                    </p>
+                </div>
+            </a>
+
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='pausados') }}" class="admin-kpi-card group" title="Filtrar por usuários pausados">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Pausados</span>
+                    <div class="admin-kpi-icon bg-amber-50 text-amber-600 border border-amber-100 group-hover:scale-105 transition-transform">
+                        <i class="fa-solid fa-pause"></i>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <p class="text-3xl font-black text-amber-600 leading-none">{{ resumo_usuarios.usuarios_pausados }}</p>
+                    <p class="text-xs text-amber-700 mt-2 font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-bell-slash text-amber-500"></i> Alertas temporariamente pausados
+                    </p>
+                </div>
+            </a>
         </section>
+
+        <!-- Status Cards: Evolution API & Saúde do sistema -->
         <section class="admin-system-grid grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><i class="fa-brands fa-whatsapp text-xl"></i></div><div><h3 class="font-bold text-slate-800">Evolution API</h3><p class="text-sm text-slate-500">{{ evolution_status.estado }}</p></div></div><div class="text-left sm:text-right"><span class="inline-flex items-center gap-2 {% if evolution_status.ok %}bg-emerald-50 text-emerald-700 border-emerald-100{% else %}bg-rose-50 text-rose-700 border-rose-100{% endif %} text-sm font-bold px-3 py-2 rounded-lg border"><i class="fa-solid {% if evolution_status.ok %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>{{ 'Conectada' if evolution_status.ok else 'Atenção' }}</span><p class="text-xs font-mono text-slate-500 mt-2">{{ evolution_status.detalhe }}</p></div></div>
-            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div class="flex items-center gap-3"><div class="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-50 text-rose-500"><i class="fa-solid fa-heart-pulse text-xl"></i></div><div><h3 class="font-bold text-slate-800">Saúde do sistema</h3><p class="text-sm text-slate-500">Coleta, fila e entregas</p></div></div><span class="w-fit inline-flex items-center gap-2 {% if saude_sistema.status_geral == 'ok' %}bg-emerald-50 text-emerald-700 border-emerald-100{% else %}bg-amber-50 text-amber-700 border-amber-100{% endif %} text-sm font-bold px-3 py-2 rounded-lg border"><i class="fa-solid {% if saude_sistema.status_geral == 'ok' %}fa-circle-check{% else %}fa-triangle-exclamation{% endif %}"></i>{{ saude_sistema.status_texto }}</span></div>
+            <!-- Evolution API -->
+            <div class="bg-white border border-slate-200/90 rounded-2xl shadow-sm p-5 transition-all hover:border-slate-300">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center gap-3.5">
+                        <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100/80 shadow-sm shrink-0">
+                            <i class="fa-brands fa-whatsapp text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-base leading-snug">Evolution API</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">Instância: <span class="font-semibold text-slate-700">{{ evolution_status.estado }}</span></p>
+                        </div>
+                    </div>
+                    <span class="inline-flex items-center gap-1.5 {% if evolution_status.ok %}bg-emerald-50 text-emerald-700 border-emerald-200{% else %}bg-rose-50 text-rose-700 border-rose-200{% endif %} text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm">
+                        {% if evolution_status.ok %}
+                            <span class="admin-pulse-dot bg-emerald-500"></span> Conectada
+                        {% else %}
+                            <i class="fa-solid fa-triangle-exclamation"></i> Atenção
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="mt-4 pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
+                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-server text-slate-400"></i> Resposta do servidor:</span>
+                    <span class="font-mono bg-slate-50 px-2.5 py-1 rounded-md text-slate-600 border border-slate-200/70 font-medium">{{ evolution_status.detalhe }}</span>
+                </div>
+            </div>
+
+            <!-- Saúde do sistema -->
+            <div class="bg-white border border-slate-200/90 rounded-2xl shadow-sm p-5 transition-all hover:border-slate-300">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center gap-3.5">
+                        <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-600 border border-teal-100/80 shadow-sm shrink-0">
+                            <i class="fa-solid fa-heart-pulse text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-base leading-snug">Saúde do sistema</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">Coleta, fila e entregas</p>
+                        </div>
+                    </div>
+                    <span class="inline-flex items-center gap-1.5 {% if saude_sistema.status_geral == 'ok' %}bg-emerald-50 text-emerald-700 border-emerald-200{% else %}bg-amber-50 text-amber-700 border-amber-200{% endif %} text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm">
+                        <i class="fa-solid {% if saude_sistema.status_geral == 'ok' %}fa-circle-check text-emerald-500{% else %}fa-triangle-exclamation text-amber-500{% endif %}"></i>
+                        {{ saude_sistema.status_texto }}
+                    </span>
+                </div>
+                <div class="mt-4 pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
+                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-satellite-dish text-slate-400"></i> Coleta local:</span>
+                    <span class="inline-flex items-center gap-1 font-semibold {% if saude_sistema.coleta_ok %}text-emerald-700{% else %}text-amber-700{% endif %}">
+                        {{ 'Normal (no horário)' if saude_sistema.coleta_ok else 'Atrasada' }}
+                    </span>
+                </div>
+            </div>
         </section>
-        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70"><h2 class="text-base font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-gauge-high text-blue-500"></i>Detalhes operacionais</h2></div><div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-5">
-            <div class="admin-metric"><span>Última coleta</span><strong>{{ saude_sistema.ultima_leitura_tempo }}</strong><small>{{ saude_sistema.ultima_leitura }}</small></div><div class="admin-metric"><span>Fila pendente</span><strong>{{ saude_sistema.fila_pendentes }}</strong><small>{{ saude_sistema.fila_enviando }} enviando</small></div><div class="admin-metric"><span>Falhas na fila</span><strong>{{ saude_sistema.fila_falhou }}</strong><small>{{ saude_sistema.falhas_24h }} nas últimas 24h</small></div><div class="admin-metric"><span>Último envio</span><strong>{{ saude_sistema.ultimo_envio_status }}</strong><small>{{ saude_sistema.ultimo_envio }}</small></div><div class="admin-metric admin-metric-muted"><span>Item mais antigo</span><strong>{{ saude_sistema.fila_mais_antiga }}</strong></div><div class="admin-metric admin-metric-muted"><span>Entrega média</span><strong>{{ saude_sistema.media_entrega_segundos }} s</strong></div><div class="admin-metric admin-metric-muted"><span>Reset de vento</span><strong>{{ 'Aguardando' if saude_sistema.aguardando_reset_vento else 'Sincronizado' }}</strong></div><div class="admin-metric admin-metric-muted"><span>Reset de chuva</span><strong>{{ 'Aguardando' if saude_sistema.aguardando_reset_chuva else 'Sincronizado' }}</strong></div>
-        </div></section>
+
+        <!-- Detalhes Operacionais Organizados -->
+        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-gauge-high text-teal-600 text-base"></i>
+                    Detalhes operacionais
+                </h2>
+                <span class="text-xs text-slate-500">Métricas em tempo real da estação e da fila de despacho</span>
+            </div>
+            
+            <div class="p-5 md:p-6 space-y-6">
+                <!-- Bloco 1: Telemetria da Estação -->
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-tower-broadcast text-teal-600"></i> Telemetria & Ciclos da Estação
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                        <div class="admin-metric">
+                            <span>Última coleta</span>
+                            <strong>{{ saude_sistema.ultima_leitura_tempo }}</strong>
+                            <small>{{ saude_sistema.ultima_leitura }}</small>
+                        </div>
+                        <div class="admin-metric admin-metric-muted">
+                            <span>Reset de vento</span>
+                            <strong>{{ 'Aguardando' if saude_sistema.aguardando_reset_vento else 'Sincronizado' }}</strong>
+                            <small>Ciclo diário de rajada máxima</small>
+                        </div>
+                        <div class="admin-metric admin-metric-muted">
+                            <span>Reset de chuva</span>
+                            <strong>{{ 'Aguardando' if saude_sistema.aguardando_reset_chuva else 'Sincronizado' }}</strong>
+                            <small>Ciclo diário de acumulado zero hora</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bloco 2: Fila e Despacho de Mensagens -->
+                <div>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                        <i class="fa-brands fa-whatsapp text-emerald-600"></i> Fila de Transmissão & Despacho
+                    </h3>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+                        <div class="admin-metric">
+                            <span>Fila pendente</span>
+                            <strong>{{ saude_sistema.fila_pendentes }}</strong>
+                            <small>{{ saude_sistema.fila_enviando }} enviando</small>
+                        </div>
+                        <div class="admin-metric">
+                            <span>Falhas na fila</span>
+                            <strong class="{% if saude_sistema.fila_falhou > 0 %}text-rose-600{% endif %}">{{ saude_sistema.fila_falhou }}</strong>
+                            <small>{{ saude_sistema.falhas_24h }} nas últimas 24h</small>
+                        </div>
+                        <div class="admin-metric">
+                            <span>Último envio</span>
+                            <strong>{{ saude_sistema.ultimo_envio_status }}</strong>
+                            <small>{{ saude_sistema.ultimo_envio }}</small>
+                        </div>
+                        <div class="admin-metric admin-metric-muted">
+                            <span>Item mais antigo</span>
+                            <strong>{{ saude_sistema.fila_mais_antiga }}</strong>
+                            <small>Tempo em espera</small>
+                        </div>
+                        <div class="admin-metric admin-metric-muted">
+                            <span>Entrega média</span>
+                            <strong>{{ saude_sistema.media_entrega_segundos }} s</strong>
+                            <small>Tempo por mensagem</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         {% elif aba_ativa == 'usuarios' %}
-        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-            <div class="admin-section-heading"><div><h2><i class="fa-solid fa-users text-indigo-500"></i> Usuários cadastrados</h2><p>Edite os dados e consulte todos os cadastros.</p></div><span class="admin-total-badge">{{ paginacao.total }} encontrado(s)</span></div>
-            <form method="GET" action="{{ url_for('admin.admin') }}" class="admin-filter-bar"><input type="hidden" name="aba" value="usuarios"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone ou endereço"></label><label><span>Situação</span><select name="filtro"><option value="todos">Todos</option><option value="ativos" {% if filtros.filtro == 'ativos' %}selected{% endif %}>Ativos</option><option value="pausados" {% if filtros.filtro == 'pausados' %}selected{% endif %}>Pausados</option><option value="whatsapp" {% if filtros.filtro == 'whatsapp' %}selected{% endif %}>Com WhatsApp</option><option value="pendentes" {% if filtros.filtro == 'pendentes' %}selected{% endif %}>Pendentes</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button type="submit" class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='usuarios') }}" class="admin-clear-button">Limpar</a></form>
-            <div class="overflow-x-auto"><table class="w-full min-w-[1080px] text-left border-collapse admin-data-table"><thead><tr><th class="w-40">Cadastro</th><th class="w-56">Nome</th><th class="w-44">Telefone</th><th>Endereço</th><th class="w-52">Status</th><th class="w-28 text-right">Ações</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">
-            {% for row in usuarios %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 text-slate-600"><form id="editar-usuario-{{ row.id }}" action="{{ url_for('admin.editar_usuario', id=row.id) }}" method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}"><input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}"><input type="hidden" name="retorno_busca" value="{{ filtros.busca }}"><input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}"></form><span class="inline-block bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">#{{ row.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ row.criado_em_exibicao }}</span></td><td class="px-4 py-3"><label class="sr-only" for="nome-{{ row.id }}">Nome</label><input id="nome-{{ row.id }}" name="nome" value="{{ row.nome or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input"></td><td class="px-4 py-3"><label class="sr-only" for="telefone-{{ row.id }}">Telefone</label><input id="telefone-{{ row.id }}" name="telefone" value="{{ row.telefone or '' }}" form="editar-usuario-{{ row.id }}" required inputmode="numeric" class="admin-table-input font-mono"></td><td class="px-4 py-3"><label class="sr-only" for="endereco-{{ row.id }}">Endereço</label><input id="endereco-{{ row.id }}" name="endereco" value="{{ row.endereco or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input"></td><td class="px-4 py-3"><div class="flex gap-4"><label class="admin-check"><input type="checkbox" name="ativo" value="1" form="editar-usuario-{{ row.id }}" {% if row.ativo == 1 %}checked{% endif %}>Ativo</label><label class="admin-check"><input type="checkbox" name="receber_whatsapp" value="1" form="editar-usuario-{{ row.id }}" {% if row.receber_whatsapp == 1 %}checked{% endif %}>WhatsApp</label></div></td><td class="px-4 py-3"><div class="flex justify-end gap-2"><button type="submit" form="editar-usuario-{{ row.id }}" class="admin-icon-button bg-indigo-600 hover:bg-indigo-500" title="Salvar alterações"><i class="fa-solid fa-floppy-disk"></i></button><form action="{{ url_for('admin.deletar_usuario', id=row.id) }}" method="POST" onsubmit="return confirm('Apagar este usuário?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}"><input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}"><input type="hidden" name="retorno_busca" value="{{ filtros.busca }}"><input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}"><button type="submit" class="admin-icon-button bg-rose-600 hover:bg-rose-500" title="Apagar usuário"><i class="fa-solid fa-trash"></i></button></form></div></td></tr>{% else %}<tr><td colspan="6" class="admin-empty-state"><i class="fa-regular fa-folder-open"></i>Nenhum usuário encontrado.</td></tr>{% endfor %}
-            </tbody></table></div>{{ paginador(paginacao) }}
+        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+            <div class="admin-section-heading">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-users text-indigo-500"></i> Usuários cadastrados
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Edite os dados e consulte todos os cadastros.</p>
+                </div>
+                <span class="admin-total-badge">{{ paginacao.total }} encontrado(s)</span>
+            </div>
+
+            <form method="GET" action="{{ url_for('admin.admin') }}" class="admin-filter-bar">
+                <input type="hidden" name="aba" value="usuarios">
+                <label class="admin-filter-grow">
+                    <span>Buscar</span>
+                    <input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone ou endereço">
+                </label>
+                <label>
+                    <span>Situação</span>
+                    <select name="filtro">
+                        <option value="todos">Todos</option>
+                        <option value="ativos" {% if filtros.filtro == 'ativos' %}selected{% endif %}>Ativos</option>
+                        <option value="pausados" {% if filtros.filtro == 'pausados' %}selected{% endif %}>Pausados</option>
+                        <option value="whatsapp" {% if filtros.filtro == 'whatsapp' %}selected{% endif %}>Com WhatsApp</option>
+                        <option value="pendentes" {% if filtros.filtro == 'pendentes' %}selected{% endif %}>Pendentes</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Por página</span>
+                    <select name="por_pagina">
+                        {% for opcao in opcoes_por_pagina %}
+                            <option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit" class="admin-filter-button">
+                    <i class="fa-solid fa-magnifying-glass"></i> Filtrar
+                </button>
+                <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="admin-clear-button">
+                    Limpar
+                </a>
+            </form>
+
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[1080px] text-left border-collapse admin-data-table">
+                    <thead>
+                        <tr>
+                            <th class="w-40">Cadastro</th>
+                            <th class="w-56">Nome</th>
+                            <th class="w-44">Telefone</th>
+                            <th>Endereço</th>
+                            <th class="w-52">Status</th>
+                            <th class="w-28 text-right">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for row in usuarios %}
+                        <tr class="hover:bg-slate-50/80 align-top">
+                            <td class="px-4 py-3 text-slate-600">
+                                <form id="editar-usuario-{{ row.id }}" action="{{ url_for('admin.editar_usuario', id=row.id) }}" method="POST">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}">
+                                    <input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}">
+                                    <input type="hidden" name="retorno_busca" value="{{ filtros.busca }}">
+                                    <input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}">
+                                </form>
+                                <span class="inline-block bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-100">
+                                    #{{ row.id }}
+                                </span>
+                                <span class="block font-mono text-xs text-slate-500 mt-1">{{ row.criado_em_exibicao }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <label class="sr-only" for="nome-{{ row.id }}">Nome</label>
+                                <input id="nome-{{ row.id }}" name="nome" value="{{ row.nome or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input">
+                            </td>
+                            <td class="px-4 py-3">
+                                <label class="sr-only" for="telefone-{{ row.id }}">Telefone</label>
+                                <input id="telefone-{{ row.id }}" name="telefone" value="{{ row.telefone or '' }}" form="editar-usuario-{{ row.id }}" required inputmode="numeric" class="admin-table-input font-mono">
+                            </td>
+                            <td class="px-4 py-3">
+                                <label class="sr-only" for="endereco-{{ row.id }}">Endereço</label>
+                                <input id="endereco-{{ row.id }}" name="endereco" value="{{ row.endereco or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input">
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex gap-4">
+                                    <label class="admin-check">
+                                        <input type="checkbox" name="ativo" value="1" form="editar-usuario-{{ row.id }}" {% if row.ativo == 1 %}checked{% endif %}>
+                                        Ativo
+                                    </label>
+                                    <label class="admin-check">
+                                        <input type="checkbox" name="receber_whatsapp" value="1" form="editar-usuario-{{ row.id }}" {% if row.receber_whatsapp == 1 %}checked{% endif %}>
+                                        WhatsApp
+                                    </label>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex justify-end gap-2">
+                                    <button type="submit" form="editar-usuario-{{ row.id }}" class="admin-icon-button bg-indigo-600 hover:bg-indigo-500" title="Salvar alterações">
+                                        <i class="fa-solid fa-floppy-disk"></i>
+                                    </button>
+                                    <form action="{{ url_for('admin.deletar_usuario', id=row.id) }}" method="POST" onsubmit="return confirm('Apagar este usuário?')">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}">
+                                        <input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}">
+                                        <input type="hidden" name="retorno_busca" value="{{ filtros.busca }}">
+                                        <input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}">
+                                        <button type="submit" class="admin-icon-button bg-rose-600 hover:bg-rose-500" title="Apagar usuário">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="admin-empty-state">
+                                <i class="fa-regular fa-folder-open"></i>
+                                Nenhum usuário encontrado.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {{ paginador(paginacao) }}
         </section>
 
         {% elif aba_ativa == 'cadastros' %}
-        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-user-clock text-indigo-500"></i> Histórico de cadastros</h2><p>Cadastros, cancelamentos e alterações administrativas.</p></div><span class="admin-total-badge">{{ paginacao.total }} evento(s)</span></div>
-            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="cadastros"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone, endereço ou detalhe"></label><label><span>Evento</span><select name="filtro"><option value="todos">Todos</option><option value="cadastro" {% if filtros.filtro == 'cadastro' %}selected{% endif %}>Cadastro</option><option value="cancelamento" {% if filtros.filtro == 'cancelamento' %}selected{% endif %}>Cancelamento</option><option value="edicao_admin" {% if filtros.filtro == 'edicao_admin' %}selected{% endif %}>Edição admin</option><option value="exclusao_admin" {% if filtros.filtro == 'exclusao_admin' %}selected{% endif %}>Exclusão admin</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='cadastros') }}" class="admin-clear-button">Limpar</a></form>
-            <div class="overflow-x-auto"><table class="w-full min-w-[1080px] text-left border-collapse admin-data-table"><thead><tr><th>ID / data</th><th>Evento</th><th>Usuário</th><th>Contato</th><th>Endereço</th><th>WhatsApp</th><th>Detalhe</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for evento in eventos_cadastro %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ evento.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ evento.data_hora_exibicao }}</span></td><td class="px-4 py-3"><span class="admin-status-badge">{{ evento.acao|replace('_', ' ') }}</span></td><td class="px-4 py-3"><strong>{{ evento.nome or '-' }}</strong><span class="block text-xs text-slate-500 mt-1">ID {{ evento.usuario_id or '-' }}</span></td><td class="px-4 py-3 font-mono">{{ evento.telefone or '-' }}</td><td class="px-4 py-3">{{ evento.endereco or '-' }}</td><td class="px-4 py-3">{% if evento.receber_whatsapp == 1 %}<span class="text-emerald-700 font-semibold">Sim</span>{% elif evento.receber_whatsapp == 0 %}Não{% else %}-{% endif %}</td><td class="px-4 py-3 max-w-md">{{ evento.detalhe or '-' }}</td></tr>{% else %}<tr><td colspan="7" class="admin-empty-state"><i class="fa-regular fa-address-book"></i>Nenhum evento encontrado.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
+        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+            <div class="admin-section-heading">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-user-clock text-indigo-500"></i> Histórico de cadastros
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Cadastros, cancelamentos e alterações administrativas.</p>
+                </div>
+                <span class="admin-total-badge">{{ paginacao.total }} evento(s)</span>
+            </div>
+
+            <form method="GET" class="admin-filter-bar">
+                <input type="hidden" name="aba" value="cadastros">
+                <label class="admin-filter-grow">
+                    <span>Buscar</span>
+                    <input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone, endereço ou detalhe">
+                </label>
+                <label>
+                    <span>Evento</span>
+                    <select name="filtro">
+                        <option value="todos">Todos</option>
+                        <option value="cadastro" {% if filtros.filtro == 'cadastro' %}selected{% endif %}>Cadastro</option>
+                        <option value="cancelamento" {% if filtros.filtro == 'cancelamento' %}selected{% endif %}>Cancelamento</option>
+                        <option value="edicao_admin" {% if filtros.filtro == 'edicao_admin' %}selected{% endif %}>Edição admin</option>
+                        <option value="exclusao_admin" {% if filtros.filtro == 'exclusao_admin' %}selected{% endif %}>Exclusão admin</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Por página</span>
+                    <select name="por_pagina">
+                        {% for opcao in opcoes_por_pagina %}
+                            <option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="admin-filter-button">
+                    <i class="fa-solid fa-magnifying-glass"></i> Filtrar
+                </button>
+                <a href="{{ url_for('admin.admin', aba='cadastros') }}" class="admin-clear-button">
+                    Limpar
+                </a>
+            </form>
+
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[1080px] text-left border-collapse admin-data-table">
+                    <thead>
+                        <tr>
+                            <th>ID / data</th>
+                            <th>Evento</th>
+                            <th>Usuário</th>
+                            <th>Contato</th>
+                            <th>Endereço</th>
+                            <th>WhatsApp</th>
+                            <th>Detalhe</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for evento in eventos_cadastro %}
+                        <tr class="hover:bg-slate-50/80 align-top">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="text-xs font-bold text-slate-500">#{{ evento.id }}</span>
+                                <span class="block font-mono text-xs text-slate-500 mt-1">{{ evento.data_hora_exibicao }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="admin-status-badge">{{ evento.acao|replace('_', ' ') }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong>{{ evento.nome or '-' }}</strong>
+                                <span class="block text-xs text-slate-500 mt-1">ID {{ evento.usuario_id or '-' }}</span>
+                            </td>
+                            <td class="px-4 py-3 font-mono">{{ evento.telefone or '-' }}</td>
+                            <td class="px-4 py-3">{{ evento.endereco or '-' }}</td>
+                            <td class="px-4 py-3">
+                                {% if evento.receber_whatsapp == 1 %}
+                                    <span class="text-emerald-700 font-semibold">Sim</span>
+                                {% elif evento.receber_whatsapp == 0 %}
+                                    Não
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 max-w-md">{{ evento.detalhe or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="admin-empty-state">
+                                <i class="fa-regular fa-address-book"></i>
+                                Nenhum evento encontrado.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {{ paginador(paginacao) }}
         </section>
 
         {% elif aba_ativa == 'eventos' %}
-        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-cloud-bolt text-amber-500"></i> Eventos meteorológicos</h2><p>Detecção, enfileiramento e resultado de cada evento.</p></div><span class="admin-total-badge">{{ paginacao.total }} evento(s)</span></div>
-            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="eventos"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Tipo, fonte, mensagem ou detalhe"></label><label><span>Status</span><select name="filtro"><option value="todos">Todos</option><option value="detectado" {% if filtros.filtro == 'detectado' %}selected{% endif %}>Detectado</option><option value="enfileirado" {% if filtros.filtro == 'enfileirado' %}selected{% endif %}>Enfileirado</option><option value="sem_destinatarios" {% if filtros.filtro == 'sem_destinatarios' %}selected{% endif %}>Sem destinatários</option><option value="concluido" {% if filtros.filtro == 'concluido' %}selected{% endif %}>Concluído</option><option value="concluido_com_falhas" {% if filtros.filtro == 'concluido_com_falhas' %}selected{% endif %}>Com falhas</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='eventos') }}" class="admin-clear-button">Limpar</a></form>
-            <div class="overflow-x-auto"><table class="w-full min-w-[1080px] text-left border-collapse admin-data-table"><thead><tr><th>ID / horário</th><th>Tipo</th><th>Valor</th><th>Status / entregas</th><th>Referência</th><th>Mensagem / detalhe</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for evento in eventos_alertas %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ evento.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ evento.data_hora_exibicao }}</span></td><td class="px-4 py-3"><strong>{{ evento.tipo }}</strong><span class="block text-xs text-slate-500 mt-1">Nível {{ evento.nivel }}</span></td><td class="px-4 py-3"><strong>{{ evento.valor if evento.valor is not none else '-' }} {{ evento.unidade or '' }}</strong></td><td class="px-4 py-3"><span class="admin-status-badge">{{ evento.status|replace('_', ' ') }}</span><span class="block text-xs text-slate-500 mt-2">{{ evento.enviados }}/{{ evento.destinatarios }} enviados · {{ evento.falhas }} falhas</span></td><td class="px-4 py-3"><span class="font-mono text-xs">{{ evento.data_referencia }}</span><span class="block text-xs text-slate-500 mt-1">{{ evento.fonte or '-' }}</span><span class="block text-xs text-slate-500 mt-1">{{ evento.evento_id }}</span></td><td class="px-4 py-3 max-w-md"><p class="whitespace-pre-line">{{ evento.mensagem or '-' }}</p>{% if evento.detalhe %}<p class="text-xs text-slate-500 mt-2">{{ evento.detalhe }}</p>{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="admin-empty-state"><i class="fa-solid fa-cloud-bolt"></i>Nenhum evento meteorológico encontrado.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
+        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+            <div class="admin-section-heading">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-cloud-bolt text-amber-500"></i> Eventos meteorológicos
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Detecção, enfileiramento e resultado de cada evento.</p>
+                </div>
+                <span class="admin-total-badge">{{ paginacao.total }} evento(s)</span>
+            </div>
+
+            <form method="GET" class="admin-filter-bar">
+                <input type="hidden" name="aba" value="eventos">
+                <label class="admin-filter-grow">
+                    <span>Buscar</span>
+                    <input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Tipo, fonte, mensagem ou detalhe">
+                </label>
+                <label>
+                    <span>Status</span>
+                    <select name="filtro">
+                        <option value="todos">Todos</option>
+                        <option value="detectado" {% if filtros.filtro == 'detectado' %}selected{% endif %}>Detectado</option>
+                        <option value="enfileirado" {% if filtros.filtro == 'enfileirado' %}selected{% endif %}>Enfileirado</option>
+                        <option value="sem_destinatarios" {% if filtros.filtro == 'sem_destinatarios' %}selected{% endif %}>Sem destinatários</option>
+                        <option value="concluido" {% if filtros.filtro == 'concluido' %}selected{% endif %}>Concluído</option>
+                        <option value="concluido_com_falhas" {% if filtros.filtro == 'concluido_com_falhas' %}selected{% endif %}>Com falhas</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Por página</span>
+                    <select name="por_pagina">
+                        {% for opcao in opcoes_por_pagina %}
+                            <option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="admin-filter-button">
+                    <i class="fa-solid fa-magnifying-glass"></i> Filtrar
+                </button>
+                <a href="{{ url_for('admin.admin', aba='eventos') }}" class="admin-clear-button">
+                    Limpar
+                </a>
+            </form>
+
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[1080px] text-left border-collapse admin-data-table">
+                    <thead>
+                        <tr>
+                            <th>ID / horário</th>
+                            <th>Tipo</th>
+                            <th>Valor</th>
+                            <th>Status / entregas</th>
+                            <th>Referência</th>
+                            <th>Mensagem / detalhe</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for evento in eventos_alertas %}
+                        <tr class="hover:bg-slate-50/80 align-top">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="text-xs font-bold text-slate-500">#{{ evento.id }}</span>
+                                <span class="block font-mono text-xs text-slate-500 mt-1">{{ evento.data_hora_exibicao }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong>{{ evento.tipo }}</strong>
+                                <span class="block text-xs text-slate-500 mt-1">Nível {{ evento.nivel }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong>{{ evento.valor if evento.valor is not none else '-' }} {{ evento.unidade or '' }}</strong>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="admin-status-badge">{{ evento.status|replace('_', ' ') }}</span>
+                                <span class="block text-xs text-slate-500 mt-2">{{ evento.enviados }}/{{ evento.destinatarios }} enviados · {{ evento.falhas }} falhas</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="font-mono text-xs">{{ evento.data_referencia }}</span>
+                                <span class="block text-xs text-slate-500 mt-1">{{ evento.fonte or '-' }}</span>
+                                <span class="block text-xs text-slate-500 mt-1">{{ evento.evento_id }}</span>
+                            </td>
+                            <td class="px-4 py-3 max-w-md">
+                                <p class="whitespace-pre-line">{{ evento.mensagem or '-' }}</p>
+                                {% if evento.detalhe %}
+                                    <p class="text-xs text-slate-500 mt-2">{{ evento.detalhe }}</p>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="admin-empty-state">
+                                <i class="fa-solid fa-cloud-bolt"></i>
+                                Nenhum evento meteorológico encontrado.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {{ paginador(paginacao) }}
         </section>
 
         {% elif aba_ativa == 'envios' %}
-        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-paper-plane text-emerald-500"></i> Envios de alertas</h2><p>Histórico completo das mensagens enviadas e das falhas.</p></div><span class="admin-total-badge">{{ paginacao.total }} envio(s)</span></div>
-            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="envios"><label class="admin-filter-grow"><span>Buscar</span><input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone, mensagem ou erro"></label><label><span>Status</span><select name="filtro"><option value="todos">Todos</option><option value="enviado" {% if filtros.filtro == 'enviado' %}selected{% endif %}>Enviado</option><option value="falhou" {% if filtros.filtro == 'falhou' %}selected{% endif %}>Falhou</option></select></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='envios') }}" class="admin-clear-button">Limpar</a></form>
-            <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left border-collapse admin-data-table"><thead><tr><th>ID / data</th><th>Status</th><th>Contato</th><th>Telefone</th><th>Mensagem</th><th>Erro</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for alerta in alertas %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ alerta.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ alerta.data_hora_exibicao }}</span></td><td class="px-4 py-3"><span class="admin-status-badge {% if alerta.status == 'enviado' %}admin-status-success{% else %}admin-status-error{% endif %}">{{ alerta.status }}</span></td><td class="px-4 py-3"><strong>{{ alerta.nome or '-' }}</strong><span class="block text-xs text-slate-500 mt-1">Usuário {{ alerta.usuario_id or '-' }}</span></td><td class="px-4 py-3 font-mono">{{ alerta.telefone or '-' }}</td><td class="px-4 py-3 max-w-md whitespace-pre-line">{{ alerta.mensagem or '-' }}</td><td class="px-4 py-3 max-w-xs text-rose-700">{{ alerta.erro or '-' }}</td></tr>{% else %}<tr><td colspan="6" class="admin-empty-state"><i class="fa-regular fa-bell"></i>Nenhum envio encontrado.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
+        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+            <div class="admin-section-heading">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-paper-plane text-emerald-500"></i> Envios de alertas
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Histórico completo das mensagens enviadas e das falhas.</p>
+                </div>
+                <span class="admin-total-badge">{{ paginacao.total }} envio(s)</span>
+            </div>
+
+            <form method="GET" class="admin-filter-bar">
+                <input type="hidden" name="aba" value="envios">
+                <label class="admin-filter-grow">
+                    <span>Buscar</span>
+                    <input type="search" name="busca" value="{{ filtros.busca }}" placeholder="Nome, telefone, mensagem ou erro">
+                </label>
+                <label>
+                    <span>Status</span>
+                    <select name="filtro">
+                        <option value="todos">Todos</option>
+                        <option value="enviado" {% if filtros.filtro == 'enviado' %}selected{% endif %}>Enviado</option>
+                        <option value="falhou" {% if filtros.filtro == 'falhou' %}selected{% endif %}>Falhou</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Por página</span>
+                    <select name="por_pagina">
+                        {% for opcao in opcoes_por_pagina %}
+                            <option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="admin-filter-button">
+                    <i class="fa-solid fa-magnifying-glass"></i> Filtrar
+                </button>
+                <a href="{{ url_for('admin.admin', aba='envios') }}" class="admin-clear-button">
+                    Limpar
+                </a>
+            </form>
+
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[900px] text-left border-collapse admin-data-table">
+                    <thead>
+                        <tr>
+                            <th>ID / data</th>
+                            <th>Status</th>
+                            <th>Contato</th>
+                            <th>Telefone</th>
+                            <th>Mensagem</th>
+                            <th>Erro</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for alerta in alertas %}
+                        <tr class="hover:bg-slate-50/80 align-top">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="text-xs font-bold text-slate-500">#{{ alerta.id }}</span>
+                                <span class="block font-mono text-xs text-slate-500 mt-1">{{ alerta.data_hora_exibicao }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="admin-status-badge {% if alerta.status == 'enviado' %}admin-status-success{% else %}admin-status-error{% endif %}">
+                                    {{ alerta.status }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong>{{ alerta.nome or '-' }}</strong>
+                                <span class="block text-xs text-slate-500 mt-1">Usuário {{ alerta.usuario_id or '-' }}</span>
+                            </td>
+                            <td class="px-4 py-3 font-mono">{{ alerta.telefone or '-' }}</td>
+                            <td class="px-4 py-3 max-w-md whitespace-pre-line">{{ alerta.mensagem or '-' }}</td>
+                            <td class="px-4 py-3 max-w-xs text-rose-700">{{ alerta.erro or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="admin-empty-state">
+                                <i class="fa-regular fa-bell"></i>
+                                Nenhum envio encontrado.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {{ paginador(paginacao) }}
         </section>
 
         {% elif aba_ativa == 'historico' %}
-        <section class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"><div class="admin-section-heading"><div><h2><i class="fa-solid fa-server text-blue-500"></i> Histórico da estação</h2><p>Todas as leituras e métricas armazenadas pela estação.</p></div><span class="admin-total-badge">{{ paginacao.total }} leitura(s)</span></div>
-            <form method="GET" class="admin-filter-bar"><input type="hidden" name="aba" value="historico"><label><span>Data inicial</span><input type="date" name="data_inicio" value="{{ filtros.data_inicio }}"></label><label><span>Data final</span><input type="date" name="data_fim" value="{{ filtros.data_fim }}"></label><label><span>Por página</span><select name="por_pagina">{% for opcao in opcoes_por_pagina %}<option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>{% endfor %}</select></label><button class="admin-filter-button"><i class="fa-solid fa-filter"></i> Filtrar</button><a href="{{ url_for('admin.admin', aba='historico') }}" class="admin-clear-button">Limpar</a></form>
-            <div class="overflow-x-auto"><table class="w-full text-left border-collapse admin-data-table admin-history-table"><thead><tr><th>ID / data</th><th>Temperatura</th><th>Umidade / pressão</th><th>UV / radiação</th><th>Vento</th><th>Chuva</th><th>Estação</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">{% for row in historico %}<tr class="hover:bg-slate-50/80 align-top"><td class="px-4 py-3 whitespace-nowrap"><span class="text-xs font-bold text-slate-500">#{{ row.id }}</span><span class="block font-mono text-xs text-slate-500 mt-1">{{ row.data_hora_exibicao }}</span><span class="block text-xs text-slate-400 mt-1">Bruta #{{ row.leitura_bruta_id or '-' }}</span></td><td class="px-4 py-3"><strong class="text-orange-600">{{ row.temp if row.temp is not none else '-' }} °C</strong><span class="block text-xs text-slate-500 mt-1">Sensação: {{ row.sensacao if row.sensacao is not none else '-' }} °C</span></td><td class="px-4 py-3"><strong class="text-blue-600">{{ row.umidade if row.umidade is not none else '-' }}%</strong><span class="block text-xs text-slate-500 mt-1">{{ row.pressao if row.pressao is not none else '-' }} hPa</span></td><td class="px-4 py-3"><strong>UV {{ row.uv if row.uv is not none else '-' }}</strong><span class="block text-xs text-slate-500 mt-1">{{ row.radiacao if row.radiacao is not none else '-' }} W/m²</span></td><td class="px-4 py-3"><strong>{{ row.vento_vel if row.vento_vel is not none else '-' }} km/h</strong><span class="block text-xs text-slate-500 mt-1">Rajada: {{ row.vento_rajada if row.vento_rajada is not none else '-' }} km/h</span><span class="block text-xs text-slate-500 mt-1">Direção: {{ row.vento_dir if row.vento_dir is not none else '-' }}°</span></td><td class="px-4 py-3"><strong>{{ row.chuva_hoje if row.chuva_hoje is not none else '-' }} mm hoje</strong><span class="block text-xs text-slate-500 mt-1">Taxa: {{ row.chuva_rate if row.chuva_rate is not none else '-' }} mm/h</span><span class="block text-xs text-slate-500 mt-1">Evento: {{ row.chuva_evento if row.chuva_evento is not none else '-' }} mm</span></td><td class="px-4 py-3"><strong>Bateria: {{ row.bateria or '-' }}</strong><span class="block text-xs text-slate-500 mt-1">Sinal: {{ row.sinal or '-' }}</span><span class="block text-xs font-mono text-slate-400 mt-1">{{ row.station_data_hora_local or row.station_data_hora_utc or '-' }}</span></td></tr>{% else %}<tr><td colspan="7" class="admin-empty-state"><i class="fa-solid fa-database"></i>Nenhuma leitura encontrada.</td></tr>{% endfor %}</tbody></table></div>{{ paginador(paginacao) }}
+        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+            <div class="admin-section-heading">
+                <div>
+                    <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-server text-blue-500"></i> Histórico da estação
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Todas as leituras e métricas armazenadas pela estação.</p>
+                </div>
+                <span class="admin-total-badge">{{ paginacao.total }} leitura(s)</span>
+            </div>
+
+            <form method="GET" class="admin-filter-bar">
+                <input type="hidden" name="aba" value="historico">
+                <label>
+                    <span>Data inicial</span>
+                    <input type="date" name="data_inicio" value="{{ filtros.data_inicio }}">
+                </label>
+                <label>
+                    <span>Data final</span>
+                    <input type="date" name="data_fim" value="{{ filtros.data_fim }}">
+                </label>
+                <label>
+                    <span>Por página</span>
+                    <select name="por_pagina">
+                        {% for opcao in opcoes_por_pagina %}
+                            <option value="{{ opcao }}" {% if paginacao.por_pagina == opcao %}selected{% endif %}>{{ opcao }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="admin-filter-button">
+                    <i class="fa-solid fa-filter"></i> Filtrar
+                </button>
+                <a href="{{ url_for('admin.admin', aba='historico') }}" class="admin-clear-button">
+                    Limpar
+                </a>
+            </form>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse admin-data-table admin-history-table">
+                    <thead>
+                        <tr>
+                            <th>ID / data</th>
+                            <th>Temperatura</th>
+                            <th>Umidade / pressão</th>
+                            <th>UV / radiação</th>
+                            <th>Vento</th>
+                            <th>Chuva</th>
+                            <th>Estação</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        {% for row in historico %}
+                        <tr class="hover:bg-slate-50/80 align-top">
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="text-xs font-bold text-slate-500">#{{ row.id }}</span>
+                                <span class="block font-mono text-xs text-slate-500 mt-1">{{ row.data_hora_exibicao }}</span>
+                                <span class="block text-xs text-slate-400 mt-1">Bruta #{{ row.leitura_bruta_id or '-' }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong class="text-orange-600 font-extrabold">{{ row.temp if row.temp is not none else '-' }} °C</strong>
+                                <span class="block text-xs text-slate-500 mt-1">Sensação: {{ row.sensacao if row.sensacao is not none else '-' }} °C</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong class="text-blue-600 font-extrabold">{{ row.umidade if row.umidade is not none else '-' }}%</strong>
+                                <span class="block text-xs text-slate-500 mt-1">{{ row.pressao if row.pressao is not none else '-' }} hPa</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong class="text-purple-700 font-bold">UV {{ row.uv if row.uv is not none else '-' }}</strong>
+                                <span class="block text-xs text-slate-500 mt-1">{{ row.radiacao if row.radiacao is not none else '-' }} W/m²</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong class="text-slate-800 font-bold">{{ row.vento_vel if row.vento_vel is not none else '-' }} km/h</strong>
+                                <span class="block text-xs text-slate-500 mt-1">Rajada: {{ row.vento_rajada if row.vento_rajada is not none else '-' }} km/h</span>
+                                <span class="block text-xs text-slate-500 mt-1">Direção: {{ row.vento_dir if row.vento_dir is not none else '-' }}°</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <strong class="text-emerald-700 font-bold">{{ row.chuva_hoje if row.chuva_hoje is not none else '-' }} mm hoje</strong>
+                                <span class="block text-xs text-slate-500 mt-1">Taxa: {{ row.chuva_rate if row.chuva_rate is not none else '-' }} mm/h</span>
+                                <span class="block text-xs text-slate-500 mt-1">Evento: {{ row.chuva_evento if row.chuva_evento is not none else '-' }} mm</span>
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <strong>Bateria: {{ row.bateria or '-' }}</strong>
+                                <span class="block text-slate-500 mt-1">Sinal: {{ row.sinal or '-' }}</span>
+                                <span class="block font-mono text-slate-400 mt-1">{{ row.station_data_hora_local or row.station_data_hora_utc or '-' }}</span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="admin-empty-state">
+                                <i class="fa-solid fa-database"></i>
+                                Nenhuma leitura encontrada.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {{ paginador(paginacao) }}
         </section>
         {% endif %}
     </main>

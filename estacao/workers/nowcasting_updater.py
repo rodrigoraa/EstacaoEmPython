@@ -27,6 +27,7 @@ from services.nowcasting_repository import (
 from services.nowcasting_service import analisar_nowcasting
 from services.nowcasting_test_alerts import processar_alerta_teste_admin
 from services.nowcasting_public_alerts import processar_alerta_publico
+from services.runtime_alert_controls import aplicar_controles
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def executar_ciclo(config=None):
     if not config["enabled"]:
         return {"disabled": True, "snapshot": None, "new": False}
     database.init_db()
+    config = aplicar_controles(config)
     radar, regional, local, fingerprint = carregar_entradas_nowcasting(config)
     estado = analisar_nowcasting(radar, regional, local, config)
     snapshot_id = salvar_snapshot(estado, fingerprint)

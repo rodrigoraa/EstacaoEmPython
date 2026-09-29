@@ -549,6 +549,12 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
         "confirmacao_regional": confirmation,
         "radar_only": bool(principal and principal.get("radar_only")),
         "estacoes_relevantes": principal.get("upstream_stations", []) if principal else [],
+        "estacoes_regionais": [
+            {"code": station.get("code"), "name": station.get("name"),
+             "status": station.get("status"), "age_minutes": station.get("age_minutes"),
+             "trend_quality": station.get("trend_quality")}
+            for station in regional.get("stations", [])
+        ],
         "escola": local,
         "evento_local_observado": evento_local,
         "alerta_preventivo": alerta_preventivo,

@@ -1,198 +1,108 @@
 {% extends "admin_experimental_layout.html" %}
 {% block conteudo %}
+{% set radar = estado.get('radar', {}) if estado else {} %}
+{% set principal = estado.get('ameaca_principal') or {} if estado else {} %}
+{% set alerta = estado.get('alerta_preventivo') or {} if estado else {} %}
+{% set confianca = principal.get('trajectory_confidence') %}
+{% set projecao_util = monitoramento_atual and confianca in ('MODERADA', 'ALTA') and (principal.get('trajectory_frames_used') or 0) >= 4 %}
 <section class="monitor-page admin-weather-page max-w-7xl mx-auto space-y-6">
   <header class="admin-weather-header">
-    <div class="flex items-start gap-3">
-      <span class="monitor-title-icon"><i class="fa-solid fa-binoculars"></i></span>
-      <div>
-        <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Monitoramento Regional</h1>
-        <p class="text-slate-500 mt-1">Fusão de radar, estações regionais e condições locais da EE São José</p>
-      </div>
+    <div>
+      <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Monitoramento Meteorológico</h1>
+      <p class="text-slate-500 mt-1">Distrito de São José</p>
+      <p class="text-sm text-slate-500 mt-1">{% if estado %}Atualizado em {{ estado.gerado_em or 'horário indisponível' }}{% else %}Aguardando a primeira análise{% endif %}</p>
     </div>
-    <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>
+    <div class="flex flex-wrap gap-2" aria-label="Estado dos alertas">
+      <span class="regional-status">Alertas públicos: {{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</span>
+      <span class="regional-status">Teste admin: {{ 'ATIVADO' if controls.test.enabled else 'DESATIVADO' }}</span>
+    </div>
   </header>
 
-  {% include "includes/admin_test_alert_status.html" %}
-  {% include "includes/admin_public_alert_status.html" %}
-
-  {% if not estado %}
-  <article class="card text-center py-12">
-    <i class="fa-solid fa-chart-area text-4xl text-slate-400"></i>
-    <h2 class="font-bold text-xl text-slate-700 mt-4">Aguardando a primeira análise</h2>
-    <p class="text-slate-500 mt-2">O worker de nowcasting ainda não foi executado ou está desabilitado.</p>
-  </article>
-  {% else %}
-  {% set radar = estado.radar %}
-  {% set confirmacao = estado.confirmacao_regional or {} %}
-  {% set alerta = estado.alerta_preventivo or {} %}
-  {% set principal = estado.ameaca_principal or {} %}
-  {% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO ANÁLISE') %}
-  {% set rotulo_nivel_alerta = 'INDISPONÍVEL' if nivel_alerta == 'INDISPONIVEL' else nivel_alerta %}
-  {% set classe_alerta = alerta.get('nivel', 'aguardando')|lower %}
-
-  {% if not monitoramento_atual %}
-  <div class="radar-stale-banner" role="status">
-    <i class="fa-solid fa-triangle-exclamation"></i>
-    <div><strong>MONITORAMENTO DESATUALIZADO</strong><span>O último snapshot ultrapassou a janela operacional de {{ '%.0f'|format(janela_snapshot_minutos) }} minutos ou não possui referências válidas. Os dados abaixo são apenas históricos/diagnósticos.</span></div>
-  </div>
+  {% if estado and not monitoramento_atual %}
+  <div class="radar-stale-banner" role="status"><strong>MONITORAMENTO DESATUALIZADO</strong> O último snapshot é histórico; aguarde nova análise para interpretar a situação atual.</div>
   {% endif %}
 
-  <section class="preventive-alert preventive-alert--{{ classe_alerta }}" aria-live="polite" aria-labelledby="monitor-alerta-titulo">
-    <span class="preventive-alert-icon"><i class="fa-solid fa-shield-halved"></i></span>
-    <div class="preventive-alert-content">
-      <div class="preventive-alert-heading">
-        <div><small>Alerta de proximidade · nível operacional interno</small><h2 id="monitor-alerta-titulo">{{ rotulo_nivel_alerta }}</h2></div>
-        <span class="preventive-simulation-badge">Envio preventivo a usuários: {{ 'ATIVADO' if public_alert.enabled else 'DESATIVADO' }}</span>
-      </div>
-      <p>{{ alerta.get('message', 'Aguardando cálculo do nível preventivo.') }}</p>
-      {% if ultimo_nivel_calculado %}
-      <p class="preventive-history-note"><i class="fa-solid fa-clock-rotate-left"></i> Último nível calculado: <strong>{{ 'INDISPONÍVEL' if ultimo_nivel_calculado == 'INDISPONIVEL' else ultimo_nivel_calculado }}</strong> — dado histórico, não representa a situação atual.</p>
-      {% endif %}
-      {% if alerta %}
-      <dl class="preventive-alert-details">
-        {% include "includes/admin_alert_intensity.html" %}
-        <div><dt>Eco selecionado</dt><dd>{% if alerta.get('track_id') %}Sistema {{ alerta.get('track_id') }}{% elif alerta.get('cluster_id') %}Cluster {{ alerta.get('cluster_id') }} sem tracking{% else %}Nenhum eco operacional{% endif %}</dd></div>
-        <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(alerta.get('distance_km')) if alerta.get('distance_km') is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Tendência</dt><dd>{% if alerta.get('approaching') is not none %}{{ 'Aproximando' if alerta.get('approaching') else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
-        <div><dt>Velocidade do eco</dt><dd>{{ '%.1f km/h'|format(alerta.get('speed_kmh')) if alerta.get('speed_kmh') is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(alerta.get('eta_minutes')) if alerta.get('eta_minutes') is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(alerta.get('eta_border_minutes')) if alerta.get('eta_border_minutes') is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Qualidade do tracking</dt><dd>{{ alerta.get('tracking_quality', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
-        <div><dt>Confirmação regional</dt><dd>{{ 'Confirmada' if alerta.get('regional_confirmation') else 'Ainda não disponível' }}</dd></div>
-      </dl>
-      <p class="preventive-simulation-note">{% if public_alert.enabled %}Candidatos elegíveis podem ser enfileirados após revalidação e controle de repetição.{% else %}Envio preventivo aos usuários desativado.{% endif %}</p>
-      {% endif %}
-    </div>
-  </section>
-
-  {% if monitoramento_atual and alerta and principal and (alerta.get('cluster_id') != principal.get('cluster_id') or alerta.get('track_id') != principal.get('track_id')) %}
-  <div class="operational-identity-difference"><i class="fa-solid fa-code-compare"></i><span>O alerta de proximidade usa {% if alerta.get('track_id') %}o Sistema {{ alerta.get('track_id') }}{% else %}o Cluster {{ alerta.get('cluster_id') }}{% endif %}; a ameaça principal do nowcasting é {% if principal.get('track_id') %}o Sistema {{ principal.get('track_id') }}{% else %}o Cluster {{ principal.get('cluster_id') }}{% endif %}. Essa diferença é esperada: proximidade e evidência são análises independentes.</span></div>
-  {% endif %}
-
-  <section class="proximity-levels" aria-labelledby="monitor-niveis-titulo">
-    <div class="proximity-levels-heading"><h2 id="monitor-niveis-titulo">Níveis de proximidade</h2><p>Os níveis usam a distância da borda do eco e não representam probabilidade de chuva.</p></div>
-    <div class="proximity-levels-grid">
-      <div class="proximity-level proximity-level--neutral"><strong>INDISPONÍVEL</strong><span>Dados operacionais do radar indisponíveis.</span></div>
-      <div class="proximity-level proximity-level--green"><strong>NORMAL — acima de 100 km</strong><span>Nenhum eco confiável dentro de 100 km.</span></div>
-      <div class="proximity-level proximity-level--yellow"><strong>AMARELO — até 100 km</strong><span>Eco confiável dentro de 100 km.</span></div>
-      <div class="proximity-level proximity-level--orange"><strong>LARANJA — até 50 km</strong><span>Eco confiável dentro de 50 km.</span></div>
-      <div class="proximity-level proximity-level--red"><strong>VERMELHO — até 25 km</strong><span>Possível chuva próxima; eco confiável dentro de 25 km.</span></div>
-    </div>
-  </section>
-
-  <section aria-labelledby="monitor-resumo-titulo">
-    <div class="admin-section-title">
-      <div><span class="admin-section-kicker">Leitura rápida</span><h2 id="monitor-resumo-titulo">O que olhar primeiro</h2></div>
-      <p>Resumo das fontes que formam o estado atual.</p>
-    </div>
-    <div class="admin-overview-grid">
-      <article class="admin-overview-item {{ 'admin-overview-item--attention' if estado.ameaca_principal else 'admin-overview-item--success' }}">
-        <span class="admin-overview-icon"><i class="fa-solid fa-shield-halved"></i></span>
-        <div><small>Situação geral</small><strong>{{ estado.status|replace('_', ' ') }}</strong><p>Evidência {{ estado.nivel_evidencia|replace('_', ' ') }}</p></div>
-      </article>
-      <article class="admin-overview-item {{ 'admin-overview-item--warning' if radar.stale else 'admin-overview-item--neutral' }}">
-        <span class="admin-overview-icon"><i class="fa-solid fa-satellite-dish"></i></span>
-        <div><small>Radar operacional</small><strong>{{ 'Desatualizado' if radar.stale else ('Disponível' if radar.get('operacional', radar.disponivel) else 'Sem dados operacionais') }}</strong><p>{{ ('Eco do alerta com borda a %.1f km'|format(alerta.get('distance_km'))) if alerta.get('distance_km') is not none else 'Sem distância operacional calculada' }}</p></div>
-      </article>
-      <article class="admin-overview-item {{ 'admin-overview-item--success' if confirmacao.confirmada else 'admin-overview-item--neutral' }}">
-        <span class="admin-overview-icon"><i class="fa-solid fa-tower-broadcast"></i></span>
-        <div><small>Confirmação de superfície</small><strong>{{ 'Confirmada' if confirmacao.confirmada else 'Não confirmada' }}</strong><p>{{ confirmacao.stations|join(', ') if confirmacao.stations else 'Nenhuma estação confirmou sinais' }}</p></div>
-      </article>
-      <article class="admin-overview-item {{ 'admin-overview-item--attention' if estado.evento_local_observado else 'admin-overview-item--neutral' }}">
-        <span class="admin-overview-icon"><i class="fa-solid fa-school"></i></span>
-        <div><small>EE São José</small><strong>{{ 'Evento observado' if estado.evento_local_observado else ('Dados disponíveis' if estado.escola else 'Sem leitura') }}</strong><p>Condições medidas no local da escola</p></div>
-      </article>
-    </div>
-  </section>
-
-  <aside class="admin-explainer" aria-label="Como interpretar o monitoramento">
-    <div class="admin-explainer-title"><i class="fa-solid fa-circle-info"></i><strong>Como interpretar</strong></div>
-    <div><strong>Índice de evidência</strong><span>Pontuação interna que soma sinais observados; não é porcentagem de chance de chuva.</span></div>
-    <div><strong>ETA conservador</strong><span>Só aparece quando trajetória e movimento são tecnicamente confiáveis.</span></div>
-    <div><strong>Confirmação de superfície</strong><span>Sinais regionais que reforçam o que o radar está indicando.</span></div>
-  </aside>
-
-  <details class="admin-glossary">
-    <summary><i class="fa-solid fa-book-open"></i> Glossário do monitoramento</summary>
-    <dl>
-      <div><dt>Índice de evidência</dt><dd>Pontuação interna que soma sinais observados. Não representa porcentagem de chance de chuva.</dd></div>
-      <div><dt>Confirmação de superfície</dt><dd>Sinais nas estações regionais que reforçam o que o radar está indicando.</dd></div>
-      <div><dt>Estação a montante</dt><dd>Estação posicionada no caminho de onde o sistema meteorológico está vindo.</dd></div>
-      <div><dt>Ameaça principal</dt><dd>Sistema considerado meteorologicamente mais relevante pelo nowcasting.</dd></div>
-      <div><dt>Alerta de proximidade</dt><dd>Nível definido pela distância da borda do eco confiável mais próximo.</dd></div>
-      <div><dt>Outros sistemas em monitoramento</dt><dd>Outros ecos detectados que continuam sendo acompanhados.</dd></div>
-      <div><dt>ETA conservador</dt><dd>Estimativa de chegada mostrada somente quando trajetória e movimento são tecnicamente confiáveis.</dd></div>
-      <div><dt>ETA da trajetória</dt><dd>Estimativa obtida pela trajetória calculada do sistema acompanhado.</dd></div>
-      <div><dt>ETA estimado da borda</dt><dd>Previsão aproximada de quando a parte mais próxima do eco poderia alcançar a região, caso o movimento atual continue. Não é garantia de chegada.</dd></div>
-    </dl>
-  </details>
-
-  <article class="card monitor-hero monitor-level--{{ estado.nivel_evidencia|lower|replace('_', '-') }}">
-    <div class="monitor-hero-header">
-      <div>
-        <p class="monitor-kicker">{{ 'ÚLTIMO SNAPSHOT · HISTÓRICO' if not monitoramento_atual else ('AMEAÇA PRINCIPAL DO NOWCASTING' if principal else 'STATUS ATUAL') }}</p>
-        <h2>{{ estado.status|replace('_', ' ') }}</h2>
-      </div>
-      <span class="admin-time-badge"><i class="fa-regular fa-clock"></i>{{ estado.gerado_em }}</span>
-    </div>
-    <div class="monitor-score-header">
-      <div><strong>Índice interno de evidência</strong><span>{{ estado.indice_evidencia }} de 100</span></div>
-      <strong>{{ estado.nivel_evidencia|replace('_', ' ') }}</strong>
-    </div>
-    <div class="monitor-score-track" role="progressbar" aria-label="Índice interno de evidência" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ estado.indice_evidencia }}">
-      <span style="width: {{ estado.indice_evidencia }}%"></span>
-    </div>
-    <p class="monitor-score-note">Este índice resume evidências observacionais internas e não representa uma probabilidade meteorológica.</p>
-    {% if estado.historico_regional_em_formacao %}
-    <p class="monitor-inline-note"><i class="fa-solid fa-hourglass-half"></i> Dados atuais disponíveis; histórico regional ainda em formação.</p>
+  <article class="card monitor-panel" aria-labelledby="situacao-atual">
+    <span class="admin-section-kicker">Situação atual</span>
+    {% if not estado %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Aguardando a primeira análise</h2>
+      <p>Radar, estações regionais e condições locais aparecerão após o primeiro ciclo. Aguardando cálculo do nível preventivo.</p>
+    {% elif not monitoramento_atual %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Dados recentes indisponíveis</h2>
+      <p>A análise anterior não representa a situação atual em São José.</p>
+    {% elif estado.evento_local_observado %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Chuva observada em São José</h2>
+      <p>A estação local registra chuva neste momento.</p>
+    {% elif not principal %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Sem ameaça de chuva para São José</h2>
+      <p>Nenhuma área de chuva com trajetória relevante para a região no momento.</p>
+    {% elif principal.get('distance_km') is not none and principal.distance_km <= 20 %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Chuva muito próxima</h2>
+      <p>Uma área de chuva está próxima do Distrito de São José. Acompanhe as atualizações.</p>
+    {% elif projecao_util and principal.get('projected_impact') is true and principal.get('approaching') is true %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Possível chuva em aproximação</h2>
+      <p>Uma área de chuva está se aproximando e a projeção atual indica possível passagem pela região de São José.</p>
+    {% elif projecao_util and principal.get('projected_impact') is false %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Chuva sendo monitorada</h2>
+      <p>Uma área de chuva foi detectada, mas a projeção atual indica passagem ao lado de São José.</p>
+    {% else %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Chuva sendo monitorada</h2>
+      <p>Uma área de chuva foi detectada. Ainda não há dados suficientes para indicar passagem pela região.</p>
     {% endif %}
-    <div class="monitor-confirmation-line">
-      <span>Confirmação de superfície</span>
-      <strong>{{ 'SIM' if confirmacao.confirmada else 'NÃO' }}</strong>
-      {% if confirmacao.stations %}<small>{{ confirmacao.stations|join(', ') }}</small>{% endif %}
-    </div>
-    <div class="monitor-evidence-box">
-      <h3><i class="fa-solid fa-list-check"></i> Evidências consideradas</h3>
-      <ul class="monitor-evidence-list">
-        {% for evidencia in estado.evidencias %}<li>{{ evidencia }}</li>{% else %}<li>Nenhuma evidência registrada.</li>{% endfor %}
-      </ul>
-    </div>
+    {% if not controls.public.enabled %}<p class="mt-3 text-sm">Monitoramento ativo — alertas públicos desativados.</p>{% endif %}
   </article>
+
+  <section aria-label="Resumo visual" class="admin-overview-grid">
+    <article class="admin-overview-item"><div><small>Chuva detectada</small><strong>{{ 'SIM' if monitoramento_atual and principal else 'NÃO' if monitoramento_atual else 'INDEFINIDO' }}</strong></div></article>
+    <article class="admin-overview-item"><div><small>Distância</small><strong>{{ '%.0f km'|format(principal.distance_km) if monitoramento_atual and principal.get('distance_km') is not none else 'Indisponível' }}</strong></div></article>
+    <article class="admin-overview-item"><div><small>Movimento</small><strong>{{ 'APROXIMANDO' if monitoramento_atual and principal.get('approaching') is true else 'AFASTANDO' if monitoramento_atual and principal.get('approaching') is false else 'INDEFINIDO' }}</strong></div></article>
+    <article class="admin-overview-item"><div><small>Projeção para São José</small><strong>{{ 'POSSÍVEL' if projecao_util and principal.get('projected_impact') is true else 'PASSA AO LADO' if projecao_util and principal.get('projected_impact') is false else 'DADOS INSUFICIENTES' }}</strong></div></article>
+    <article class="admin-overview-item"><div><small>Confiança</small><strong>{{ confianca if monitoramento_atual and confianca in ('ALTA', 'MODERADA', 'BAIXA') else 'INDEFINIDA' }}</strong></div></article>
+    <article class="admin-overview-item"><div><small>Estimativa</small><strong>{{ '~%.0f min'|format(principal.projected_impact_eta_minutes) if projecao_util and principal.get('projected_impact') is true and principal.get('projected_impact_eta_minutes') is not none else 'Indisponível' }}</strong></div></article>
+  </section>
+
+  <article class="card monitor-panel" aria-labelledby="controle-alertas">
+    <h2 id="controle-alertas" class="text-xl font-bold">Controle de alertas</h2>
+    <p class="text-sm text-slate-600">Esses controles afetam somente alertas preventivos do radar/nowcasting. Os alertas oficiais da estação continuam independentes.</p>
+    <div class="monitor-grid mt-4">
+      <section>
+        <h3 class="font-bold">Alertas públicos preventivos — {{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</h3>
+        <p>Envia aos usuários cadastrados apenas quando os critérios públicos do nowcasting forem atendidos.</p>
+        <p class="text-sm">Origem: {{ 'Painel administrativo' if controls.public.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.public.updated_at or '—' }}.</p>
+        <button type="button" class="admin-tab" onclick="document.getElementById('public-confirm').showModal()">{{ 'Desativar alertas públicos' if controls.public.enabled else 'Ativar alertas públicos' }}</button>
+      </section>
+      <section>
+        <h3 class="font-bold">Alertas de teste ao administrador — {{ 'ATIVADOS' if controls.test.enabled else 'DESATIVADOS' }}</h3>
+        <p>Envia alertas experimentais somente ao telefone administrativo para calibração; fica suprimido nos ciclos com alertas públicos ativos.</p>
+        <p class="text-sm">Origem: {{ 'Painel administrativo' if controls.test.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.test.updated_at or '—' }}.</p>
+        <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='test') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="enabled" value="{{ 'false' if controls.test.enabled else 'true' }}">
+          <button type="submit" class="admin-tab">{{ 'Desativar teste admin' if controls.test.enabled else 'Ativar teste admin' }}</button>
+        </form>
+      </section>
+    </div>
+    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos no próximo ciclo. Mensagens preventivas já pendentes na fila podem continuar sendo entregues; nenhum registro anterior é cancelado.</p>
+  </article>
+  <dialog id="public-confirm" class="card p-6 rounded-lg max-w-md" aria-labelledby="public-confirm-title">
+    <h2 id="public-confirm-title" class="text-xl font-bold">{{ 'Desativar' if controls.public.enabled else 'Ativar' }} alertas públicos preventivos?</h2>
+    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando, mas novos alertas preventivos não serão enviados aos usuários. Mensagens já pendentes podem ser entregues.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
+    <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='public') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="enabled" value="{{ 'false' if controls.public.enabled else 'true' }}">
+      <div class="flex gap-3"><button type="button" onclick="this.closest('dialog').close()" class="admin-tab">Cancelar</button><button type="submit" class="admin-tab admin-tab-active">{{ 'Desativar alertas' if controls.public.enabled else 'Ativar alertas' }}</button></div>
+    </form>
+  </dialog>
 
   <div class="monitor-grid">
     <article class="card monitor-panel">
-      <div class="monitor-panel-heading">
-        <div><h2><i class="fa-solid fa-satellite-dish"></i> Ameaça principal do nowcasting{% if principal.get('track_id') %} · Sistema {{ principal.get('track_id') }}{% endif %}</h2><p>Posição e movimento do sistema meteorologicamente mais relevante; pode ser diferente do alerta de proximidade.</p></div>
-        <span class="regional-status">{{ 'DESATUALIZADO' if radar.stale else ('DISPONÍVEL' if radar.disponivel else 'SEM DADOS') }}</span>
-      </div>
-      <dl class="regional-values">
-        <div><dt>Distância da borda</dt><dd>{{ '%.1f km'|format(radar.distancia_borda_km) if radar.distancia_borda_km is not none else '—' }}</dd></div>
-        <div><dt>Faixa</dt><dd>{{ radar.faixa_distancia or '—' }}</dd></div>
-        <div><dt>Movimento</dt><dd>{{ radar.direcao or 'Dados insuficientes' }}</dd></div>
-        <div><dt>Velocidade estimada do eco</dt><dd>{{ '%.1f km/h'|format(radar.velocidade_kmh) if radar.velocidade_kmh is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Tendência</dt><dd>{% if radar.aproximando is not none %}{{ 'Aproximando' if radar.aproximando else 'Afastando' }}{% else %}Dados insuficientes{% endif %}</dd></div>
-        <div><dt>ETA da trajetória</dt><dd>{{ '%.0f min'|format(radar.eta_minutos) if radar.eta_minutos is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>ETA estimado da borda</dt><dd>{{ '%.0f min'|format(radar.get('eta_borda_minutos')) if radar.get('eta_borda_minutos') is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Trajetória compatível</dt><dd>{{ 'Sim' if radar.trajetoria_compativel else 'Não confirmada' }}</dd></div>
-        <div><dt>Frames no tracking</dt><dd>{{ radar.quantidade_frames if radar.quantidade_frames is not none else '—' }}</dd></div>
-        <div><dt>Duração do tracking</dt><dd>{{ '%.0f min'|format(radar.get('duracao_tracking_minutos')) if radar.get('duracao_tracking_minutos') is not none else 'Dados insuficientes' }}</dd></div>
-        <div><dt>Qualidade do tracking</dt><dd>{{ radar.get('qualidade_tracking', 'DADOS_INSUFICIENTES')|replace('_', ' ') }}</dd></div>
-        <div><dt>Possível clutter</dt><dd>{{ 'Sim' if radar.suspeito_clutter else 'Não' }}</dd></div>
-        <div><dt>Persistência de clutter</dt><dd>{{ '%.2f'|format(radar.indice_persistencia_clutter) if radar.indice_persistencia_clutter is not none else 'Dados insuficientes' }}</dd></div>
-      </dl>
-      {% if radar.imagem_disponivel and radar.frame_id %}
-      <div class="monitor-image-block">
-        <p><i class="fa-regular fa-image"></i> Frame usado nesta análise</p>
-        <img src="{{ url_for('radar.imagem_radar_admin', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image" loading="lazy">
-      </div>
-      {% endif %}
+      <h2 class="text-xl font-bold">Radar atual</h2>
+      <p>As marcações ajudam a acompanhar as áreas de chuva e seu deslocamento.</p>
+      {% if monitoramento_atual and radar.get('imagem_disponivel') and radar.get('frame_id') %}<img src="{{ url_for('radar.imagem_radar_admin', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image" loading="lazy">{% else %}<p>Imagem atual indisponível.</p>{% endif %}
     </article>
-
     <article class="card monitor-panel">
-      <div class="monitor-panel-heading">
-        <div><h2><i class="fa-solid fa-school"></i> Condições na EE São José</h2><p>Última leitura persistida dos sensores locais.</p></div>
-      </div>
-      {% if estado.escola %}
+      <h2 class="text-xl font-bold">Condições em São José</h2>
+      {% if estado and estado.escola %}
       <dl class="regional-values">
         <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(estado.escola.temperature) if estado.escola.temperature is not none else '—' }}</dd></div>
         <div><dt>Umidade</dt><dd>{{ '%.0f %%'|format(estado.escola.humidity) if estado.escola.humidity is not none else '—' }}</dd></div>
@@ -201,44 +111,43 @@
         <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(estado.escola.wind_gust) if estado.escola.wind_gust is not none else '—' }}</dd></div>
         <div><dt>Chuva atual</dt><dd>{{ '%.1f mm/h'|format(estado.escola.rain_rate) if estado.escola.rain_rate is not none else '—' }}</dd></div>
       </dl>
-      {% else %}<p class="admin-empty-inline"><i class="fa-solid fa-circle-minus"></i> Sem leitura local persistida.</p>{% endif %}
+      {% else %}<p>Sem leitura local persistida.</p>{% endif %}
     </article>
   </div>
 
-  {% if estado.ameacas and estado.ameacas|length > 1 %}
   <article class="card monitor-panel">
-    <div class="monitor-panel-heading"><div><h2><i class="fa-solid fa-layer-group"></i> Outros sistemas em monitoramento</h2><p>Ecos secundários mantidos para acompanhamento.</p></div></div>
+    <h2 class="text-xl font-bold">Confirmação regional</h2>
     <div class="monitor-stations">
-      {% for ameaca in estado.ameacas[1:] %}
-      <section>
-        <div class="flex justify-between gap-3">
-          <strong>Sistema {{ ameaca.track_id or 'sem tracking' }}</strong>
-          <span>{{ ameaca.status|replace('_', ' ') }}</span>
-        </div>
-        <p>{{ '%.1f km'|format(ameaca.distance_km) if ameaca.distance_km is not none else 'Distância indefinida' }} · {{ ameaca.direction or 'Direção indefinida' }} · ETA {{ '%.0f min'|format(ameaca.eta_minutes) if ameaca.eta_minutes is not none else 'indisponível' }}</p>
-        <p>Confirmação de superfície: <strong>{{ 'SIM' if ameaca.confirmacao_regional.confirmada else 'NÃO' }}</strong></p>
-      </section>
-      {% endfor %}
+    {% for station in regional_stations %}<section><strong>{{ station.name }}</strong><p>{{ 'Dados disponíveis' if station.status == 'OK' else 'Sem dados atuais' if station.status == 'SEM_DADOS' else station.status|replace('_', ' ') }}</p></section>{% endfor %}
     </div>
+  </article>
+
+  {% if estado and estado.ameacas and estado.ameacas|length > 1 %}
+  <article class="card monitor-panel"><h2 class="text-xl font-bold">Outras áreas de chuva monitoradas</h2>
+    <div class="monitor-stations">{% for ameaca in estado.ameacas[1:] %}<section><strong>{{ '%.0f km'|format(ameaca.distance_km) if ameaca.distance_km is not none else 'Distância indisponível' }} · {{ ameaca.direction or 'direção indefinida' }}</strong><p>{{ 'Aproximando' if ameaca.approaching is true else 'Afastando' if ameaca.approaching is false else 'Movimento indefinido' }} · {{ 'Possível passagem pela região' if ameaca.trajectory_confidence in ('ALTA', 'MODERADA') and ameaca.projected_impact is true else 'Projeção indica passagem ao lado' if ameaca.trajectory_confidence in ('ALTA', 'MODERADA') and ameaca.projected_impact is false else 'Projeção ainda insuficiente' }}</p></section>{% endfor %}</div>
   </article>
   {% endif %}
 
-  <article class="card monitor-panel">
-    <div class="monitor-panel-heading"><div><h2><i class="fa-solid fa-route"></i> Confirmação regional da ameaça principal</h2><p>Estações frescas posicionadas no corredor estimado da trajetória.</p></div></div>
-    {% if estado.estacoes_relevantes %}
-    <div class="monitor-stations">
-      {% for station in estado.estacoes_relevantes %}
-      <section>
-        <div class="flex justify-between gap-3"><strong>{{ station.name }} · {{ station.code }}</strong><span>{{ station.status|replace('_', ' ') }}</span></div>
-        <p>{{ '%.1f km da escola'|format(station.distance_km) if station.distance_km is not none else '' }} · {{ '%.1f km do eixo'|format(station.cross_track_km) }}</p>
-        {% if station.evidencias %}<ul>{% for item in station.evidencias %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p>Sem alteração meteorológica relevante.</p>{% endif %}
-      </section>
-      {% endfor %}
-    </div>
-    {% else %}<p class="admin-empty-inline"><i class="fa-solid fa-circle-minus"></i> Nenhuma estação fresca está no corredor da trajetória atual.</p>{% endif %}
-  </article>
-  {% endif %}
-
-  <p class="admin-weather-disclaimer">Fusão observacional experimental. Não representa probabilidade, previsão numérica ou severidade e não substitui avisos meteorológicos oficiais.</p>
+  <details class="card monitor-panel" {% if request.args.get('detalhes') == 'radar' %}open{% endif %}>
+    <summary class="font-bold cursor-pointer">Detalhes técnicos</summary>
+    <p><a href="{{ url_for('radar.radar_admin') }}">Diagnóstico técnico do radar</a> · <a href="{{ url_for('regional_stations.pagina_estacoes_regionais_admin') }}">Estações regionais</a></p>
+    {% include "includes/admin_public_alert_status.html" %}
+    {% include "includes/admin_test_alert_status.html" %}
+    <p>Último nível calculado: {{ ultimo_nivel_calculado or alerta.get('nivel') or '—' }}.</p>
+    <p>Índice interno de evidência — não é probabilidade: {{ estado.indice_evidencia if estado else '—' }}.</p>
+    <p>Proximidade: NORMAL acima de 100 km; AMARELO até 100 km; LARANJA até 50 km; VERMELHO até 25 km.</p>
+    {% if estado %}
+    <dl class="regional-values">
+      {% for label, value in [('track_id', principal.get('track_id')), ('cluster_id', principal.get('cluster_id')), ('quantidade de frames', principal.get('frame_count')), ('duração', principal.get('duration_minutes')), ('velocidade', principal.get('speed_kmh')), ('bearing', principal.get('trajectory_bearing_degrees')), ('trajectory_method', principal.get('trajectory_method')), ('trajectory_frames_used', principal.get('trajectory_frames_used')), ('trajectory_confidence', principal.get('trajectory_confidence')), ('trajectory_residual_km', principal.get('trajectory_residual_km')), ('projected_impact', principal.get('projected_impact')), ('projected_impact_eta_minutes', principal.get('projected_impact_eta_minutes')), ('projected_impact_min_distance_km', principal.get('projected_impact_min_distance_km')), ('closest_approach_km', principal.get('closest_approach_km')), ('clutter', principal.get('suspeito_clutter')), ('índice de clutter', principal.get('indice_persistencia_clutter'))] %}
+      <div><dt>{{ label }}</dt><dd>{{ value if value is not none else '—' }}</dd></div>{% endfor %}
+    </dl>
+    <p>Projeções: {{ principal.get('projections') or [] }}</p>
+    <p>Confirmação regional detalhada: {{ estado.get('confirmacao_regional') or {} }}</p>
+    <p>Evidências: {{ estado.get('evidencias') or [] }}</p>
+    {% include "includes/admin_alert_intensity.html" %}
+    {% endif %}
+    <details class="admin-glossary"><summary>Glossário do monitoramento</summary><p>ETA é uma estimativa de curto prazo, nunca garantia de chuva. O índice interno reúne sinais observados.</p></details>
+  </details>
+  <p class="admin-weather-disclaimer">Fusão observacional experimental. Não representa probabilidade nem previsão numérica e não substitui avisos meteorológicos oficiais.</p>
 </section>
 {% endblock %}

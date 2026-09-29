@@ -120,9 +120,9 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
 
         panel = self.client.get("/admin")
         self.assertEqual(panel.status_code, 200)
-        self.assertIn(b'href="/admin/radar"', panel.data)
-        self.assertIn(b'href="/admin/estacoes-regionais"', panel.data)
         self.assertIn(b'href="/admin/monitoramento"', panel.data)
+        self.assertNotIn(b'href="/admin/radar"', panel.data)
+        self.assertNotIn(b'href="/admin/estacoes-regionais"', panel.data)
         self.assertEqual(self.client.get("/admin/radar/imagem/1").status_code, 404)
 
     def test_aliases_antigos_autenticados_redirecionam_para_admin(self):

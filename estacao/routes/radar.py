@@ -11,6 +11,7 @@ from services.nowcasting_repository import obter_ultimo_snapshot
 from services.nowcasting_service import snapshot_operacionalmente_atual
 from services.nowcasting_test_alerts import obter_status_alerta_teste_admin
 from services.nowcasting_public_alerts import obter_status_alerta_publico
+from services.runtime_alert_controls import aplicar_controles
 from services.preventive_alerts import criar_alerta_preventivo
 from services.radar_repository import obter_arquivo_frame, obter_estado_radar
 from time_utils import formatar_local
@@ -49,7 +50,7 @@ def _estado_seguro():
 @admin_page_required
 def radar_admin():
     estado = _estado_seguro()
-    config_nowcasting = nowcasting_config()
+    config_nowcasting = aplicar_controles(nowcasting_config())
     snapshot_contextual = None
     alerta_preventivo = (
         None

@@ -133,6 +133,8 @@ class AdminUsuariosTest(unittest.TestCase):
         resumo = self.client.get("/admin")
         self.assertIn("Saúde do sistema".encode("utf-8"), resumo.data)
         self.assertIn("Entrega média".encode("utf-8"), resumo.data)
+        self.assertIn("Sem leituras".encode("utf-8"), resumo.data)
+        self.assertNotIn(b"Operacional", resumo.data)
 
         eventos = self.client.get("/admin?aba=eventos")
         self.assertIn("Eventos meteorológicos".encode("utf-8"), eventos.data)

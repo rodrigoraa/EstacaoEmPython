@@ -1,6 +1,6 @@
 {% macro paginador(paginacao) %}
 {% if paginacao %}
-<div class="border-t border-slate-100 px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50/50">
+<div class="admin-pagination border-t border-slate-100 px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-slate-50/50">
     <p class="text-sm text-slate-500">
         {% if paginacao.total %}
         Exibindo <strong class="text-slate-700">{{ paginacao.inicio }}–{{ paginacao.fim }}</strong>
@@ -31,7 +31,7 @@
     {% include "includes/common_head_assets.html" %}
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 </head>
-<body class="admin-app bg-slate-50 font-sans text-slate-800 pb-12">
+<body class="admin-app admin-dashboard bg-slate-50 font-sans text-slate-800 pb-12">
     {% include "includes/admin_navigation.html" %}
 
     <main class="admin-main max-w-7xl mx-auto px-4 md:px-8 mt-6 md:mt-8 space-y-6">
@@ -45,21 +45,34 @@
         {% endwith %}
 
         {% if aba_ativa == 'visao-geral' %}
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-slate-200/80">
+        <section class="admin-hero" aria-labelledby="admin-dashboard-title">
+            <div class="admin-hero-copy">
+                <p class="admin-eyebrow">Centro de operações <span aria-hidden="true">/</span> Distrito de São José</p>
+                <h2 id="admin-dashboard-title" class="admin-hero-title">Visão geral da estação</h2>
+                <p class="admin-hero-description">Cadastros, integrações e alertas reunidos para acompanhar a operação.</p>
+            </div>
+            <div class="admin-hero-status {% if saude_sistema.status_geral != 'ok' %}admin-hero-status--attention{% endif %}">
+                <span class="admin-hero-status-label">Coleta e fila</span>
+                <strong class="admin-hero-status-value"><span class="admin-pulse-dot"></span>{{ saude_sistema.status_texto }}</strong>
+                <div class="admin-hero-meta">
+                    <span>Última leitura</span>
+                    <strong>{{ saude_sistema.ultima_leitura_tempo }}</strong>
+                </div>
+            </div>
+        </section>
+
+        <div class="admin-dashboard-block">
+        <div class="admin-block-heading">
             <div>
-                <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Visão geral</h2>
-                <p class="text-sm text-slate-500 mt-0.5">Situação atual dos usuários, integrações e processos da estação.</p>
+                <p class="admin-eyebrow">Pessoas</p>
+                <h3>Base de usuários</h3>
             </div>
-            <div class="flex items-center gap-2">
-                <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                    <span class="admin-pulse-dot bg-emerald-500"></span> Operacional
-                </span>
-            </div>
+            <p>Selecione um indicador para consultar os registros.</p>
         </div>
 
         <!-- 4 KPI Cards -->
         <section class="admin-summary-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="admin-kpi-card group" title="Ver lista completa de usuários">
+            <a href="{{ url_for('admin.admin', aba='usuarios') }}" class="admin-kpi-card admin-kpi-card--users group" title="Ver lista completa de usuários">
                 <div class="flex items-center justify-between gap-3">
                     <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Usuários</span>
                     <div class="admin-kpi-icon bg-indigo-50 text-indigo-600 border border-indigo-100 group-hover:scale-105 transition-transform">
@@ -74,7 +87,7 @@
                 </div>
             </a>
 
-            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='ativos') }}" class="admin-kpi-card group" title="Filtrar por usuários ativos">
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='ativos') }}" class="admin-kpi-card admin-kpi-card--active group" title="Filtrar por usuários ativos">
                 <div class="flex items-center justify-between gap-3">
                     <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Ativos</span>
                     <div class="admin-kpi-icon bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:scale-105 transition-transform">
@@ -94,7 +107,7 @@
                 </div>
             </a>
 
-            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='whatsapp') }}" class="admin-kpi-card group" title="Filtrar por usuários com WhatsApp">
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='whatsapp') }}" class="admin-kpi-card admin-kpi-card--whatsapp group" title="Filtrar por usuários com WhatsApp">
                 <div class="flex items-center justify-between gap-3">
                     <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Com WhatsApp</span>
                     <div class="admin-kpi-icon bg-teal-50 text-teal-600 border border-teal-100 group-hover:scale-105 transition-transform">
@@ -109,7 +122,7 @@
                 </div>
             </a>
 
-            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='pausados') }}" class="admin-kpi-card group" title="Filtrar por usuários pausados">
+            <a href="{{ url_for('admin.admin', aba='usuarios', filtro='pausados') }}" class="admin-kpi-card admin-kpi-card--paused group" title="Filtrar por usuários pausados">
                 <div class="flex items-center justify-between gap-3">
                     <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Pausados</span>
                     <div class="admin-kpi-icon bg-amber-50 text-amber-600 border border-amber-100 group-hover:scale-105 transition-transform">
@@ -124,11 +137,21 @@
                 </div>
             </a>
         </section>
+        </div>
+
+        <div class="admin-dashboard-block">
+        <div class="admin-block-heading">
+            <div>
+                <p class="admin-eyebrow">Serviços</p>
+                <h3>Estado da operação</h3>
+            </div>
+            <p>Integração de mensagens e coleta da estação.</p>
+        </div>
 
         <!-- Status Cards: Evolution API & Saúde do sistema -->
         <section class="admin-system-grid grid grid-cols-1 lg:grid-cols-2 gap-4">
             <!-- Evolution API -->
-            <div class="bg-white border border-slate-200/90 rounded-2xl shadow-sm p-5 transition-all hover:border-slate-300">
+            <div class="admin-service-card bg-white border border-slate-200/90 rounded-2xl shadow-sm p-5 transition-all hover:border-slate-300">
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex items-center gap-3.5">
                         <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100/80 shadow-sm shrink-0">
@@ -154,7 +177,7 @@
             </div>
 
             <!-- Saúde do sistema -->
-            <div class="bg-white border border-slate-200/90 rounded-2xl shadow-sm p-5 transition-all hover:border-slate-300">
+            <div class="admin-service-card bg-white border border-slate-200/90 rounded-2xl shadow-sm p-5 transition-all hover:border-slate-300">
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex items-center gap-3.5">
                         <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-600 border border-teal-100/80 shadow-sm shrink-0">
@@ -178,15 +201,16 @@
                 </div>
             </div>
         </section>
+        </div>
 
         <!-- Detalhes Operacionais Organizados -->
-        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        <section class="admin-operations bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
             <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                     <i class="fa-solid fa-gauge-high text-teal-600 text-base"></i>
                     Detalhes operacionais
                 </h2>
-                <span class="text-xs text-slate-500">Métricas em tempo real da estação e da fila de despacho</span>
+                <span class="text-xs text-slate-500">Leituras e indicadores da fila de despacho</span>
             </div>
             
             <div class="p-5 md:p-6 space-y-6">
@@ -251,7 +275,7 @@
         </section>
 
         {% elif aba_ativa == 'usuarios' %}
-        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        <section class="admin-data-section bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
             <div class="admin-section-heading">
                 <div>
                     <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -294,7 +318,8 @@
                 </a>
             </form>
 
-            <div class="overflow-x-auto">
+            <p class="admin-table-hint"><i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i> Deslize para ver todas as colunas.</p>
+            <div class="admin-table-scroll overflow-x-auto" role="region" aria-label="Tabela de usuários" tabindex="0">
                 <table class="w-full min-w-[1080px] text-left border-collapse admin-data-table">
                     <thead>
                         <tr>
@@ -348,7 +373,7 @@
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex justify-end gap-2">
-                                    <button type="submit" form="editar-usuario-{{ row.id }}" class="admin-icon-button bg-indigo-600 hover:bg-indigo-500" title="Salvar alterações">
+                                    <button type="submit" form="editar-usuario-{{ row.id }}" class="admin-icon-button admin-icon-button--save bg-indigo-600 hover:bg-indigo-500" title="Salvar alterações">
                                         <i class="fa-solid fa-floppy-disk"></i>
                                     </button>
                                     <form action="{{ url_for('admin.deletar_usuario', id=row.id) }}" method="POST" onsubmit="return confirm('Apagar este usuário?')">
@@ -357,7 +382,7 @@
                                         <input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}">
                                         <input type="hidden" name="retorno_busca" value="{{ filtros.busca }}">
                                         <input type="hidden" name="retorno_filtro" value="{{ filtros.filtro }}">
-                                        <button type="submit" class="admin-icon-button bg-rose-600 hover:bg-rose-500" title="Apagar usuário">
+                                        <button type="submit" class="admin-icon-button admin-icon-button--delete bg-rose-600 hover:bg-rose-500" title="Apagar usuário">
                                             <i class="fa-solid fa-trash"></i>
                                         </button>
                                     </form>
@@ -379,7 +404,7 @@
         </section>
 
         {% elif aba_ativa == 'cadastros' %}
-        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        <section class="admin-data-section bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
             <div class="admin-section-heading">
                 <div>
                     <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -422,7 +447,8 @@
                 </a>
             </form>
 
-            <div class="overflow-x-auto">
+            <p class="admin-table-hint"><i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i> Deslize para ver todas as colunas.</p>
+            <div class="admin-table-scroll overflow-x-auto" role="region" aria-label="Tabela de cadastros" tabindex="0">
                 <table class="w-full min-w-[1080px] text-left border-collapse admin-data-table">
                     <thead>
                         <tr>
@@ -477,7 +503,7 @@
         </section>
 
         {% elif aba_ativa == 'eventos' %}
-        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        <section class="admin-data-section bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
             <div class="admin-section-heading">
                 <div>
                     <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -521,7 +547,8 @@
                 </a>
             </form>
 
-            <div class="overflow-x-auto">
+            <p class="admin-table-hint"><i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i> Deslize para ver todas as colunas.</p>
+            <div class="admin-table-scroll overflow-x-auto" role="region" aria-label="Tabela de eventos meteorológicos" tabindex="0">
                 <table class="w-full min-w-[1080px] text-left border-collapse admin-data-table">
                     <thead>
                         <tr>
@@ -578,7 +605,7 @@
         </section>
 
         {% elif aba_ativa == 'envios' %}
-        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        <section class="admin-data-section bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
             <div class="admin-section-heading">
                 <div>
                     <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -619,7 +646,8 @@
                 </a>
             </form>
 
-            <div class="overflow-x-auto">
+            <p class="admin-table-hint"><i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i> Deslize para ver todas as colunas.</p>
+            <div class="admin-table-scroll overflow-x-auto" role="region" aria-label="Tabela de envios" tabindex="0">
                 <table class="w-full min-w-[900px] text-left border-collapse admin-data-table">
                     <thead>
                         <tr>
@@ -666,7 +694,7 @@
         </section>
 
         {% elif aba_ativa == 'historico' %}
-        <section class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
+        <section class="admin-data-section bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
             <div class="admin-section-heading">
                 <div>
                     <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -703,7 +731,8 @@
                 </a>
             </form>
 
-            <div class="overflow-x-auto">
+            <p class="admin-table-hint"><i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i> Deslize para ver todas as colunas.</p>
+            <div class="admin-table-scroll overflow-x-auto" role="region" aria-label="Tabela do histórico da estação" tabindex="0">
                 <table class="w-full text-left border-collapse admin-data-table admin-history-table">
                     <thead>
                         <tr>

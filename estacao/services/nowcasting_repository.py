@@ -10,7 +10,7 @@ import database
 from config import regional_stations_config
 from services.radar_repository import obter_estado_radar, ler_frente_relevante
 from services.regional_stations_repository import obter_estado_rede
-from time_utils import minutos_desde
+from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
 
 
 def _local_station(config):
@@ -33,15 +33,21 @@ def _local_station(config):
             or row["data_hora_local"]
             or row["data_hora"]
         )
-        age = minutos_desde(
-            timestamp_utc or timestamp_local,
-            assume_utc=bool(timestamp_utc),
+        momento = (
+            parse_datetime(timestamp_utc, assume_utc=True)
+            or parse_datetime(timestamp_local, assume_utc=False)
         )
+        segundos = (agora_utc() - momento).total_seconds() if momento else None
+        age = int(segundos // 60) if segundos is not None else None
         return {
             "_id": row["id"],
-            "measured_at": timestamp_local,
+            "measured_at": iso_local(momento) if momento else timestamp_local,
+            "measured_at_utc": iso_utc(momento) if momento else None,
             "age_minutes": age,
-            "stale": age is None or age > config["local_max_age_minutes"],
+            "stale": (
+                age is None or segundos < -60
+                or segundos > config["local_max_age_minutes"] * 60
+            ),
             "temperature": row["temp"],
             "humidity": row["umidade"],
             "pressure": row["pressao"],
@@ -268,44 +274,61 @@ def carregar_entradas_nowcasting(config):
 
 
 def salvar_snapshot(estado, input_fingerprint):
+    """Mantem uma linha por entrada, renovando apenas calculos nao regressivos."""
     radar = estado.get("radar") or {}
+    calculado_em = parse_datetime(estado["gerado_em_utc"], assume_utc=True)
+    valores = {
+        "calculado_em_utc": iso_utc(calculado_em) if calculado_em else estado["gerado_em_utc"],
+        "calculado_em_local": estado["gerado_em"],
+        "radar_frame_id": radar.get("frame_id"),
+        "radar_track_id": radar.get("track_id"),
+        "status": estado["status"],
+        "nivel_evidencia": estado["nivel_evidencia"],
+        "indice_evidencia": estado["indice_evidencia"],
+        "distancia_borda_km": radar.get("distancia_borda_km"),
+        "velocidade_kmh": radar.get("velocidade_kmh"),
+        "direcao_movimento": radar.get("direcao"),
+        "aproximando": (
+            None if radar.get("aproximando") is None else int(radar["aproximando"])
+        ),
+        "trajetoria_compativel": int(bool(radar.get("trajetoria_compativel"))),
+        "eta_minutos": radar.get("eta_minutos"),
+        "estacoes_relevantes_json": json.dumps(
+            estado["estacoes_relevantes"], ensure_ascii=False
+        ),
+        "evidencias_json": json.dumps(estado["evidencias"], ensure_ascii=False),
+        "dados_escola_json": json.dumps(estado.get("escola"), ensure_ascii=False),
+        "estado_json": json.dumps(estado, ensure_ascii=False, sort_keys=True),
+        "input_fingerprint": input_fingerprint,
+        "versao_algoritmo": estado["versao_algoritmo"],
+    }
+    colunas = ", ".join(valores)
+    parametros = ", ".join(f":{coluna}" for coluna in valores)
     conn = database.get_db()
     try:
         cursor = conn.execute(
-            """
-            INSERT OR IGNORE INTO nowcasting_snapshots (
-                calculado_em_utc, calculado_em_local, radar_frame_id,
-                radar_track_id, status, nivel_evidencia, indice_evidencia,
-                distancia_borda_km, velocidade_kmh, direcao_movimento,
-                aproximando, trajetoria_compativel, eta_minutos,
-                estacoes_relevantes_json, evidencias_json, dados_escola_json,
-                estado_json, input_fingerprint, versao_algoritmo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                estado["gerado_em_utc"],
-                estado["gerado_em"],
-                radar.get("frame_id"),
-                radar.get("track_id"),
-                estado["status"],
-                estado["nivel_evidencia"],
-                estado["indice_evidencia"],
-                radar.get("distancia_borda_km"),
-                radar.get("velocidade_kmh"),
-                radar.get("direcao"),
-                None if radar.get("aproximando") is None else int(radar["aproximando"]),
-                int(bool(radar.get("trajetoria_compativel"))),
-                radar.get("eta_minutos"),
-                json.dumps(estado["estacoes_relevantes"], ensure_ascii=False),
-                json.dumps(estado["evidencias"], ensure_ascii=False),
-                json.dumps(estado.get("escola"), ensure_ascii=False),
-                json.dumps(estado, ensure_ascii=False, sort_keys=True),
-                input_fingerprint,
-                estado["versao_algoritmo"],
-            ),
+            f"INSERT OR IGNORE INTO nowcasting_snapshots ({colunas}) "
+            f"VALUES ({parametros})",
+            valores,
         )
+        snapshot_id = cursor.lastrowid if cursor.rowcount == 1 else None
+        if snapshot_id is None:
+            atualizacoes = ", ".join(
+                f"{coluna}=:{coluna}" for coluna in valores
+                if coluna != "input_fingerprint"
+            )
+            conn.execute(
+                f"""
+                UPDATE nowcasting_snapshots SET {atualizacoes}
+                WHERE input_fingerprint=:input_fingerprint
+                  AND julianday(:calculado_em_utc) IS NOT NULL
+                  AND (julianday(calculado_em_utc) IS NULL
+                       OR julianday(calculado_em_utc) <= julianday(:calculado_em_utc))
+                """,
+                valores,
+            )
         conn.commit()
-        return cursor.lastrowid if cursor.rowcount == 1 else None
+        return snapshot_id
     except Exception:
         conn.rollback()
         raise
@@ -317,7 +340,8 @@ def obter_ultimo_snapshot():
     conn = database.get_db()
     try:
         row = conn.execute(
-            "SELECT id, estado_json FROM nowcasting_snapshots ORDER BY id DESC LIMIT 1"
+            "SELECT id, estado_json FROM nowcasting_snapshots "
+            "ORDER BY calculado_em_utc DESC, id DESC LIMIT 1"
         ).fetchone()
         if not row:
             return None

@@ -20,8 +20,17 @@
     </div>
   </header>
 
-  {% if estado and not monitoramento_atual %}
-  <div class="radar-stale-banner" role="status"><strong>MONITORAMENTO DESATUALIZADO</strong> O último snapshot é histórico; aguarde nova análise para interpretar a situação atual.</div>
+  {% if snapshot_desatualizado %}
+  <div class="radar-stale-banner" role="status"><div><strong>MONITORAMENTO DESATUALIZADO</strong> A última análise é histórica; aguarde nova análise para acompanhar as áreas de chuva e suas projeções.</div></div>
+  {% elif estado and not radar_atual %}
+  <div class="radar-stale-banner" role="status">
+    <div>
+    {% if frescor_fontes.radar.motivo == 'radar_stale' %}
+    <strong>RADAR DESATUALIZADO</strong> {% if frescor_fontes.radar.idade_minutos is not none %}A última imagem tem {{ '%.0f'|format(frescor_fontes.radar.idade_minutos) }} minutos (limite: {{ '%.0f'|format(frescor_fontes.radar.limite_minutos) }} minutos).{% endif %}
+    {% else %}<strong>RADAR INDISPONÍVEL</strong> Não há uma imagem recente com horário válido.{% endif %}
+    Distância, movimento e projeções aguardam uma imagem atual. As leituras da estação local são avaliadas separadamente.
+    </div>
+  </div>
   {% endif %}
 
   <article class="card monitor-panel" aria-labelledby="situacao-atual">
@@ -29,12 +38,15 @@
     {% if not estado %}
       <h2 id="situacao-atual" class="text-xl font-bold">Aguardando a primeira análise</h2>
       <p>Radar, estações regionais e condições locais aparecerão após o primeiro ciclo. Aguardando cálculo do nível preventivo.</p>
-    {% elif not monitoramento_atual %}
-      <h2 id="situacao-atual" class="text-xl font-bold">Dados recentes indisponíveis</h2>
-      <p>A análise anterior não representa a situação atual em São José.</p>
-    {% elif estado.evento_local_observado %}
+    {% elif chuva_na_estacao is true %}
       <h2 id="situacao-atual" class="text-xl font-bold">Chuva observada em São José</h2>
       <p>A estação local registra chuva neste momento.</p>
+    {% elif not monitoramento_atual and chuva_na_estacao is false %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Sem chuva na estação neste momento</h2>
+      <p>A leitura local está atualizada. Aguarde dados recentes do radar para acompanhar áreas de chuva na região.</p>
+    {% elif not monitoramento_atual %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Dados recentes indisponíveis</h2>
+      <p>Aguarde novas leituras para interpretar a situação atual em São José.</p>
     {% elif not principal %}
       <h2 id="situacao-atual" class="text-xl font-bold">Sem ameaça de chuva para São José</h2>
       <p>Nenhuma área de chuva com trajetória relevante para a região no momento.</p>
@@ -88,7 +100,7 @@
   </dialog>
 
   <section aria-label="Resumo visual" class="admin-overview-grid monitor-overview">
-    <article class="admin-overview-item"><div><small>Chuva detectada</small><strong>{{ 'SIM' if monitoramento_atual and principal else 'NÃO' if monitoramento_atual else 'INDEFINIDO' }}</strong></div></article>
+    <article class="admin-overview-item"><div><small>Chuva na estação</small><strong>{{ 'SIM' if chuva_na_estacao is true else 'NÃO' if chuva_na_estacao is false else 'INDEFINIDO' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Distância</small><strong>{{ '%.0f km'|format(principal.distance_km) if monitoramento_atual and principal.get('distance_km') is not none else 'Indisponível' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Movimento</small><strong>{{ 'APROXIMANDO' if monitoramento_atual and principal.get('approaching') is true else 'AFASTANDO' if monitoramento_atual and principal.get('approaching') is false else 'INDEFINIDO' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Projeção para São José</small><strong>{{ 'POSSÍVEL' if projecao_util and principal.get('projected_impact') is true else 'PASSA AO LADO' if projecao_util and principal.get('projected_impact') is false else 'DADOS INSUFICIENTES' }}</strong></div></article>
@@ -104,7 +116,8 @@
     </article>
     <article class="card monitor-panel">
       <h2 class="text-xl font-bold">Condições em São José</h2>
-      {% if estado and estado.escola %}
+      {% if estado and estado.escola and estacao_atual %}
+      <p class="text-sm text-slate-500">Leitura em {{ estado.escola.measured_at }}.</p>
       <dl class="regional-values">
         <div><dt>Temperatura</dt><dd>{{ '%.1f °C'|format(estado.escola.temperature) if estado.escola.temperature is not none else '—' }}</dd></div>
         <div><dt>Umidade</dt><dd>{{ '%.0f %%'|format(estado.escola.humidity) if estado.escola.humidity is not none else '—' }}</dd></div>
@@ -113,6 +126,8 @@
         <div><dt>Rajada</dt><dd>{{ '%.1f km/h'|format(estado.escola.wind_gust) if estado.escola.wind_gust is not none else '—' }}</dd></div>
         <div><dt>Chuva atual</dt><dd>{{ '%.1f mm/h'|format(estado.escola.rain_rate) if estado.escola.rain_rate is not none else '—' }}</dd></div>
       </dl>
+      {% elif estado and estado.escola %}
+      <p>Dados locais desatualizados ou sem horário válido. Aguarde uma nova leitura da estação.</p>
       {% else %}<p>Sem leitura local persistida.</p>{% endif %}
     </article>
   </div>
@@ -120,11 +135,11 @@
   <article class="card monitor-panel">
     <h2 class="text-xl font-bold">Confirmação regional</h2>
     <div class="monitor-stations">
-    {% for station in regional_stations %}<section><strong>{{ station.name }}</strong><p>{{ 'Dados disponíveis' if station.status == 'OK' else 'Sem dados atuais' if station.status == 'SEM_DADOS' else station.status|replace('_', ' ') }}</p></section>{% endfor %}
+    {% for station in regional_stations %}<section><strong>{{ station.name }}</strong><p>{{ 'Aguardando nova análise' if snapshot_desatualizado else 'Dados disponíveis' if station.status == 'OK' else 'Sem dados atuais' if station.status == 'SEM_DADOS' else station.status|replace('_', ' ') }}</p></section>{% endfor %}
     </div>
   </article>
 
-  {% if estado and estado.ameacas and estado.ameacas|length > 1 %}
+  {% if monitoramento_atual and estado and estado.ameacas and estado.ameacas|length > 1 %}
   <article class="card monitor-panel"><h2 class="text-xl font-bold">Outras áreas de chuva monitoradas</h2>
     <div class="monitor-stations">{% for ameaca in estado.ameacas[1:] %}<section><strong>{{ '%.0f km'|format(ameaca.distance_km) if ameaca.distance_km is not none else 'Distância indisponível' }} · {{ ameaca.direction or 'direção indefinida' }}</strong><p>{{ 'Aproximando' if ameaca.approaching is true else 'Afastando' if ameaca.approaching is false else 'Movimento indefinido' }} · {{ 'Possível passagem pela região' if ameaca.trajectory_confidence in ('ALTA', 'MODERADA') and ameaca.projected_impact is true else 'Projeção indica passagem ao lado' if ameaca.trajectory_confidence in ('ALTA', 'MODERADA') and ameaca.projected_impact is false else 'Projeção ainda insuficiente' }}</p></section>{% endfor %}</div>
   </article>
@@ -141,6 +156,7 @@
       <p>Proximidade: NORMAL acima de 100 km; AMARELO até 100 km; LARANJA até 50 km; VERMELHO até 25 km.</p>
     </div>
     {% if estado %}
+    {% if not monitoramento_atual %}<p>Os valores de radar abaixo pertencem à última análise e são apenas históricos.</p>{% endif %}
     <h3 class="monitor-technical-heading">Movimento e projeção</h3>
     <dl class="regional-values monitor-technical-values">
       {% for label, value in [('track_id', principal.get('track_id')), ('cluster_id', principal.get('cluster_id')), ('quantidade de frames', principal.get('frame_count')), ('duração', principal.get('duration_minutes')), ('velocidade', principal.get('speed_kmh')), ('bearing', principal.get('trajectory_bearing_degrees')), ('trajectory_method', principal.get('trajectory_method')), ('trajectory_frames_used', principal.get('trajectory_frames_used')), ('trajectory_confidence', principal.get('trajectory_confidence')), ('trajectory_residual_km', principal.get('trajectory_residual_km')), ('projected_impact', principal.get('projected_impact')), ('projected_impact_eta_minutes', principal.get('projected_impact_eta_minutes')), ('projected_impact_min_distance_km', principal.get('projected_impact_min_distance_km')), ('closest_approach_km', principal.get('closest_approach_km')), ('clutter', principal.get('suspeito_clutter')), ('índice de clutter', principal.get('indice_persistencia_clutter'))] %}

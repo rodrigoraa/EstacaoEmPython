@@ -528,13 +528,44 @@ Confirmação regional aumenta a confiança textual, mas não é exigida para mo
 faixa. Se houver chuva local fresca, a mensagem passa a informar que a chuva já foi
 observada na EE São José.
 
-As telas administrativas só tratam o último snapshot como atual quando
-`gerado_em_utc` é válido, o radar do snapshot não está stale e qualquer nível
-operacional colorido declara radar operacional. A validade é o maior valor entre 10
-minutos e dois ciclos de `NOWCASTING_POLL_SECONDS`; com o polling padrão de 300
-segundos, a janela é de 10 minutos. Depois disso, o snapshot continua persistido e
-pode ser mostrado como histórico/diagnóstico, mas o alerta atual passa a
-`INDISPONIVEL`.
+Durante a espera entre ciclos, o worker de nowcasting verifica, a cada cinco
+segundos, se uma nova imagem válida terminou de processar no SQLite. Quando
+encontra outra imagem, inicia o próximo
+cálculo no próprio worker; sem imagem nova, mantém `NOWCASTING_POLL_SECONDS` como
+tempo máximo de espera entre ciclos. Uma falha na consulta ou no cálculo mantém
+esse intervalo antes de tentar novamente. Isso evita perder a curta janela de validade
+de imagens que chegam perto do limite operacional, sem criar outro processo de
+envio de alertas.
+
+Recalcular entradas iguais renova o horário e o estado da análise na mesma linha
+do snapshot. O fingerprint continua evitando duplicação; cálculos antigos não
+sobrescrevem cálculos mais recentes. A idade da imagem e a hora da medição local
+continuam preservadas, independentemente do horário do novo cálculo.
+
+As telas administrativas avaliam separadamente a análise, a imagem do radar e a
+medição local. A análise vale pelo maior valor entre 10 minutos e dois ciclos de
+`NOWCASTING_POLL_SECONDS`; com o polling padrão de 300 segundos, a janela é de
+10 minutos. O radar exige imagem com horário válido dentro de
+`NOWCASTING_RADAR_MAX_AGE_MINUTES` (15 minutos por padrão). A estação exige medição
+recente dentro de `local_max_age_minutes`, derivado de
+`HEALTH_MAX_READING_AGE_SECONDS`, revalidada ao abrir o painel.
+
+Uma análise recente com imagem antiga mostra `RADAR DESATUALIZADO`, a idade da
+imagem e seu limite, preservando as condições locais ainda atuais. `Chuva na
+estação` usa a taxa atual de chuva, sem confundir o acumulado diário com chuva
+neste momento. Uma análise antiga mostra `MONITORAMENTO DESATUALIZADO`. Distância,
+movimento, projeções e alertas operacionais só aparecem como atuais quando análise
+e radar são válidos; caso contrário o alerta passa a `INDISPONIVEL`. Leituras
+locais antigas são indicadas como indisponíveis. Valores históricos do radar
+permanecem nos detalhes técnicos.
+
+`GET /admin/api/nowcasting/status` expõe `analise_atual`, `radar_atual`,
+`estacao_atual`, `chuva_na_estacao`, `motivo_indisponibilidade` e `frescor_fontes`.
+Cada fonte informa idade, limite, validade e motivo. `snapshot_desatualizado`
+indica que a análise venceu; `monitoramento_atual` exige análise e radar atuais.
+O diagnóstico de radar mantém seu limite visual separado de
+`RADAR_STALE_MINUTES` (45 minutos por padrão); esse limite não autoriza projeções
+ou envios com imagens acima do limite de nowcasting.
 
 Frames processados com `timestamp_status='suspect'` continuam persistidos para
 auditoria, porém são excluídos da seleção operacional, do tracking e do histórico

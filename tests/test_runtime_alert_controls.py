@@ -238,6 +238,13 @@ class RuntimeAlertControlsTest(unittest.TestCase):
             self.assertIn("Ainda não há dados suficientes".encode(),
                           self.client.get("/admin/monitoramento").data)
             state["evento_local_observado"] = True
+            self.assertNotIn("Chuva observada em São José".encode(),
+                             self.client.get("/admin/monitoramento").data)
+            state["escola"] = {
+                "measured_at_utc": now, "stale": False, "rain_rate": 2,
+                "temperature": 25, "humidity": 90, "pressure": 1000,
+                "wind_speed": 5, "wind_gust": 10,
+            }
             self.assertIn("Chuva observada em São José".encode(),
                           self.client.get("/admin/monitoramento").data)
 

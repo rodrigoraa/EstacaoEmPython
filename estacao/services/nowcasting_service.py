@@ -15,7 +15,7 @@ from services.preventive_alerts import (
     selecionar_eco_alerta_proximidade,
     ALERT_SEVERITY,
 )
-from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
+from time_utils import LOCAL_TZ, agora_utc, iso_local, iso_utc, parse_datetime
 
 
 NOWCASTING_ALGORITHM_VERSION = "1.7"
@@ -186,6 +186,39 @@ def preparar_estado_nowcasting_admin(snapshot, config, now=None):
     monitoramento_atual = snapshot_operacionalmente_atual(
         estado, config, now=agora
     ) and frescor_radar["atual"]
+    ultima_observacao_radar = None
+    observacao = _frescor_fonte(
+        radar.get("data_frame_utc") or radar.get("data_frame"),
+        numero_alerta_valido((config or {}).get("radar_display_max_age_minutes"), 45),
+        agora, "radar",
+    )
+    if (
+        analise["atual"] and observacao["atual"]
+        and radar.get("disponivel") is True and radar.get("frame_id")
+        and radar.get("timestamp_status") != "suspect"
+    ):
+        principal = (estado or {}).get("ameaca_principal")
+        distancia = principal.get("distance_km") if isinstance(principal, dict) else None
+        try:
+            distancia = float(distancia) if not isinstance(distancia, bool) else None
+        except (TypeError, ValueError, OverflowError):
+            distancia = None
+        if distancia is not None and (not math.isfinite(distancia) or distancia < 0):
+            distancia = None
+        momento = parse_datetime(
+            radar.get("data_frame_utc") or radar.get("data_frame"), assume_utc=True
+        )
+        momento_local = momento.astimezone(LOCAL_TZ)
+        ultima_observacao_radar = {
+            "data_frame_local": iso_local(momento),
+            "horario_local": momento_local.strftime("%d/%m %H:%M"),
+            "idade_minutos": observacao["idade_minutos"],
+            "limite_minutos": observacao["limite_minutos"],
+            "historica": not monitoramento_atual,
+            "distance_km": distancia,
+            "frame_id": radar["frame_id"],
+            "imagem_disponivel": radar.get("imagem_disponivel") is True,
+        }
     snapshot_desatualizado = bool(estado) and not analise["atual"]
     motivo = (
         analise["motivo"] if not analise["atual"] else frescor_radar["motivo"]
@@ -235,6 +268,7 @@ def preparar_estado_nowcasting_admin(snapshot, config, now=None):
         "estacao_atual": estacao["atual"],
         "chuva_na_estacao": chuva_na_estacao,
         "motivo_indisponibilidade": motivo,
+        "ultima_observacao_radar": ultima_observacao_radar,
         "frescor_fontes": {"analise": analise, "radar": frescor_radar,
                           "estacao": estacao},
     }

@@ -211,6 +211,9 @@ def nowcasting_config():
         "radar_max_age_minutes": max(
             5, env_int("NOWCASTING_RADAR_MAX_AGE_MINUTES", 15)
         ),
+        "radar_display_max_age_minutes": max(
+            1, env_int("RADAR_STALE_MINUTES", 45)
+        ),
         "regional_max_age_minutes": max(
             30, env_int("NOWCASTING_REGIONAL_MAX_AGE_MINUTES", 180)
         ),

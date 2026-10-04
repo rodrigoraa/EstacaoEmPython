@@ -556,11 +556,20 @@ estação` usa a taxa atual de chuva, sem confundir o acumulado diário com chuv
 neste momento. Uma análise antiga mostra `MONITORAMENTO DESATUALIZADO`. Distância,
 movimento, projeções e alertas operacionais só aparecem como atuais quando análise
 e radar são válidos; caso contrário o alerta passa a `INDISPONIVEL`. Leituras
-locais antigas são indicadas como indisponíveis. Valores históricos do radar
-permanecem nos detalhes técnicos.
+locais antigas são indicadas como indisponíveis.
+
+Quando a análise ainda é recente, a última imagem válida e sua distância observada
+continuam disponíveis até `RADAR_STALE_MINUTES` (45 minutos por padrão), com o
+horário da imagem e sua idade visíveis. Acima do limite operacional de 15 minutos,
+o painel usa `Última distância observada` e `Última imagem do radar`, indicando
+que são observações históricas. Movimento atual, projeções, ETA e alertas continuam
+bloqueados enquanto não houver radar operacional. Imagens suspeitas, com horário
+inválido ou fora da janela visual não aparecem nesse resumo. Outros valores
+históricos continuam nos detalhes técnicos.
 
 `GET /admin/api/nowcasting/status` expõe `analise_atual`, `radar_atual`,
-`estacao_atual`, `chuva_na_estacao`, `motivo_indisponibilidade` e `frescor_fontes`.
+`estacao_atual`, `chuva_na_estacao`, `motivo_indisponibilidade`, `frescor_fontes`
+e `ultima_observacao_radar`.
 Cada fonte informa idade, limite, validade e motivo. `snapshot_desatualizado`
 indica que a análise venceu; `monitoramento_atual` exige análise e radar atuais.
 O diagnóstico de radar mantém seu limite visual separado de

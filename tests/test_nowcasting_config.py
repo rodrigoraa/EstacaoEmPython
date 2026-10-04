@@ -20,8 +20,16 @@ class NowcastingConfigTest(unittest.TestCase):
         self.assertEqual(config["public_trajectory_min_frames"], 4)
         self.assertEqual(config["public_trajectory_max_gap_minutes"], 15)
         self.assertEqual(config["radar_max_age_minutes"], 15)
+        self.assertEqual(config["radar_display_max_age_minutes"], 45)
         self.assertEqual(config["alert_delivery_max_age_minutes"], 15)
         self.assertEqual(config["algorithm_version"], "1.7")
+
+    def test_limite_visual_do_radar_nao_altera_validade_de_alertas(self):
+        with mock.patch.dict(os.environ, {"RADAR_STALE_MINUTES": "30"}, clear=True):
+            config = nowcasting_config()
+        self.assertEqual(config["radar_display_max_age_minutes"], 30)
+        self.assertEqual(config["radar_max_age_minutes"], 15)
+        self.assertEqual(config["alert_delivery_max_age_minutes"], 15)
 
     def test_raio_local_configuravel_e_limites(self):
         for valor, esperado in (("1", 1), ("5", 5), ("15", 15),

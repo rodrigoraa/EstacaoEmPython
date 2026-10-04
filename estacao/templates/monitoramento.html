@@ -6,6 +6,8 @@
 {% set confianca = principal.get('trajectory_confidence') %}
 {% set min_frames_public = public_trajectory_min_frames|default(4) %}
 {% set projecao_util = monitoramento_atual and confianca in ('MODERADA', 'ALTA') and (principal.get('trajectory_frames_used') or 0) >= min_frames_public %}
+{% set observacao_radar = ultima_observacao_radar|default(none) %}
+{% set observacao_historica = observacao_radar and observacao_radar.historica %}
 <section class="monitor-page admin-weather-page max-w-7xl mx-auto space-y-6">
   <header class="admin-weather-header">
     <div>
@@ -28,7 +30,9 @@
     {% if frescor_fontes.radar.motivo == 'radar_stale' %}
     <strong>RADAR DESATUALIZADO</strong> {% if frescor_fontes.radar.idade_minutos is not none %}A última imagem tem {{ '%.0f'|format(frescor_fontes.radar.idade_minutos) }} minutos (limite: {{ '%.0f'|format(frescor_fontes.radar.limite_minutos) }} minutos).{% endif %}
     {% else %}<strong>RADAR INDISPONÍVEL</strong> Não há uma imagem recente com horário válido.{% endif %}
-    Distância, movimento e projeções aguardam uma imagem atual. As leituras da estação local são avaliadas separadamente.
+    {% if observacao_historica %}A última observação do radar aparece abaixo com seu horário e idade. Movimento, projeções e estimativa aguardam uma imagem atual.
+    {% else %}Distância, movimento e projeções aguardam uma imagem atual.{% endif %}
+    As leituras da estação local são avaliadas separadamente.
     </div>
   </div>
   {% endif %}
@@ -101,7 +105,12 @@
 
   <section aria-label="Resumo visual" class="admin-overview-grid monitor-overview">
     <article class="admin-overview-item"><div><small>Chuva na estação</small><strong>{{ 'SIM' if chuva_na_estacao is true else 'NÃO' if chuva_na_estacao is false else 'INDEFINIDO' }}</strong></div></article>
-    <article class="admin-overview-item"><div><small>Distância</small><strong>{{ '%.0f km'|format(principal.distance_km) if monitoramento_atual and principal.get('distance_km') is not none else 'Indisponível' }}</strong></div></article>
+    <article class="admin-overview-item"><div>
+      {% if not monitoramento_atual and observacao_historica and observacao_radar.get('distance_km') is not none %}
+      <small>Última distância observada</small><strong>{{ '%.0f km'|format(observacao_radar.distance_km) }}</strong>
+      <p class="text-sm text-slate-500">{{ observacao_radar.horario_local }} · há {{ '%.0f'|format(observacao_radar.idade_minutos) }} min · observação histórica</p>
+      {% else %}<small>Distância</small><strong>{{ '%.0f km'|format(principal.distance_km) if monitoramento_atual and principal.get('distance_km') is not none else 'Indisponível' }}</strong>{% endif %}
+    </div></article>
     <article class="admin-overview-item"><div><small>Movimento</small><strong>{{ 'APROXIMANDO' if monitoramento_atual and principal.get('approaching') is true else 'AFASTANDO' if monitoramento_atual and principal.get('approaching') is false else 'INDEFINIDO' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Projeção para São José</small><strong>{{ 'POSSÍVEL' if projecao_util and principal.get('projected_impact') is true else 'PASSA AO LADO' if projecao_util and principal.get('projected_impact') is false else 'DADOS INSUFICIENTES' }}</strong></div></article>
     <article class="admin-overview-item"><div><small>Confiança</small><strong>{{ confianca if monitoramento_atual and confianca in ('ALTA', 'MODERADA', 'BAIXA') else 'INDEFINIDA' }}</strong></div></article>
@@ -110,9 +119,15 @@
 
   <div class="monitor-grid">
     <article class="card monitor-panel">
+      {% if not monitoramento_atual and observacao_historica %}
+      <h2 class="text-xl font-bold">Última imagem do radar</h2>
+      <p>Imagem de {{ observacao_radar.horario_local }} · há {{ '%.0f'|format(observacao_radar.idade_minutos) }} min. Esta observação é histórica e não representa uma projeção atual.</p>
+      {% if observacao_radar.get('imagem_disponivel') and observacao_radar.get('frame_id') %}<img src="{{ url_for('radar.imagem_radar_admin', frame_id=observacao_radar.frame_id) }}" alt="Última imagem do radar meteorológico, observação histórica de {{ observacao_radar.horario_local }}" class="radar-image" loading="lazy">{% else %}<p>Imagem dessa observação indisponível.</p>{% endif %}
+      {% else %}
       <h2 class="text-xl font-bold">Radar atual</h2>
       <p>As marcações ajudam a acompanhar as áreas de chuva e seu deslocamento.</p>
       {% if monitoramento_atual and radar.get('imagem_disponivel') and radar.get('frame_id') %}<img src="{{ url_for('radar.imagem_radar_admin', frame_id=radar.frame_id) }}" alt="Imagem atual do radar meteorológico" class="radar-image" loading="lazy">{% else %}<p>Imagem atual indisponível.</p>{% endif %}
+      {% endif %}
     </article>
     <article class="card monitor-panel">
       <h2 class="text-xl font-bold">Condições em São José</h2>

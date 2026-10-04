@@ -17,7 +17,7 @@ from services.nowcasting_service import preparar_estado_nowcasting_admin  # noqa
 
 NOW = datetime(2026, 10, 4, 13, 20, 12, tzinfo=timezone.utc)
 CONFIG = {"poll_seconds": 300, "radar_max_age_minutes": 15,
-          "local_max_age_minutes": 5}
+          "local_max_age_minutes": 5, "radar_display_max_age_minutes": 45}
 
 
 def snapshot(rain_rate=0):
@@ -136,6 +136,7 @@ class SourceFreshnessTest(unittest.TestCase):
         self.assertFalse(result["monitoramento_atual"])
         self.assertFalse(result["estado"]["radar"]["operacional"])
         self.assertEqual(result["motivo_indisponibilidade"], "snapshot_stale")
+        self.assertIsNone(result["ultima_observacao_radar"])
 
 
 class SourceFreshnessPageTest(unittest.TestCase):
@@ -179,14 +180,79 @@ class SourceFreshnessPageTest(unittest.TestCase):
                 self.assertNotIn("MONITORAMENTO DESATUALIZADO", text)
                 self.assertIn("limite: 15 minutos", text)
                 self.assertIn(f"<small>Chuva na estação</small><strong>{label}</strong>", overview)
-                self.assertNotIn("20 km", overview)
+                self.assertIn("Última distância observada", overview)
+                self.assertIn("20 km", overview)
+                self.assertIn("04/10 08:57", overview)
+                self.assertIn("há 22 min", overview)
+                self.assertIn("observação histórica", overview)
                 self.assertNotIn("APROXIMANDO", overview)
                 self.assertNotIn("~12 min", overview)
+                self.assertIn("Última imagem do radar", text)
+                self.assertIn('alt="Última imagem do radar meteorológico, observação histórica de 04/10 08:57"', text)
                 self.assertIn(f"{rate:.1f} mm/h", text)
                 self.assertTrue(payload["analise_atual"])
                 self.assertFalse(payload["radar_atual"])
                 self.assertTrue(payload["estacao_atual"])
                 self.assertFalse(payload["monitoramento_atual"])
+                self.assertTrue(payload["ultima_observacao_radar"]["historica"])
+
+    def test_radar_de_16_minutos_preserva_observacao_sem_desbloquear_previsao(self):
+        state = snapshot(3)
+        state["radar"]["data_frame"] = (NOW - timedelta(minutes=16)).isoformat()
+        text, overview, payload = self.page_and_api(state)
+        self.assertIn("RADAR DESATUALIZADO", text)
+        self.assertIn("Última distância observada", overview)
+        self.assertIn("20 km", overview)
+        self.assertIn("04/10 09:04", overview)
+        self.assertIn("há 16 min", overview)
+        self.assertIn("observação histórica", overview)
+        self.assertNotIn("APROXIMANDO", overview)
+        self.assertNotIn("ALTA", overview)
+        self.assertNotIn("POSSÍVEL", overview)
+        self.assertNotIn("~12 min", overview)
+        self.assertIn("Última imagem do radar", text)
+        self.assertIn('src="/admin/radar/imagem/100"', text)
+        self.assertFalse(payload["monitoramento_atual"])
+        self.assertEqual(payload["alerta_preventivo"]["nivel"], "INDISPONIVEL")
+        self.assertEqual(payload["ultima_observacao_radar"]["idade_minutos"], 16)
+        self.assertEqual(payload["ultima_observacao_radar"]["limite_minutos"], 45)
+
+    def test_radar_recente_preserva_distancia_e_imagem_atuais(self):
+        state = snapshot()
+        state["radar"].update(operacional=True, stale=False,
+                              data_frame=(NOW - timedelta(minutes=14)).isoformat())
+        text, overview, payload = self.page_and_api(state)
+        self.assertIn("<small>Distância</small><strong>20 km</strong>", overview)
+        self.assertIn("APROXIMANDO", overview)
+        self.assertIn("~12 min", overview)
+        self.assertNotIn("Última distância observada", overview)
+        self.assertNotIn("Última imagem do radar", text)
+        self.assertIn('src="/admin/radar/imagem/100"', text)
+        self.assertIn('alt="Imagem atual do radar meteorológico"', text)
+        self.assertTrue(payload["monitoramento_atual"])
+        self.assertFalse(payload["ultima_observacao_radar"]["historica"])
+
+    def test_observacao_invalida_ou_mais_velha_que_45_minutos_nao_e_exibida(self):
+        variants = (
+            {"data_frame": (NOW - timedelta(minutes=46)).isoformat()},
+            {"timestamp_status": "suspect"},
+            {"data_frame": "invalido"},
+            {"data_frame": None},
+            {"data_frame": (NOW + timedelta(minutes=2)).isoformat()},
+            {"disponivel": False},
+            {"frame_id": None},
+        )
+        for variant in variants:
+            with self.subTest(variant=variant):
+                state = snapshot(3)
+                state["radar"].update(variant)
+                text, overview, payload = self.page_and_api(state)
+                self.assertNotIn("Última distância observada", overview)
+                self.assertNotIn("20 km", overview)
+                self.assertNotIn("Última imagem do radar", text)
+                self.assertIn("Imagem atual indisponível", text)
+                self.assertFalse(payload["monitoramento_atual"])
+                self.assertIsNone(payload["ultima_observacao_radar"])
 
     def test_estacao_antiga_nao_aparece_como_chuva_atual(self):
         state = snapshot(999)
@@ -207,6 +273,8 @@ class SourceFreshnessPageTest(unittest.TestCase):
         self.assertNotIn("~12 min", overview)
         self.assertTrue(payload["snapshot_desatualizado"])
         self.assertEqual(payload["alerta_preventivo"]["nivel"], "INDISPONIVEL")
+        self.assertIsNone(payload["ultima_observacao_radar"])
+        self.assertNotIn("Última imagem do radar", text)
 
 
 if __name__ == "__main__":

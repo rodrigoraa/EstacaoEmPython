@@ -46,6 +46,15 @@ def avaliar_alerta_preventivo_snapshot(snapshot, config, *, now=None):
         return {"eligible": False, "reason": "radar_stale", "decision": None}
     if radar.get("operacional") is not True:
         return {"eligible": False, "reason": "radar_unavailable", "decision": None}
+    momento_frame = parse_datetime(radar.get("data_frame"), assume_utc=True)
+    if momento_frame is None:
+        return {"eligible": False, "reason": "invalid_frame_timestamp", "decision": None}
+    idade_frame = (agora - momento_frame.astimezone(timezone.utc)).total_seconds() / 60.0
+    limite_idade = _numero_finito(config.get("radar_max_age_minutes", 15))
+    if limite_idade is None or limite_idade <= 0:
+        limite_idade = 15
+    if idade_frame < -1 or idade_frame > limite_idade:
+        return {"eligible": False, "reason": "radar_frame_stale", "decision": None}
     if not snapshot_operacionalmente_atual(snapshot, config, now=agora):
         return {"eligible": False, "reason": "snapshot_stale", "decision": None}
     decisao = decidir_alerta_preventivo(
@@ -78,8 +87,10 @@ def montar_mensagem_preventiva(snapshot):
         corpo = (f"Uma área de chuva está a aproximadamente {distancia:.0f} km da região."
                  if distancia is not None else "Uma área de chuva está próxima da região.")
     partes = [titulo, corpo]
-    eta = _numero_finito(alerta.get("eta_border_minutes"))
-    if confirmado and eta is not None and 0 <= eta <= 360 and alerta.get("eta_border_quality") in {"BOA", "MODERADA"}:
+    eta = _numero_finito(alerta.get("projected_impact_eta_minutes"))
+    if (confirmado and alerta.get("projected_impact") is True
+            and eta is not None and 0 <= eta <= 120
+            and alerta.get("trajectory_confidence") in {"MODERADA", "ALTA"}):
         partes.append(f"Estimativa de chegada: {eta:.0f} min.")
     partes.append("Para mais informações acesse:\nhttps://meteo.eesjv.com.br")
     return "\n\n".join(partes)

@@ -176,6 +176,8 @@ def avaliar_alerta_teste_admin(snapshot, config, *, admin_phone=None, now=None):
     if not (admin_phone or "").strip():
         return {"eligible": False, "reason": "admin_phone_missing", "event_key": None}
     avaliacao = avaliar_alerta_preventivo_snapshot(snapshot, config, now=agora)
+    if avaliacao["reason"] == "invalid_snapshot":
+        return {**avaliacao, "event_key": None}
     alerta = snapshot.get("alerta_preventivo") or {}
     return {**avaliacao, "event_key": _event_key(alerta)
             if avaliacao["reason"] in {"eligible", "local_event_observed"} else None}
@@ -266,6 +268,9 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
             "Alerta preventivo de teste habilitado, mas ADMIN_ALERT_PHONE não está configurado."
         )
         return obter_status_alerta_teste_admin(snapshot, config, now=agora)
+
+    if avaliacao["reason"] == "invalid_snapshot":
+        snapshot = {}
 
     decisao = avaliacao.get("decision") or {}
     alerta = {**(snapshot.get("alerta_preventivo") or {}), **decisao}

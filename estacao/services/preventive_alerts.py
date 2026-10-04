@@ -25,7 +25,7 @@ NIVEIS_CORES = {
     "VERMELHO": "vermelho",
 }
 ALERT_SEVERITY = {"NONE": 0, "INFORMATIVO": 1, "ATENCAO": 2, "ALERTA": 3}
-DISTANCE_DEFAULTS = {"MEDIUM": (25, 50), "HIGH": (35, 75), "VERY_HIGH": (50, 100)}
+DISTANCE_DEFAULTS = {"MEDIUM": (25, 100), "HIGH": (35, 150), "VERY_HIGH": (50, 150)}
 
 
 def tracking_confirmado(alerta):
@@ -43,13 +43,17 @@ def classificar_alerta_publico(radar_intensity, *, observado=False, tracking=Fal
 
 def decidir_alerta_preventivo(alerta, *, radar_atualizado, evento_local, config=None,
                               radar_stale=False, frame_valido=True):
-    """Duas rotas independentes; dados antigos incompletos ficam em monitoramento."""
+    """Proximidade nunca substitui trajetória e interceptação confirmadas."""
     alerta, config = alerta or {}, config or {}
     intensidade = classificar_intensidade_frente(alerta, config)
     distancia = _distancia_valida(alerta.get("distance_km"))
     observado = bool(evento_local or alerta.get("local_event") is True)
     confirmado = tracking_confirmado(alerta)
     clutter_index = alerta.get("clutter_index", alerta.get("indice_persistencia_clutter"))
+    eta_impacto = _distancia_valida(alerta.get("projected_impact_eta_minutes"))
+    horizonte_impacto = _distancia_valida(alerta.get("projected_impact_horizon_minutes"))
+    distancia_impacto = _distancia_valida(alerta.get("projected_impact_min_distance_km"))
+    duracao_trajetoria = _distancia_valida(alerta.get("trajectory_duration_minutes"))
     authorization, motivo = "NENHUMA", None
     if not frame_valido:
         motivo = "invalid_frame"
@@ -78,24 +82,33 @@ def decidir_alerta_preventivo(alerta, *, radar_atualizado, evento_local, config=
         classe = intensidade["radar_intensity"]
         near, tracked = (numero_alerta_valido(config.get(f"alert_{classe.lower()}_{rota}_km"), default)
                          for rota, default in zip(("near", "tracked"), DISTANCE_DEFAULTS[classe]))
-        if distancia <= near:
-            authorization = "PROXIMIDADE"
-        elif distancia > tracked:
+        if distancia > max(near, tracked):
             motivo = "outside_proximity_range"
-        elif alerta.get("tracking_valid") is not True or alerta.get("track_id") is None:
+        elif alerta.get("tracking_valid") is not True or type(alerta.get("track_id")) is not int:
             motivo = "tracking_insufficient_for_early_warning"
         elif alerta.get("approaching") is not True:
             motivo = "not_approaching"
         elif alerta.get("trajectory_compatible") is not True:
             motivo = "trajectory_incompatible"
-        elif (_distancia_valida(alerta.get("closest_approach_km")) is None
-              or _distancia_valida(alerta.get("closest_approach_km")) >
-              numero_alerta_valido(config.get("public_track_intercept_km"), 15)) and not (
-                  config.get("public_area_intercept_override") is True
-                  and alerta.get("projected_impact") is True):
-            motivo = "public_trajectory_too_far"
+        elif (type(alerta.get("trajectory_frames_used")) is not int
+              or alerta.get("trajectory_method") != "linear_xy_6_pixel_runs"
+              or alerta["trajectory_frames_used"] < max(4, numero_alerta_valido(
+                  config.get("public_trajectory_min_frames"), 4, pixels=True))
+              or alerta.get("trajectory_confidence") not in ("MODERADA", "ALTA")
+              or duracao_trajetoria is None
+              or duracao_trajetoria < max(10, numero_alerta_valido(config.get("track_min_duration_minutes"), 10))):
+            motivo = "public_trajectory_low_confidence"
+        elif (alerta.get("projected_impact") is not True or distancia_impacto is None
+              or distancia_impacto > numero_alerta_valido(config.get("public_impact_radius_km"), 5)):
+            motivo = "public_projected_impact_absent"
+        elif (eta_impacto is None or horizonte_impacto is None or horizonte_impacto <= 0
+              or horizonte_impacto > numero_alerta_valido(config.get("public_projection_minutes"), 120)
+              or eta_impacto > horizonte_impacto):
+            motivo = "projected_impact_eta_invalid"
         else:
-            authorization = "TRACKING"
+            # A área de chuva projetada pode alcançar o distrito mesmo com o
+            # centro passando ao lado. A interceptação da área é o critério.
+            authorization = "PROXIMIDADE" if distancia <= near else "TRACKING"
     return {
         **intensidade,
         **classificar_alerta_publico(intensidade["radar_intensity"], observado=observado,

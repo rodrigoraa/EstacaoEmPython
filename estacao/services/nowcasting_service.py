@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 
+from config import numero_alerta_valido
 from services.nowcasting_intensity import analisar_intensidade_cluster
 from services.preventive_alerts import (
     criar_alerta_preventivo,
@@ -17,7 +18,7 @@ from services.preventive_alerts import (
 from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.6"
+NOWCASTING_ALGORITHM_VERSION = "1.7"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -79,12 +80,28 @@ def snapshot_operacionalmente_atual(snapshot, config, now=None):
         return False
     if radar.get("stale") is True:
         return False
+    if not frame_radar_atual(radar, config, now=agora):
+        return False
     alerta = snapshot.get("alerta_preventivo") or {}
     if not isinstance(alerta, dict):
         return False
     if alerta.get("nivel") in {"NORMAL", "AMARELO", "LARANJA", "VERMELHO"}:
         return radar.get("operacional") is True
     return True
+
+
+def frame_radar_atual(frame, config, now=None):
+    """Um snapshot recém-gerado não torna uma imagem antiga operacional."""
+    frame = frame or {}
+    momento = parse_datetime(
+        frame.get("data_frame_utc") or frame.get("data_frame"), assume_utc=True
+    )
+    if not momento or frame.get("timestamp_status") == "suspect":
+        return False
+    agora = (now or agora_utc()).astimezone(timezone.utc)
+    idade = (agora - momento.astimezone(timezone.utc)).total_seconds() / 60.0
+    limite = numero_alerta_valido((config or {}).get("radar_max_age_minutes"), 15)
+    return -1.0 <= idade <= limite
 
 
 def preparar_estado_nowcasting_admin(snapshot, config, now=None):
@@ -252,6 +269,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
     track_valid = bool(
         radar_fresh
         and (track.get("quantidade_frames") or 0) >= config["track_min_frames"]
+        and (track.get("duracao_minutos") or 0) >= config.get("track_min_duration_minutes", 10)
         and track.get("velocidade_kmh") is not None
         and track.get("bearing_movimento") is not None
     )
@@ -433,6 +451,7 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
     timestamp_suspect = frame.get("timestamp_status") == "suspect"
     radar_fresh = bool(
         radar.get("disponivel") and not radar.get("stale") and not timestamp_suspect
+        and frame_radar_atual(frame, config, now=now)
     )
     entradas = list(radar.get("tracks_atuais") or [])
     if not entradas and radar.get("cluster_mais_proximo"):

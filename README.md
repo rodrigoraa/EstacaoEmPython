@@ -226,11 +226,16 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PERCENT` | `10` | percentual mínimo da frente com refletividade alta + muito alta |
 | `NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT` | `2` | percentual mínimo da frente com refletividade muito alta |
 | `NOWCASTING_UPSTREAM_CORRIDOR_KM` | `50` | largura lateral do corredor a montante |
-| `NOWCASTING_RADAR_MAX_AGE_MINUTES` | `45` | idade máxima do radar para evidência plena |
+| `NOWCASTING_RADAR_MAX_AGE_MINUTES` | `15` | idade máxima real da imagem para análise operacional e envio |
+| `NOWCASTING_ALERT_DELIVERY_MAX_AGE_MINUTES` | `15` | validade da mensagem na fila a partir do horário da imagem |
+| `NOWCASTING_PUBLIC_IMPACT_RADIUS_KM` | `5` | raio ao redor do alvo que os pixels reais projetados devem atingir (1–15 km) |
+| `NOWCASTING_PUBLIC_PROJECTION_MINUTES` | `120` | horizonte máximo de chegada projetada (15–120 minutos) |
+| `NOWCASTING_PUBLIC_TRAJECTORY_MIN_FRAMES` | `4` | quantidade mínima de imagens distintas para autorizar previsão (4–6) |
+| `NOWCASTING_PUBLIC_TRAJECTORY_MAX_GAP_MINUTES` | `15` | intervalo máximo entre observações e confirmações consecutivas |
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS` | `2` | sinais independentes mínimos para confirmação |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS` | `1` | estações a montante mínimas com sinais |
-| `NOWCASTING_ALGORITHM_VERSION` | `1.5` | versão persistida junto ao snapshot |
+| `NOWCASTING_ALGORITHM_VERSION` | `1.7` | versão persistida junto ao snapshot |
 
 Nowcasting aqui não é previsão numérica. É fusão observacional de curtíssimo prazo:
 o radar acompanha ecos, as estações regionais confirmam alterações em superfície e
@@ -681,29 +686,39 @@ NOWCASTING_ALERT_MIN_STRONG_REFLECTIVITY_PIXELS=2
 NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PERCENT=2
 NOWCASTING_ALERT_MIN_VERY_HIGH_REFLECTIVITY_PIXELS=2
 NOWCASTING_ALERT_MEDIUM_NEAR_KM=25
-NOWCASTING_ALERT_MEDIUM_TRACKED_KM=50
+NOWCASTING_ALERT_MEDIUM_TRACKED_KM=100
 NOWCASTING_ALERT_HIGH_NEAR_KM=35
-NOWCASTING_ALERT_HIGH_TRACKED_KM=75
+NOWCASTING_ALERT_HIGH_TRACKED_KM=150
 NOWCASTING_ALERT_VERY_HIGH_NEAR_KM=50
-NOWCASTING_ALERT_VERY_HIGH_TRACKED_KM=100
+NOWCASTING_ALERT_VERY_HIGH_TRACKED_KM=150
 NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM=20
 NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM=15
+NOWCASTING_PUBLIC_IMPACT_RADIUS_KM=5
+NOWCASTING_PUBLIC_PROJECTION_MINUTES=120
+NOWCASTING_PUBLIC_TRAJECTORY_MIN_FRAMES=4
+NOWCASTING_PUBLIC_TRAJECTORY_MAX_GAP_MINUTES=15
+NOWCASTING_RADAR_MAX_AGE_MINUTES=15
+NOWCASTING_ALERT_DELIVERY_MAX_AGE_MINUTES=15
 ```
 
-O raio público de 15 km limita somente o WhatsApp antecipado via TRACKING;
-`RADAR_INTERCEPT_RADIUS_KM=25` continua na análise geral e nas telas. HIGH
-distante via TRACKING requer confirmação em dois frames reais distintos e
-consecutivos do mesmo track. MEDIUM por PROXIMIDADE (até 25 km) só gera
-INFORMATIVO público após dois frames reais distintos e consecutivos do mesmo
-track; reprocessar um frame não conta novamente. MEDIUM distante por TRACKING fica somente em monitoramento, sem
-WhatsApp público, mas permanece visível na análise e no modo de teste do
-administrador, que continua mais sensível para calibração. HIGH por PROXIMIDADE
-(até 35 km) continua imediato. VERY_HIGH por PROXIMIDADE pública é imediato até
-20 km, inclusive, sem exigir tracking. Acima de 20 km, até o alcance de tracking
-de 100 km, o público exige tracking válido, track_id, aproximação, trajetória
-compatível e passagem prevista dentro de 15 km. O limite diagnóstico de 50 km
-de `NOWCASTING_ALERT_VERY_HIGH_NEAR_KM` continua disponível para telas e teste
-admin; `NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM` controla apenas o envio público.
+O radar já detecta ecos em toda a cobertura disponível na imagem. Na versão 1.7,
+áreas MEDIUM podem ser avaliadas para aviso antecipado até 100 km e HIGH/VERY_HIGH
+até 150 km. Estar nessa faixa não autoriza envio por si só: a chegada precisa ser
+projetada em até 120 minutos dentro de 5 km do alvo configurado em São José.
+`RADAR_INTERCEPT_RADIUS_KM=25` continua na análise geral; a autorização usa a área
+de pixels reais MEDIUM ou superiores projetada, preservando espaços sem eco e
+concavidades. Azul/ciano permanece visível no diagnóstico, mas sua passagem
+isolada não comprova chegada de chuva para enviar um alerta. Polígonos
+convexos antigos não comprovam interceptação e ficam somente no diagnóstico.
+
+Todos os alertas, inclusive próximos e os testes ao administrador, exigem pelo
+menos quatro imagens distintas, dez minutos de observação contínua, movimento
+consistente de aproximação, confiança MODERADA/ALTA e impacto projetado. A previsão
+usa as últimas seis observações e calcula continuamente a passagem pelo alvo,
+sem depender de amostras espaçadas que poderiam perder uma célula rápida. Perda de
+continuidade, mudança inconsistente de direção, passagem lateral e afastamento
+mantêm o eco em monitoramento. O envio público exige ainda confirmação em duas
+imagens sucessivas do mesmo track; reprocessamentos não contam novamente.
 
 Percentuais aceitam 0–100 inclusive; pixels exigem inteiros >=1; profundidade e
 distâncias exigem valores >0. NaN, infinito e valores inválidos voltam ao default.
@@ -714,17 +729,25 @@ os próximos frames e os critérios de decisão são revalidados antes do envio.
 
 | Intensidade | Nível público | PROXIMIDADE | TRACKING |
 |---|---|---:|---:|
-| MEDIUM | INFORMATIVO | <=25 km | monitoramento até 50 km, sem envio público |
-| HIGH | ATENCAO | <=35 km | <=75 km |
-| VERY_HIGH | ALERTA | <=20 km para público (50 km diagnóstico/admin) | >20 a <=100 km, com trajetória pública <=15 km |
+| MEDIUM | INFORMATIVO | <=25 km, com trajetória e impacto | <=100 km, com trajetória e impacto |
+| HIGH | ATENCAO | <=35 km, com trajetória e impacto | <=150 km, com trajetória e impacto |
+| VERY_HIGH | ALERTA | <=20 km público (50 km admin), com trajetória e impacto | <=150 km, com trajetória e impacto |
 
-A distância usada é a mínima dos pixels originais até o Distrito, mantendo a borda
-como gatilho. Dentro da proximidade não se exige aproximação ou
-trajetória; o INFORMATIVO público de MEDIUM exige track_id para conferir os
-dois frames. Fora dela, a rota TRACKING exige track_id, tracking válido, aproximação
-e trajetória compatível. Radar operacional, atual, frame válido, ausência de clutter
-forte e chuva local ainda não observada valem para ambas. Confirmação regional
+A distância usada é a mínima dos pixels originais até o Distrito. Proximidade
+continua sendo uma indicação visual independente; previsão enviada exige
+track_id, tracking válido, aproximação, trajetória compatível e impacto projetado
+em ambas as rotas. Radar operacional com timestamp real de até 15 minutos,
+ausência de clutter forte e chuva local ainda não observada valem para ambas.
+Snapshots recém-gerados não tornam uma imagem antiga atual; timestamps ausentes
+ou mais de um minuto no futuro bloqueiam a previsão. Confirmação regional
 continua no diagnóstico e não é requisito obrigatório.
+
+Antes da entrega, a fila confere novamente o controle público, a validade da
+mensagem e o snapshot atual. Preventivos vencidos, desativados ou que perderam
+confirmação são marcados como `cancelado` e não seguem para retries. Alertas de
+condições já observadas seguem suas regras próprias. Reinicie os workers de radar,
+nowcasting e WhatsApp para carregar esta versão. Valores explícitos antigos no
+ambiente continuam prevalecendo: ajuste também as variáveis do bloco acima.
 
 `certainty` é `POSSIVEL` sem aproximação confirmada, `PROVAVEL` com tracking válido,
 aproximação e trajetória compatível, ou `OBSERVADO` quando já chove localmente.
@@ -763,6 +786,14 @@ da frente, além de tracking, distância, ETA e motivo de bloqueio. Logs não in
 telefone, chaves ou credenciais.
 
 O MaxCAPPI processado é imagem RGB, não volume bruto calibrado. Portanto o sistema mostra “eco de radar”/“área de refletividade detectada” e não inventa dBZ, mm/h, probabilidade, granizo, severidade ou “tempestade confirmada”. Estações externas são aproximadamente horárias, o radar pode conter clutter, o ETA depende da continuidade e células podem nascer ou desaparecer rapidamente. Nowcasting não substitui avisos oficiais. As regras precisam rodar em observação por dias/semanas e ser comparadas com a chegada real à escola antes de qualquer alerta preventivo.
+
+Os cenários automatizados validam a lógica, mas não medem a taxa de acerto
+meteorológica. Para calibrar, compare os horários de previsão com o início real de
+chuva na estação local, contando acertos, falsos alertas, chuvas sem aviso e
+antecedência. A [OMM descreve o uso de radar e observações de superfície no
+nowcasting](https://wmo.int/media/magazine-article/nowcasting-guidelines-summary);
+o [NSSL/NOAA explica que precipitação detectada pelo radar pode evaporar antes de
+atingir o solo](https://inside.nssl.noaa.gov/mrms/2018/03/when-radar-observed-precipitation-does-not-reach-the-ground/).
 
 Webhooks mantêm HMAC SHA-256, `compare_digest`, repositório, branch e comandos fixos. O default é `refs/heads/master`. O processo é destacado da request, stdout/stderr são descartados e `flock` evita execução simultânea no host.
 

@@ -136,14 +136,13 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertEqual(radar["tracks_atuais"][0]["cluster"]["front_pixels_medium"], 200)
         snapshot = analisar_nowcasting(radar, {"stations": []}, {"rain_rate": 0}, config, now=horario)
         alerta = snapshot["alerta_preventivo"]
-        self.assertEqual(alerta["authorization"], "PROXIMIDADE")
+        self.assertEqual(alerta["authorization"], "NENHUMA")
+        self.assertEqual(alerta["block_reason"], "tracking_insufficient_for_early_warning")
         self.assertEqual(alerta["alert_level"], "INFORMATIVO")
         sender = mock.Mock()
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
         processar_alerta_teste_admin(snapshot, config, now=horario, sender=sender)
-        sender.assert_called_once()
-        self.assertEqual(sender.call_args.args[0], "67999999999")
-        self.assertNotIn("se aproximando", sender.call_args.args[1])
+        sender.assert_not_called()
         conn = self.database.get_db()
         try:
             coluna = next(row for row in conn.execute("PRAGMA table_info(radar_clusters)") if row["name"] == "frente_relevante_json")
@@ -198,6 +197,7 @@ class RadarIntegrationTest(unittest.TestCase):
                     "frame_id": frame_id,
                     "stale": False,
                     "operacional": True,
+                    "data_frame": datetime.now(timezone.utc).isoformat(),
                 },
                 "alerta_preventivo": alerta,
                 "ameaca_principal": {
@@ -658,6 +658,49 @@ class RadarIntegrationTest(unittest.TestCase):
         self.assertEqual(track["quantidade_frames"], 3)
         self.assertTrue(track["aproximando"])
         self.assertIsNotNone(track["velocidade_kmh"])
+
+    def test_nowcasting_usa_ajuste_recente_em_vez_dos_flags_historicos(self):
+        import math
+        from dataclasses import replace
+        from config import nowcasting_config
+        from services.nowcasting_repository import carregar_entradas_nowcasting
+        from services.radar_analysis import GeoBounds, latlon_para_pixel
+        from services.radar_repository import atualizar_tracking, salvar_resultado_frame
+
+        target_lat, target_lon = -22.4925326, -54.4610352
+        bounds = GeoBounds(-23.830664, -16.642761, -58.226281, -50.543479)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        inicio = now - timedelta(minutes=60)
+        escala_lon = 111.195 * math.cos(math.radians(target_lat))
+        for i, distancia in enumerate((-180, -165, -150, -135, -120)):
+            lon = target_lon + distancia / escala_lon
+            left, bottom = latlon_para_pixel(target_lat - 5 / 111.195,
+                                            target_lon + (distancia - 5) / escala_lon, bounds, 750, 750)
+            right, top = latlon_para_pixel(target_lat + 5 / 111.195,
+                                          target_lon + (distancia + 5) / escala_lon, bounds, 750, 750)
+            footprint = {"format": "pixel_runs_v1", "runs": [
+                [y, left, right] for y in range(math.ceil(top), math.floor(bottom) + 1)
+            ]}
+            cluster = replace(self.cluster(lat=target_lat, lon=lon), footprint=footprint)
+            frame_id, _ = salvar_resultado_frame(
+                self.frame((inicio + timedelta(minutes=15 * i)).isoformat(), f"recente-{i}"),
+                None, None, 750, 750, [cluster])
+            atualizar_tracking(frame_id, target_lat, target_lon, 3, 10, 150, 25)
+        conn = self.database.get_db()
+        try:
+            conn.execute("UPDATE radar_tracks SET aproximando=0, trajetoria_compativel=0, "
+                         "bearing_movimento=270, eta_minutos=NULL")
+            conn.commit()
+        finally:
+            conn.close()
+        radar, _, _, _ = carregar_entradas_nowcasting(nowcasting_config())
+        track = radar["tracks_atuais"][0]["track"]
+        self.assertTrue(track["aproximando"])
+        self.assertTrue(track["trajetoria_compativel"])
+        self.assertEqual(track["direcao_movimento"], "L")
+        self.assertEqual(track["quantidade_frames"], 5)
+        self.assertEqual(track["trajectory_confidence"], "ALTA")
+        self.assertAlmostEqual(track["eta_minutos"], 110, delta=.3)
 
     def test_alertas_desabilitados_nao_enfileiram(self):
         from config import radar_config

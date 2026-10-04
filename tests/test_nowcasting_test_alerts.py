@@ -83,6 +83,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 "operacional": operational,
                 "stale": stale,
                 "frame_id": 70,
+                "data_frame": now.isoformat(),
             },
             "alerta_preventivo": {
                 "nivel": level,
@@ -99,6 +100,12 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                 "classe_predominante": "REFLETIVIDADE_BAIXA",
                 "classe_maxima": "REFLETIVIDADE_ALTA",
                 "trajectory_compatible": True,
+                "trajectory_frames_used": 5,
+                "trajectory_method": "linear_xy_6_pixel_runs",
+                "trajectory_duration_minutes": 20, "trajectory_confidence": "ALTA",
+                "projected_impact_min_distance_km": 3, "projected_impact": True,
+                "projected_impact_eta_minutes": 25,
+                "projected_impact_horizon_minutes": 120,
                 "eta_border_quality": "BOA",
                 "tracking_valid": tracking,
                 "approaching": True,
@@ -344,7 +351,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
 
         for flag, local, observado in casos:
             with self.subTest(flag=flag, local=local):
-                snapshot = self.snapshot(local_event=flag, tracking=False, track_id=None)
+                snapshot = self.snapshot(local_event=flag)
                 snapshot["escola"] = local
                 if local is None:
                     snapshot.pop("escola")
@@ -365,7 +372,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
 
     def test_regressao_chuva_local_stale_nao_suprime_medium_por_proximidade(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
-        snapshot = self.snapshot(tracking=False, track_id=None, rain_rate=2)
+        snapshot = self.snapshot(rain_rate=2)
         snapshot["escola"]["stale"] = True
         snapshot["alerta_preventivo"].update(
             front_pixels_low=0, front_pixels_medium=100, front_pixels_high=0,
@@ -477,7 +484,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
             sender=sender,
         )
         self.assertEqual(sender.call_count, 1)
-        self.assertEqual(status["event_key"], "untracked_rain_episode")
+        self.assertEqual(status["event_key"], "track:44")
 
     def test_track_estavel_envia_somente_uma_vez(self):
         os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
@@ -547,7 +554,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
             ({"distance_km": 10, "front_pixels_low": 9999,
               "front_pixels_medium": 0, "front_pixels_high": 0, "front_pixels_very_high": 1,
               "classe_maxima": "REFLETIVIDADE_MUITO_ALTA"}, "intensity_below_medium"),
-            ({"distance_km": 80}, "outside_proximity_range"),
+            ({"distance_km": 151}, "outside_proximity_range"),
             ({"distance_km": None}, "inconsistent_data"),
             ({"distance_km": float("nan")}, "inconsistent_data"),
             ({"distance_km": -1}, "inconsistent_data"),
@@ -587,7 +594,7 @@ class NowcastingTestAlertsTest(unittest.TestCase):
                                               (4, "very_high", 3), (5, "very_high", 3),
                                               (6, "high", 3), (7, "medium", 3)):
                 now = self.base + timedelta(minutes=minuto)
-                snapshot = self.snapshot(now=now, tracking=False, track_id=None)
+                snapshot = self.snapshot(now=now)
                 alerta = snapshot["alerta_preventivo"]
                 for campo in ("low", "medium", "high", "very_high"):
                     alerta[f"front_pixels_{campo}"] = 100 if campo == classe else 0

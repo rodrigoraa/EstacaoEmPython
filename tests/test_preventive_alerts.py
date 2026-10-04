@@ -30,6 +30,11 @@ class PreventiveAlertsTest(unittest.TestCase):
             "duration_minutes": 20,
             "approaching": True,
             "trajectory_compatible": True,
+            "trajectory_frames_used": 5,
+            "trajectory_method": "linear_xy_6_pixel_runs",
+            "trajectory_duration_minutes": 20, "trajectory_confidence": "ALTA",
+            "projected_impact_min_distance_km": 3, "projected_impact": True,
+            "projected_impact_horizon_minutes": 120, "projected_impact_eta_minutes": 30,
             "direction": "L",
             "speed_kmh": 45,
             "eta_minutes": 30,
@@ -108,7 +113,8 @@ class PreventiveAlertsTest(unittest.TestCase):
         self.assertEqual(alerta["nivel"], "VERMELHO")
         self.assertIsNone(alerta["speed_kmh"])
         self.assertIsNone(alerta["eta_minutes"])
-        self.assertTrue(alerta["would_send"])
+        self.assertFalse(alerta["would_send"])
+        self.assertEqual(alerta["block_reason"], "tracking_insufficient_for_early_warning")
 
     def test_selecao_ignora_clutter_proximo_quando_ha_eco_confiavel(self):
         clutter = self.ameaca(8, clutter=0.96)
@@ -153,7 +159,7 @@ class PreventiveAlertsTest(unittest.TestCase):
     def test_confiavel_na_faixa_sempre_vence_clutter_mais_proximo(self):
         casos = (
             (5, 20, "VERMELHO", True),
-            (5, 90, "AMARELO", False),
+            (5, 90, "AMARELO", True),
         )
         for distancia_clutter, distancia_confiavel, nivel, candidato in casos:
             with self.subTest(distancia_confiavel=distancia_confiavel):

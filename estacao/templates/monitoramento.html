@@ -75,11 +75,11 @@
         </form>
       </section>
     </div>
-    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos no próximo ciclo. Mensagens preventivas já pendentes na fila podem continuar sendo entregues; nenhum registro anterior é cancelado.</p>
+    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos e cancela a entrega de preventivos pendentes quando a fila for processada. Antes de cada envio, a previsão é conferida novamente; avisos vencidos ou sem trajetória confirmada são cancelados.</p>
   </article>
   <dialog id="public-confirm" class="monitor-dialog" aria-labelledby="public-confirm-title">
     <h2 id="public-confirm-title" class="text-xl font-bold">{{ 'Desativar' if controls.public.enabled else 'Ativar' }} alertas públicos preventivos?</h2>
-    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando, mas novos alertas preventivos não serão enviados aos usuários. Mensagens já pendentes podem ser entregues.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
+    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando. Novos alertas preventivos serão interrompidos e as mensagens preventivas pendentes serão canceladas antes da entrega.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
     <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='public') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="enabled" value="{{ 'false' if controls.public.enabled else 'true' }}">

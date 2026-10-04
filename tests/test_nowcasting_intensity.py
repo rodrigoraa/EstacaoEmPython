@@ -93,12 +93,19 @@ class NowcastingIntensityTest(unittest.TestCase):
         for entrada, esperado in ((cluster(), True), (cluster(500, 500, 0, 0), True)):
             with self.subTest(esperado=esperado):
                 radar = {
-                    "disponivel": True, "stale": False, "frame": {"id": 1},
+                    "disponivel": True, "stale": False,
+                    "frame": {"id": 1, "data_frame_utc": now.isoformat()},
                     "cluster_mais_proximo": entrada,
                     "tracking": {
                         "track_id": 1, "quantidade_frames": 4, "duracao_minutos": 15,
                         "velocidade_kmh": 40, "bearing_movimento": 0,
                         "aproximando": True, "trajetoria_compativel": True,
+                        "trajectory_frames_used": 4, "trajectory_confidence": "ALTA",
+                        "trajectory_method": "linear_xy_6_pixel_runs",
+                        "trajectory_duration_minutes": 15,
+                        "projected_impact": True, "projected_impact_eta_minutes": 20,
+                        "projected_impact_min_distance_km": 0,
+                        "projected_impact_horizon_minutes": 120,
                     },
                 }
                 state = analisar_nowcasting(radar, {"stations": []}, {"rain_rate": 0}, config, now=now)

@@ -33,7 +33,8 @@ class NowcastingServiceTest(unittest.TestCase):
     def snapshot(self, gerado_em_utc=None):
         return {
             "gerado_em_utc": gerado_em_utc or self.now.isoformat(),
-            "radar": {"stale": False, "operacional": True},
+            "radar": {"stale": False, "operacional": True,
+                      "data_frame": self.now.isoformat()},
             "alerta_preventivo": {"nivel": "VERMELHO"},
         }
 
@@ -84,7 +85,8 @@ class NowcastingServiceTest(unittest.TestCase):
         return {
             "disponivel": True,
             "stale": stale,
-            "frame": {"id": 7, "imagem_disponivel": True},
+            "frame": {"id": 7, "imagem_disponivel": True,
+                      "data_frame_utc": self.now.isoformat()},
             "cluster_mais_proximo": {
                 "id": 101,
                 "distancia_borda_escola_km": 72,
@@ -141,6 +143,35 @@ class NowcastingServiceTest(unittest.TestCase):
         self.assertTrue(relevante["upstream"])
         self.assertFalse(fora["upstream"])
         self.assertLess(relevante["cross_track_km"], 50)
+
+    def test_snapshot_novo_nao_rejuvenesce_radar_antigo_ou_futuro(self):
+        for minutos in (-16, 2):
+            with self.subTest(minutos=minutos):
+                snapshot = self.snapshot()
+                snapshot["radar"]["data_frame"] = (
+                    self.now + timedelta(minutes=minutos)
+                ).isoformat()
+                self.assertFalse(snapshot_operacionalmente_atual(
+                    snapshot, self.config, now=self.now
+                ))
+
+    def test_radar_sinalizado_atual_sem_timestamp_nao_e_operacional(self):
+        radar = self.radar()
+        radar["frame"].pop("data_frame_utc")
+        state = analisar_nowcasting(
+            radar, {"stations": []}, self.local(), self.config, self.now
+        )
+        self.assertFalse(state["radar"]["operacional"])
+        self.assertFalse(state["alerta_preventivo"]["would_send"])
+
+    def test_tracking_sem_duracao_minima_nao_comprova_movimento(self):
+        radar = self.radar()
+        radar["tracking"]["duracao_minutos"] = 2
+        state = analisar_nowcasting(
+            radar, {"stations": []}, self.local(), self.config, self.now
+        )
+        self.assertEqual(state["status"], "ECO_EM_MONITORAMENTO")
+        self.assertFalse(state["alerta_preventivo"]["would_send"])
 
     def test_corredor_oeste_leste(self):
         caarapo = classificar_estacao_montante(-22.65, -54.5, 90, -22.65, -54.9, 50)

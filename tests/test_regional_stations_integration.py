@@ -594,9 +594,10 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         )
         radar = {
             "disponivel": True, "stale": False,
-            "frame": {"id": 7, "imagem_disponivel": False},
+            "frame": {"id": 7, "imagem_disponivel": False,
+                      "data_frame_utc": atual.isoformat()},
             "tracking": {
-                "track_id": 12, "quantidade_frames": 4,
+                "track_id": 12, "quantidade_frames": 4, "duracao_minutos": 15,
                 "velocidade_kmh": 45, "bearing_movimento": 0,
                 "direcao_movimento": "N", "centro_lat": -22.8,
                 "centro_lon": -54.46, "aproximando": True,

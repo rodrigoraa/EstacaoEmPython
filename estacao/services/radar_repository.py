@@ -661,6 +661,23 @@ def listar_tracks_ativos(limite: int = 50) -> list[dict]:
         conn.close()
 
 
+def obter_id_ultimo_frame_radar():
+    """Consulta leve para acordar o nowcasting após publicar um frame válido."""
+    conn = database.get_db_readonly()
+    try:
+        row = conn.execute(
+            """
+            SELECT id FROM radar_frames
+            WHERE status_processamento='processado'
+              AND COALESCE(timestamp_status, 'legacy_unverified') <> 'suspect'
+            ORDER BY COALESCE(data_frame_utc, data_frame) DESC, id DESC LIMIT 1
+            """
+        ).fetchone()
+        return row["id"] if row else None
+    finally:
+        conn.close()
+
+
 def obter_estado_radar(stale_minutes: int) -> dict:
     conn = database.get_db()
     try:
@@ -669,7 +686,7 @@ def obter_estado_radar(stale_minutes: int) -> dict:
             SELECT * FROM radar_frames
             WHERE status_processamento='processado'
               AND COALESCE(timestamp_status, 'legacy_unverified') <> 'suspect'
-            ORDER BY COALESCE(data_frame_utc, data_frame) DESC LIMIT 1
+            ORDER BY COALESCE(data_frame_utc, data_frame) DESC, id DESC LIMIT 1
             """
         ).fetchone()
         if not frame:

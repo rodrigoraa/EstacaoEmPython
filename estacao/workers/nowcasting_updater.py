@@ -25,12 +25,14 @@ from services.nowcasting_repository import (
     salvar_snapshot,
 )
 from services.nowcasting_service import analisar_nowcasting
+from services.radar_repository import obter_id_ultimo_frame_radar
 from services.nowcasting_test_alerts import processar_alerta_teste_admin
 from services.nowcasting_public_alerts import processar_alerta_publico
 from services.runtime_alert_controls import aplicar_controles
 
 
 logger = logging.getLogger(__name__)
+RADAR_CHECK_SECONDS = 5.0
 
 
 def enfileirar_alertas_nowcasting(config, estado):
@@ -101,6 +103,31 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
+def aguardar_proximo_ciclo(config, frame_id):
+    """Mantém o polling, mas acorda quando outra imagem termina de processar."""
+    prazo = time.monotonic() + config["poll_seconds"]
+    while True:
+        restante = prazo - time.monotonic()
+        if restante <= 0:
+            return
+        time.sleep(min(RADAR_CHECK_SECONDS, restante))
+        if time.monotonic() >= prazo:
+            return
+        try:
+            novo_frame_id = obter_id_ultimo_frame_radar()
+        except Exception as erro:
+            logger.warning(
+                "Não foi possível verificar novo radar; mantendo polling: %s",
+                erro_externo_seguro(erro),
+            )
+            restante = prazo - time.monotonic()
+            if restante > 0:
+                time.sleep(restante)
+            return
+        if novo_frame_id is not None and novo_frame_id != frame_id:
+            return
+
+
 def main(argv=None):
     args = parse_args(argv)
     configurar_logging()
@@ -113,10 +140,14 @@ def main(argv=None):
         return 0
     while True:
         try:
-            imprimir_resumo(executar_ciclo(config))
+            result = executar_ciclo(config)
+            imprimir_resumo(result)
         except Exception as erro:
             logger.error("Ciclo nowcasting falhou: %s", erro_externo_seguro(erro))
-        time.sleep(config["poll_seconds"])
+            time.sleep(config["poll_seconds"])
+            continue
+        frame_id = ((result.get("snapshot") or {}).get("radar") or {}).get("frame_id")
+        aguardar_proximo_ciclo(config, frame_id)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+import json
+import math
 import os
 import sys
 import tempfile
@@ -95,11 +97,12 @@ class NowcastingRefreshTest(unittest.TestCase):
             lat = target_lat + .30 - index * .05 if near else -22.0 - index * .05
             lon = -54.46
             distance = haversine_km(lat, lon, target_lat, target_lon)
-            footprint = [
-                latlon_para_pixel(y, x, bounds, 750, 750)
-                for x, y in ((lon - .05, lat - .05), (lon + .05, lat - .05),
-                             (lon + .05, lat + .05), (lon - .05, lat + .05))
-            ]
+            left, bottom = latlon_para_pixel(lat - .05, lon - .05, bounds, 750, 750)
+            right, top = latlon_para_pixel(lat + .05, lon + .05, bounds, 750, 750)
+            footprint = {
+                "format": "pixel_runs_v1",
+                "runs": [[y, left, right] for y in range(math.ceil(top), math.floor(bottom) + 1)],
+            }
             cluster = RadarCluster(
                 1, 200, 300, 400, lat, lon, 290, 390, 20, 20,
                 distance, max(0, distance - 5), 180, "N", False, "VERDE",
@@ -161,14 +164,26 @@ class NowcastingRefreshTest(unittest.TestCase):
         self.assertEqual(fingerprints[0], fingerprints[1])
         self.assertNotEqual(fingerprints[1], fingerprints[2])
 
-    def test_repeated_cycle_in_same_window_keeps_one_snapshot(self):
+    def test_same_window_refreshes_one_snapshot_without_regressing(self):
         self.persist_radar(self.now)
         first = self.cycle(self.now + timedelta(seconds=30))
-        original = self.snapshots()
-        repeated = self.cycle(self.now + timedelta(minutes=3))
+        original = self.snapshots()[0]
+        later = self.now + timedelta(minutes=3)
+        repeated = self.cycle(later)
         self.assertTrue(first["new"])
         self.assertFalse(repeated["new"])
-        self.assertEqual(self.snapshots(), original)
+        rows = self.snapshots()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], original["id"])
+        self.assertEqual(rows[0]["input_fingerprint"], original["input_fingerprint"])
+        self.assertEqual(rows[0]["calculado_em_utc"], later.isoformat())
+        self.assertEqual(
+            json.loads(rows[0]["estado_json"])["radar"]["data_frame"],
+            json.loads(original["estado_json"])["radar"]["data_frame"],
+        )
+        older = self.cycle(self.now + timedelta(minutes=1))
+        self.assertFalse(older["new"])
+        self.assertEqual(self.snapshots(), rows)
 
     def test_new_cycle_refreshes_admin_api_without_overwriting_history(self):
         frame_id = self.persist_radar(self.now)
@@ -214,7 +229,7 @@ class NowcastingRefreshTest(unittest.TestCase):
         self.assertFalse(payload["monitoramento_atual"])
         self.assertEqual(payload["alerta_preventivo"]["nivel"], "INDISPONIVEL")
 
-    def test_reanalysis_of_same_radar_frame_never_confirms_medium_alert(self):
+    def test_reanalysis_of_same_radar_frame_never_confirms_impact_alert(self):
         from services.nowcasting_public_alerts import processar_alerta_publico
 
         frame_id = self.persist_radar(self.now, near=True)
@@ -236,8 +251,8 @@ class NowcastingRefreshTest(unittest.TestCase):
             self.assertEqual(cycle["snapshot"]["radar"]["frame_id"], frame_id)
             self.assertEqual(cycle["snapshot"]["radar"]["data_frame"], self.now.isoformat())
             result = processar_alerta_publico(cycle["snapshot"], self.config, now=moment)
-            self.assertEqual(result["reason"], "awaiting_medium_proximity_confirmation")
-            self.assertEqual(result["state"]["pending_medium_proximity_count"], 1)
+            self.assertEqual(result["reason"], "awaiting_projected_impact_confirmation")
+            self.assertEqual(result["state"]["pending_tracking_count"], 1)
             self.assertEqual(result["enfileirados"], 0)
 
         self.assertEqual(len(self.snapshots()), 3)

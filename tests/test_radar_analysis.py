@@ -98,6 +98,25 @@ class RadarAnalysisTest(unittest.TestCase):
         self.assertEqual(cluster.pixels_refletividade_baixa, 60)
         self.assertEqual(cluster.pixels_refletividade_media, 60)
         self.assertEqual(cluster.classe_maxima, "REFLETIVIDADE_MEDIA")
+        self.assertEqual(sum(end - start + 1 for y, start, end in cluster.footprint["runs"]), 60)
+        self.assertFalse(any(start <= 50 <= end for y, start, end in cluster.footprint["runs"]))
+
+    def test_eco_azul_isolado_permanece_visivel_sem_area_para_previsao(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        ImageDraw.Draw(imagem).rectangle((40, 40, 49, 49), fill=(57, 170, 223))
+        cluster = detectar_clusters(imagem, self.bounds, 0, 0, 0, 0, self.config)[0]
+        self.assertEqual(cluster.pixels_eco, 100)
+        self.assertEqual(cluster.footprint["runs"], [])
+
+    def test_footprint_preserva_corredor_vazio_entre_fragmentos(self):
+        imagem = Image.new("RGB", (100, 100), "black")
+        draw = ImageDraw.Draw(imagem)
+        draw.rectangle((40, 40, 45, 59), fill=(43, 185, 0))
+        draw.rectangle((48, 40, 53, 59), fill=(43, 185, 0))
+        cluster = detectar_clusters(imagem, self.bounds, 0, 0, 0, 0, self.config)[0]
+        self.assertEqual(cluster.footprint["format"], "pixel_runs_v1")
+        self.assertFalse(any(start <= 46 <= end for y, start, end in cluster.footprint["runs"] if y == 50))
+        self.assertEqual(sum(end - start + 1 for y, start, end in cluster.footprint["runs"]), 240)
 
     def test_distancia_da_borda_e_menor_que_do_centro(self):
         imagem = Image.new("RGB", (100, 100), "black")

@@ -51,6 +51,12 @@ def monitoramento_admin():
         "monitoramento.html",
         estado=preparado["estado"],
         monitoramento_atual=preparado["monitoramento_atual"],
+        snapshot_desatualizado=preparado["snapshot_desatualizado"],
+        radar_atual=preparado["radar_atual"],
+        estacao_atual=preparado["estacao_atual"],
+        chuva_na_estacao=preparado["chuva_na_estacao"],
+        frescor_fontes=preparado["frescor_fontes"],
+        ultima_observacao_radar=preparado["ultima_observacao_radar"],
         ultimo_nivel_calculado=preparado["ultimo_nivel_calculado"],
         janela_snapshot_minutos=preparado["janela_snapshot_minutos"],
         test_alert=obter_status_alerta_teste_admin(snapshot, config),
@@ -85,6 +91,13 @@ def api_nowcasting_status_admin():
         "snapshot_desatualizado",
         "janela_snapshot_minutos",
         "ultimo_nivel_calculado",
+        "analise_atual",
+        "radar_atual",
+        "estacao_atual",
+        "chuva_na_estacao",
+        "motivo_indisponibilidade",
+        "frescor_fontes",
+        "ultima_observacao_radar",
     ):
         payload[campo] = preparado[campo]
     payload["test_alert"] = obter_status_alerta_teste_admin(snapshot, config)

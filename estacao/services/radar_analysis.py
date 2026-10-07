@@ -100,7 +100,7 @@ class RadarCluster:
     classe_predominante: str | None = None
     classe_maxima: str | None = None
     frente_relevante: dict | None = None
-    footprint: list | None = None
+    footprint: dict | list | None = None
 
 
 @dataclass(frozen=True)
@@ -356,10 +356,16 @@ def detectar_clusters(
         )
 
         classes_cluster = classes_refletividade[componente_original]
-        # O casco usa apenas pixels meteorológicos originais, nunca a dilatação.
-        contorno = cv2.convexHull(np.column_stack((orig_x, orig_y)).astype(np.int32))
-        contorno = cv2.approxPolyDP(contorno, 1.0, True).reshape(-1, 2)
-        footprint = [[int(px), int(py)] for px, py in contorno]
+        # Apenas pixels MEDIUM ou superiores comprovam a passagem para alerta.
+        # Azul/ciano continua no diagnóstico, sem ligar uma área forte lateral
+        # ao alvo por meio de refletividade fraca.
+        chuva_y, chuva_x = np.nonzero(componente_original & (classes_refletividade >= 2))
+        cortes = np.flatnonzero((np.diff(chuva_y) != 0) | (np.diff(chuva_x) != 1)) + 1
+        grupos = np.split(np.arange(len(chuva_x)), cortes)
+        footprint = {"format": "pixel_runs_v1", "runs": [
+            [int(chuva_y[g[0]]), int(chuva_x[g[0]]), int(chuva_x[g[-1]])]
+            for g in grupos if g.size
+        ]}
         contagens = {
             codigo: int(np.count_nonzero(classes_cluster == codigo))
             for codigo in REFLECTIVITY_CLASS_NAMES
@@ -603,11 +609,60 @@ def _xy_local(lat: float, lon: float, ref_lat: float, ref_lon: float) -> tuple[f
     return leste, norte
 
 
+def _segmento_movel(a, b, velocidade, horizonte_h, raio_km):
+    """Entrada no círculo e distância mínima contínua de um segmento transladado."""
+    direcao = b - a
+    tamanho2 = float(np.dot(direcao, direcao))
+    cortes = [0.0, horizonte_h]
+    if tamanho2 > 1e-12:
+        inicio = -float(np.dot(a, direcao)) / tamanho2
+        taxa = -float(np.dot(velocidade, direcao)) / tamanho2
+        if abs(taxa) > 1e-12:
+            cortes.extend(t for limite in (0.0, 1.0)
+                          if 0 < (t := (limite - inicio) / taxa) < horizonte_h)
+    cortes = sorted(set(cortes))
+    entrada, menor = None, math.inf
+    for baixo, alto in zip(cortes, cortes[1:]):
+        medio = (baixo + alto) / 2
+        parametro = (-float(np.dot(a + velocidade * medio, direcao)) / tamanho2
+                     if tamanho2 > 1e-12 else 0.0)
+        if parametro <= 0:
+            origem, vetor = a, velocidade
+        elif parametro >= 1:
+            origem, vetor = b, velocidade
+        else:
+            origem = a - direcao * float(np.dot(a, direcao)) / tamanho2
+            vetor = velocidade - direcao * float(np.dot(velocidade, direcao)) / tamanho2
+        qa = float(np.dot(vetor, vetor))
+        qb = 2 * float(np.dot(origem, vetor))
+        qc = float(np.dot(origem, origem))
+        instante = min(alto, max(baixo, -qb / (2 * qa))) if qa > 1e-12 else baixo
+        menor = min(menor, math.sqrt(max(0.0, qa * instante**2 + qb * instante + qc)))
+        if qa * baixo**2 + qb * baixo + qc <= raio_km**2 + 1e-9:
+            candidato = baixo
+        elif qa > 1e-12:
+            discriminante = qb * qb - 4 * qa * (qc - raio_km**2)
+            if discriminante < -1e-9:
+                continue
+            candidato = (-qb - math.sqrt(max(0.0, discriminante))) / (2 * qa)
+            if candidato < baixo - 1e-9 or candidato > alto + 1e-9:
+                continue
+            candidato = min(alto, max(baixo, candidato))
+        else:
+            continue
+        entrada = candidato if entrada is None else min(entrada, candidato)
+    return entrada, menor
+
+
 def projetar_footprint(pontos, footprint, bounds, width, height, target_lat, target_lon,
-                       impact_radius_km=12, projection_minutes=60):
-    """Extrapolação linear local dos seis últimos centros e do contorno real."""
-    vazio = dict(trajectory_method="linear_xy_6", trajectory_frames_used=0,
+                       impact_radius_km=5, projection_minutes=120,
+                       min_frames=4, min_duration_minutes=10, max_gap_minutes=15,
+                       max_speed_kmh=150):
+    """Ajusta movimento recente e intercepta continuamente somente eco original."""
+    vazio = dict(trajectory_method="linear_xy_6_pixel_runs", trajectory_frames_used=0,
                  trajectory_confidence="BAIXA", trajectory_residual_km=None,
+                 trajectory_recent_valid=False, trajectory_approaching=None,
+                 trajectory_closest_center_km=None,
                  projected_impact=False, projected_impact_eta_minutes=None,
                  projected_impact_horizon_minutes=None,
                  projected_impact_min_distance_km=None, projections=[])
@@ -615,58 +670,109 @@ def projetar_footprint(pontos, footprint, bounds, width, height, target_lat, tar
         return vazio
     distintos = {p.data_frame: p for p in pontos}
     recentes = [distintos[t] for t in sorted(distintos)[-6:]]
+    # Uma lacuna reinicia a evidência recente; frames anteriores não qualificam
+    # uma célula que reaparece em outra posição após uma falha de coleta.
+    for i in range(len(recentes) - 1, 0, -1):
+        if (recentes[i].data_frame - recentes[i - 1].data_frame).total_seconds() / 60 > max_gap_minutes:
+            recentes = recentes[i:]
+            break
+    vazio["trajectory_frames_used"] = len(recentes)
     if len(recentes) < 2:
         return vazio
     tempos = np.asarray([(p.data_frame - recentes[-1].data_frame).total_seconds() / 3600
                         for p in recentes], dtype=float)
-    if np.ptp(tempos) <= 0:
-        return vazio
     centros = np.asarray([_xy_local(p.centro_lat, p.centro_lon, target_lat, target_lon)
                           for p in recentes])
     matriz = np.column_stack((tempos, np.ones(len(tempos))))
     ajuste = np.linalg.lstsq(matriz, centros, rcond=None)[0]
     velocidade = ajuste[0]
-    residuos = np.linalg.norm(centros - matriz @ ajuste, axis=1)
-    residual = float(np.sqrt(np.mean(residuos ** 2)))
+    residual = float(np.sqrt(np.mean(np.linalg.norm(centros - matriz @ ajuste, axis=1) ** 2)))
     duracao = -tempos[0] * 60
     velocidade_kmh = float(np.linalg.norm(velocidade))
     bearing = (math.degrees(math.atan2(velocidade[0], velocidade[1])) + 360) % 360
     passos = np.diff(centros, axis=0)
-    coerencia = (float(np.linalg.norm(np.sum(passos, axis=0))) /
-                 float(np.sum(np.linalg.norm(passos, axis=1)))) if np.any(passos) else 0
-    confiavel = (len(recentes) >= 4 and duracao >= 10 and 2 <= velocidade_kmh <= 150
-                 and residual <= 5 and coerencia >= 0.7)
+    magnitudes = np.linalg.norm(passos, axis=1)
+    velocidades = magnitudes / np.diff(tempos)
+    coerencia = float(np.linalg.norm(np.sum(passos, axis=0))) / float(np.sum(magnitudes)) if np.any(passos) else 0
+    direcoes = [(math.degrees(math.atan2(p[0], p[1])) + 360) % 360
+                for p, tamanho in zip(passos, magnitudes) if tamanho >= 0.2]
+    estavel = (len(direcoes) == len(passos) and np.min(velocidades) >= 2
+               and np.max(velocidades) <= max_speed_kmh + 1e-6
+               and np.std(velocidades) / max(1.0, float(np.mean(velocidades))) <= 0.35
+               and all(diferenca_angular_graus(d, bearing) <= 35 for d in direcoes)
+               and all(diferenca_angular_graus(a, b) <= 45 for a, b in zip(direcoes, direcoes[1:])))
+    reais = isinstance(footprint, dict) and footprint.get("format") == "pixel_runs_v1"
+    confiavel = bool(reais and len(recentes) >= max(4, min_frames)
+                     and duracao >= max(10, min_duration_minutes) and 2 <= velocidade_kmh <= max_speed_kmh + 1e-6
+                     and residual <= 5 and coerencia >= 0.8 and estavel)
     confianca = ("ALTA" if confiavel and len(recentes) >= 5 and residual <= 2
                  else "MODERADA" if confiavel else "BAIXA")
-    geometria = []
-    for px, py in footprint:
+
+    def xy(px, py):
         lat, lon = pixel_para_latlon(px, py, bounds, width, height)
-        geometria.append(_xy_local(lat, lon, target_lat, target_lon))
-    if not geometria:
+        return np.asarray(_xy_local(lat, lon, target_lat, target_lon))
+
+    if reais:
+        try:
+            faixas = footprint["runs"]
+            if any(len(f) != 3 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in f)
+                   or not 0 <= f[0] < height or not 0 <= f[1] <= f[2] < width for f in faixas):
+                return vazio
+            segmentos = [(xy(esquerda, y), xy(direita, y)) for y, esquerda, direita in faixas]
+        except (KeyError, TypeError, ValueError):
+            return vazio
+        vertices = None
+    else:
+        # Os cascos antigos continuam legíveis para diagnóstico, mas não
+        # recebem confiança para autorizar chuva sobre um corredor sem eco.
+        try:
+            vertices = np.asarray([xy(px, py) for px, py in footprint], dtype=float)
+        except (TypeError, ValueError):
+            return vazio
+        if len(vertices) < 3 or not np.isfinite(vertices).all():
+            return vazio
+        segmentos = list(zip(vertices, np.roll(vertices, -1, axis=0)))
+    if not segmentos:
         return vazio
-    vertices = np.asarray(geometria, dtype=float)
-    horizontes = sorted(set([0, projection_minutes / 4, projection_minutes / 2,
-                             projection_minutes * 3 / 4, projection_minutes]))
+    horizonte_h = float(projection_minutes) / 60
+    entrada, menor = None, math.inf
+    for a, b in segmentos:
+        instante, distancia = _segmento_movel(a, b, velocidade, horizonte_h, impact_radius_km)
+        menor = min(menor, distancia)
+        if instante is not None:
+            entrada = instante if entrada is None else min(entrada, instante)
+    if vertices is not None and cv2.pointPolygonTest(vertices.astype(np.float32), (0.0, 0.0), False) >= 0:
+        entrada, menor = 0.0, 0.0
+    horizontes = sorted(set([0.0, projection_minutes / 4, projection_minutes / 2,
+                             projection_minutes * 3 / 4, float(projection_minutes)]
+                            + ([entrada * 60] if entrada is not None else [])))
     projecoes = []
     for minutos in horizontes:
-        deslocado = (vertices + velocidade * (minutos / 60)).astype(np.float32)
-        distancia = abs(float(cv2.pointPolygonTest(deslocado, (0.0, 0.0), True)))
-        if cv2.pointPolygonTest(deslocado, (0.0, 0.0), False) >= 0:
+        deslocamento = velocidade * (minutos / 60)
+        distancia = min(_segmento_movel(a + deslocamento, b + deslocamento,
+                                        np.zeros(2), 1.0, impact_radius_km)[1] for a, b in segmentos)
+        if vertices is not None and cv2.pointPolygonTest((vertices + deslocamento).astype(np.float32), (0.0, 0.0), False) >= 0:
             distancia = 0.0
-        projecoes.append(dict(minutes=minutos, intersects=distancia <= impact_radius_km,
-                              min_distance_km=round(distancia, 1)))
-    impacto = next((p for p in projecoes if p["intersects"]), None)
-    return dict(trajectory_method="linear_xy_6", trajectory_frames_used=len(recentes),
-                trajectory_confidence=confianca, trajectory_residual_km=round(residual, 1),
-                trajectory_duration_minutes=round(duracao, 1),
-                trajectory_speed_kmh=round(velocidade_kmh, 1),
-                trajectory_bearing_degrees=round(bearing, 1),
-                trajectory_direction=direcao_cardinal(bearing),
-                projected_impact=bool(impacto),
-                projected_impact_eta_minutes=impacto["minutes"] if impacto else None,
-                projected_impact_horizon_minutes=impacto["minutes"] if impacto else None,
-                projected_impact_min_distance_km=min(p["min_distance_km"] for p in projecoes),
-                projections=projecoes)
+        projecoes.append(dict(minutes=round(minutos, 3), intersects=distancia <= impact_radius_km + 1e-8,
+                              min_distance_km=round(distancia, 3)))
+    velocidade2 = float(np.dot(velocidade, velocidade))
+    instante_centro = max(0.0, -float(np.dot(centros[-1], velocidade)) / velocidade2) if velocidade2 > 1e-12 else 0.0
+    menor_centro = float(np.linalg.norm(centros[-1] + velocidade * instante_centro))
+    aproximando = bool(np.dot(centros[-1], velocidade) < -1 and
+                       np.dot(centros[-1], passos[-1]) < 0) if confiavel else None
+    return dict(trajectory_method="linear_xy_6_pixel_runs" if reais else "linear_xy_6_legacy_polygon",
+                trajectory_frames_used=len(recentes), trajectory_confidence=confianca,
+                trajectory_recent_valid=confiavel, trajectory_approaching=aproximando,
+                trajectory_approach_rate_kmh=round(-float(np.dot(centros[-1], velocidade)) /
+                                                  max(1e-9, float(np.linalg.norm(centros[-1]))), 3),
+                trajectory_closest_center_km=round(menor_centro, 3),
+                trajectory_residual_km=round(residual, 3), trajectory_duration_minutes=round(duracao, 1),
+                trajectory_speed_kmh=round(velocidade_kmh, 3),
+                trajectory_bearing_degrees=round(bearing, 3), trajectory_direction=direcao_cardinal(bearing),
+                projected_impact=entrada is not None,
+                projected_impact_eta_minutes=round(entrada * 60, 3) if entrada is not None else None,
+                projected_impact_horizon_minutes=float(projection_minutes),
+                projected_impact_min_distance_km=round(menor, 3), projections=projecoes)
 
 
 def analisar_track(

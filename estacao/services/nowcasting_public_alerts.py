@@ -16,6 +16,7 @@ from time_utils import agora_utc, iso_utc, iso_local, data_local, parse_datetime
 
 logger = logging.getLogger(__name__)
 ESTADO_CHAVE = "nowcasting_public_alert"
+ALERT_INTENSITIES = {"MEDIUM", "HIGH", "VERY_HIGH"}
 AUSENCIA_CONFIRMADA = {
     "intensity_below_medium", "insufficient_pixels",
 }
@@ -31,7 +32,7 @@ def estado_padrao():
                 last_seen_at=None, last_distance_km=None, clear_since=None,
                 last_result="never", suppressed_for_current_episode=False,
                 pending_tracking_track_id=None, pending_tracking_frame_id=None,
-                pending_tracking_count=0,
+                pending_tracking_count=0, pending_tracking_observed_at=None,
                 pending_medium_proximity_track_id=None,
                 pending_medium_proximity_frame_id=None,
                 pending_medium_proximity_count=0)
@@ -45,6 +46,7 @@ def carregar_estado(conn):
     estado = json.loads(row["mensagem"])
     antigos = estado_padrao().keys() - {
         "pending_tracking_track_id", "pending_tracking_frame_id", "pending_tracking_count",
+        "pending_tracking_observed_at",
         "pending_medium_proximity_track_id", "pending_medium_proximity_frame_id",
         "pending_medium_proximity_count",
     }
@@ -58,6 +60,9 @@ def carregar_estado(conn):
                 type(estado["pending_tracking_track_id"]) is not int
                 or type(estado["pending_tracking_frame_id"]) is not int))):
         raise ValueError("Confirmação pública inválida")
+    if (estado["pending_tracking_observed_at"] is not None
+            and not parse_datetime(estado["pending_tracking_observed_at"], assume_utc=True)):
+        raise ValueError("Horário de confirmação pública inválido")
     if (type(estado["pending_medium_proximity_count"]) is not int
             or estado["pending_medium_proximity_count"] not in (0, 1, 2)
             or (estado["pending_medium_proximity_count"] and (
@@ -111,51 +116,39 @@ def _iniciar(estado, agora):
                   episode_started_at=iso_utc(agora), clear_since=None)
 
 
-def _atualizar_confirmacao_high(estado, avaliacao, snapshot):
+def _atualizar_confirmacao_impacto(estado, avaliacao, snapshot, config):
+    """Exige impacto em dois frames novos do mesmo track, próximos no tempo.
+
+    IDs do banco podem saltar porque outros produtos também são persistidos.
+    A ordem e o intervalo são comprovados pelos timestamps dos frames.
+    """
     decisao = avaliacao.get("decision") or {}
     alerta = snapshot.get("alerta_preventivo") or {}
     frame = (snapshot.get("radar") or {}).get("frame_id")
     track = alerta.get("track_id")
-    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") in ("HIGH", "VERY_HIGH")
-                 and decisao.get("authorization") == "TRACKING"
-                 and type(frame) is int and type(track) is int)
+    momento = parse_datetime((snapshot.get("radar") or {}).get("data_frame"), assume_utc=True)
+    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") in ALERT_INTENSITIES
+                 and type(frame) is int and type(track) is int and momento is not None)
     if not candidato:
         estado.update(pending_tracking_track_id=None, pending_tracking_frame_id=None,
-                      pending_tracking_count=0)
+                      pending_tracking_count=0, pending_tracking_observed_at=None)
         return False
     anterior = estado["pending_tracking_frame_id"]
     if track == estado["pending_tracking_track_id"] and frame == anterior:
-        return estado["pending_tracking_count"] >= 2
+        return False
+    momento_anterior = parse_datetime(estado["pending_tracking_observed_at"], assume_utc=True)
+    intervalo = ((momento - momento_anterior).total_seconds() / 60
+                 if momento_anterior is not None else None)
+    if (track == estado["pending_tracking_track_id"] and type(anterior) is int
+            and (frame < anterior or (intervalo is not None and intervalo <= 0))):
+        return False
+    limite_gap = numero_alerta_valido(config.get("public_trajectory_max_gap_minutes"), 15)
     count = 2 if (track == estado["pending_tracking_track_id"]
-                  and type(anterior) is int and frame == anterior + 1
+                  and type(anterior) is int and frame > anterior
+                  and intervalo is not None and 0 < intervalo <= limite_gap
                   and estado["pending_tracking_count"] >= 1) else 1
     estado.update(pending_tracking_track_id=track, pending_tracking_frame_id=frame,
-                  pending_tracking_count=count)
-    return count >= 2
-
-
-def _atualizar_confirmacao_medium(estado, avaliacao, snapshot):
-    decisao = avaliacao.get("decision") or {}
-    alerta = snapshot.get("alerta_preventivo") or {}
-    frame = (snapshot.get("radar") or {}).get("frame_id")
-    track = alerta.get("track_id")
-    candidato = (avaliacao["eligible"] and decisao.get("radar_intensity") == "MEDIUM"
-                 and decisao.get("authorization") == "PROXIMIDADE"
-                 and type(frame) is int and type(track) is int)
-    if not candidato:
-        estado.update(pending_medium_proximity_track_id=None,
-                      pending_medium_proximity_frame_id=None,
-                      pending_medium_proximity_count=0)
-        return False
-    anterior = estado["pending_medium_proximity_frame_id"]
-    if track == estado["pending_medium_proximity_track_id"] and frame == anterior:
-        return estado["pending_medium_proximity_count"] >= 2
-    count = 2 if (track == estado["pending_medium_proximity_track_id"]
-                  and type(anterior) is int and frame == anterior + 1
-                  and estado["pending_medium_proximity_count"] >= 1) else 1
-    estado.update(pending_medium_proximity_track_id=track,
-                  pending_medium_proximity_frame_id=frame,
-                  pending_medium_proximity_count=count)
+                  pending_tracking_count=count, pending_tracking_observed_at=iso_utc(momento))
     return count >= 2
 
 
@@ -166,39 +159,11 @@ def _mensagem_usuario(usuario, mensagem):
 
 
 def _aplicar_politica_publica(avaliacao, snapshot, config, agora):
-    """Mantém a decisão meteorológica; restringe apenas a notificação pública."""
-    decisao = avaliacao.get("decision") or {}
-    if decisao.get("radar_intensity") == "VERY_HIGH":
-        limite = numero_alerta_valido(config.get("public_very_high_near_km"), 20)
-        # A avaliação compartilhada mantém o raio diagnóstico/admin. Aqui a
-        # rota pública de proximidade termina em 20 km; acima disso a própria
-        # avaliação existente exige tracking e trajetória até 15 km.
-        avaliacao = avaliar_alerta_preventivo_snapshot(
-            snapshot, {**config, "alert_very_high_near_km": limite}, now=agora)
-        decisao = avaliacao.get("decision") or {}
-        if (avaliacao["reason"] == "tracking_insufficient_for_early_warning"
-                and decisao.get("radar_intensity") == "VERY_HIGH"):
-            avaliacao = {**avaliacao, "reason": "very_high_proximity_requires_tracking"}
-    alerta = snapshot.get("alerta_preventivo") or {}
-    # Apenas na rota antecipada, a área projetada pode corrigir o veto
-    # baseado na distância do centro. Os demais gates seguem inalterados.
-    if (not avaliacao["eligible"] and avaliacao["reason"] == "public_trajectory_too_far"
-            and alerta.get("projected_impact") is True):
-        avaliacao = avaliar_alerta_preventivo_snapshot(
-            snapshot, {**config, "public_area_intercept_override": True}, now=agora)
-        decisao = avaliacao.get("decision") or {}
-    if (avaliacao["eligible"] and decisao.get("radar_intensity") == "MEDIUM"
-            and decisao.get("authorization") == "TRACKING"):
-        return {**avaliacao, "eligible": False, "reason": "medium_tracking_monitor_only"}
-    if avaliacao["eligible"] and decisao.get("authorization") == "TRACKING":
-        minimo = config.get("public_trajectory_min_frames", 4)
-        if (alerta.get("tracking_valid") is not True
-                or alerta.get("approaching") is not True
-                or (alerta.get("trajectory_frames_used") or 0) < minimo
-                or alerta.get("trajectory_confidence") not in ("MODERADA", "ALTA")):
-            return {**avaliacao, "eligible": False, "reason": "public_trajectory_low_confidence"}
-        if alerta.get("projected_impact") is not True:
-            return {**avaliacao, "eligible": False, "reason": "public_projected_impact_absent"}
+    """A urgência pública usa seu raio; todos os gates são compartilhados."""
+    if (avaliacao.get("decision") or {}).get("radar_intensity") == "VERY_HIGH":
+        return avaliar_alerta_preventivo_snapshot(
+            snapshot, {**config, "alert_very_high_near_km": numero_alerta_valido(
+                config.get("public_very_high_near_km"), 20)}, now=agora)
     return avaliacao
 
 
@@ -225,8 +190,7 @@ def processar_alerta_publico(snapshot, config, *, now=None):
         estado.update(last_seen_at=iso_utc(agora),
                       last_distance_km=_numero_finito(alerta.get("distance_km")),
                       last_result=avaliacao["reason"])
-        high_confirmado = _atualizar_confirmacao_high(estado, avaliacao, snapshot)
-        medium_confirmado = _atualizar_confirmacao_medium(estado, avaliacao, snapshot)
+        impacto_confirmado = _atualizar_confirmacao_impacto(estado, avaliacao, snapshot, config)
         if _evento_local_observado(snapshot) or avaliacao["reason"] == "local_event_observed":
             if not estado["active"]:
                 _iniciar(estado, agora)
@@ -251,25 +215,19 @@ def processar_alerta_publico(snapshot, config, *, now=None):
             idade = _minutos_desde_utc(estado["last_enqueued_at"], agora)
             if estado["suppressed_for_current_episode"]:
                 estado["last_result"] = "local_event_observed"
-            elif (decisao.get("radar_intensity") in ("HIGH", "VERY_HIGH")
-                  and decisao.get("authorization") == "TRACKING"
-                  and not high_confirmado):
-                estado["last_result"] = "awaiting_projected_impact_confirmation"
             elif severity <= highest:
                 estado["last_result"] = "same_or_lower_severity"
             elif highest == 0 and idade is not None and idade < config.get("alert_cooldown_minutes", 180):
                 estado["last_result"] = "cooldown"
-            elif (decisao.get("radar_intensity") == "MEDIUM"
-                  and decisao.get("authorization") == "PROXIMIDADE"
-                  and not medium_confirmado):
-                estado["last_result"] = "awaiting_medium_proximity_confirmation"
+            elif not impacto_confirmado:
+                estado["last_result"] = "awaiting_projected_impact_confirmation"
             else:
                 evento_id = f"nowcasting:{estado['episode_id']}:{decisao['alert_level'].lower()}"
                 radar = snapshot.get("radar") or {}
                 momento = (parse_datetime(radar.get("data_frame"))
                            or parse_datetime(snapshot.get("gerado_em_utc")))
                 mensagem_alerta = dict(alerta)
-                if decisao.get("authorization") == "TRACKING":
+                if alerta.get("projected_impact") is True:
                     mensagem_alerta["eta_border_minutes"] = alerta.get("projected_impact_eta_minutes")
                     mensagem_alerta["eta_border_quality"] = (
                         "BOA" if alerta.get("trajectory_confidence") == "ALTA" else "MODERADA")

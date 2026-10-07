@@ -118,6 +118,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "operacional": True,
             "stale": False,
             "frame_id": frame_id,
+            "data_frame": datetime.now(timezone.utc).isoformat(),
             "distancia_borda_km": 20,
         })
         state["alerta_preventivo"].update({
@@ -131,6 +132,14 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "tracking_valid": True,
             "approaching": True,
             "trajectory_compatible": True,
+            "trajectory_frames_used": 5,
+            "trajectory_method": "linear_xy_6_pixel_runs",
+            "trajectory_confidence": "ALTA",
+            "trajectory_duration_minutes": 20,
+            "projected_impact": True,
+            "projected_impact_eta_minutes": 25,
+            "projected_impact_min_distance_km": 0,
+            "projected_impact_horizon_minutes": 120,
             "front_pixels_low": 900, "front_pixels_medium": 0,
             "front_pixels_high": 100, "front_pixels_very_high": 0,
             "pixels_refletividade_baixa": 900,
@@ -367,7 +376,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.autenticar_admin()
         page = self.client.get("/admin/monitoramento")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Dados do radar indisponíveis".encode(), page.data)
+        self.assertIn("Dados recentes indisponíveis".encode(), page.data)
         self.assertNotIn("Sem ameaça de chuva para São José".encode(), page.data)
         self.assertNotIn("Monitoramento atualizado".encode(), page.data)
 
@@ -527,7 +536,8 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertIn("Alertas públicos: DESATIVADOS".encode(), page.data)
         self.assertIn("Indisponível".encode(), page.data)
         self.assertIn("Glossário do monitoramento".encode(), page.data)
-        self.assertIn("Outras áreas de chuva monitoradas".encode(), page.data)
+        self.assertNotIn("Outras áreas de chuva monitoradas".encode(), page.data)
+        self.assertIn("Os valores de radar abaixo pertencem à última análise".encode(), page.data)
         self.assertIn("Confirmação regional".encode(), page.data)
         self.assertEqual(payload["versao_algoritmo"], "1.4")
         self.assertEqual(payload["alerta_preventivo"]["nivel"], "INDISPONIVEL")
@@ -560,7 +570,8 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("Monitoramento Meteorológico".encode(), page.data)
         self.assertIn("Indisponível".encode(), page.data)
-        self.assertNotIn("alerta_preventivo", payload)
+        self.assertEqual(payload["alerta_preventivo"]["nivel"], "INDISPONIVEL")
+        self.assertFalse(payload["alerta_preventivo"]["would_send"])
 
     def test_snapshot_persiste_ids_distintos_da_ameaca_e_do_eco_de_proximidade(self):
         from services.nowcasting_repository import salvar_snapshot

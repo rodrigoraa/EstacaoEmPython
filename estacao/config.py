@@ -63,12 +63,16 @@ def config_alerta_preventivo():
         env_str("NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM"), 20)
     resultado["public_track_intercept_km"] = numero_alerta_valido(
         env_str("NOWCASTING_PUBLIC_TRACK_INTERCEPT_KM"), 15)
-    impacto = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_IMPACT_RADIUS_KM"), 12)
-    resultado["public_impact_radius_km"] = impacto if 10 <= impacto <= 15 else 12
+    impacto = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_IMPACT_RADIUS_KM"), 5)
+    resultado["public_impact_radius_km"] = impacto if 1 <= impacto <= 15 else 5
     minimo = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_TRAJECTORY_MIN_FRAMES"), 4, pixels=True)
     resultado["public_trajectory_min_frames"] = minimo if 4 <= minimo <= 6 else 4
-    horizonte = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_PROJECTION_MINUTES"), 60)
-    resultado["public_projection_minutes"] = horizonte if 15 <= horizonte <= 120 else 60
+    horizonte = numero_alerta_valido(env_str("NOWCASTING_PUBLIC_PROJECTION_MINUTES"), 120)
+    resultado["public_projection_minutes"] = horizonte if 15 <= horizonte <= 120 else 120
+    resultado["public_trajectory_max_gap_minutes"] = numero_alerta_valido(
+        env_str("NOWCASTING_PUBLIC_TRAJECTORY_MAX_GAP_MINUTES"), 15)
+    resultado["alert_delivery_max_age_minutes"] = numero_alerta_valido(
+        env_str("NOWCASTING_ALERT_DELIVERY_MAX_AGE_MINUTES"), 15)
     for classe, percentual, pixels in (("medium", 20, 10), ("strong", 10, 2), ("very_high", 2, 2)):
         for sufixo, padrao in (("percent", percentual), ("pixels", pixels)):
             chave = f"alert_min_{classe}_reflectivity_{sufixo}"
@@ -76,7 +80,7 @@ def config_alerta_preventivo():
                 env_str(f"NOWCASTING_{chave.upper()}"), padrao,
                 percentual=sufixo == "percent", pixels=sufixo == "pixels",
             )
-    for classe, perto, antecipado in (("medium", 25, 50), ("high", 35, 75), ("very_high", 50, 100)):
+    for classe, perto, antecipado in (("medium", 25, 100), ("high", 35, 150), ("very_high", 50, 150)):
         for rota, padrao in (("near", perto), ("tracked", antecipado)):
             chave = f"alert_{classe}_{rota}_km"
             resultado[chave] = numero_alerta_valido(env_str(f"NOWCASTING_{chave.upper()}"), padrao)
@@ -205,7 +209,10 @@ def nowcasting_config():
             5.0, env_float("NOWCASTING_UPSTREAM_CORRIDOR_KM", 50)
         ),
         "radar_max_age_minutes": max(
-            5, env_int("NOWCASTING_RADAR_MAX_AGE_MINUTES", 45)
+            5, env_int("NOWCASTING_RADAR_MAX_AGE_MINUTES", 15)
+        ),
+        "radar_display_max_age_minutes": max(
+            1, env_int("RADAR_STALE_MINUTES", 45)
         ),
         "regional_max_age_minutes": max(
             30, env_int("NOWCASTING_REGIONAL_MAX_AGE_MINUTES", 180)
@@ -219,7 +226,7 @@ def nowcasting_config():
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.6") or "1.6",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.7") or "1.7",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),

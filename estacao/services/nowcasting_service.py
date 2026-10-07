@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 
+from config import numero_alerta_valido
 from services.nowcasting_intensity import analisar_intensidade_cluster
 from services.preventive_alerts import (
     criar_alerta_preventivo,
@@ -14,10 +15,10 @@ from services.preventive_alerts import (
     selecionar_eco_alerta_proximidade,
     ALERT_SEVERITY,
 )
-from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
+from time_utils import LOCAL_TZ, agora_utc, iso_local, iso_utc, parse_datetime
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.6"
+NOWCASTING_ALGORITHM_VERSION = "1.7"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -79,6 +80,8 @@ def snapshot_operacionalmente_atual(snapshot, config, now=None):
         return False
     if radar.get("stale") is True:
         return False
+    if not frame_radar_atual(radar, config, now=agora):
+        return False
     alerta = snapshot.get("alerta_preventivo") or {}
     if not isinstance(alerta, dict):
         return False
@@ -87,17 +90,142 @@ def snapshot_operacionalmente_atual(snapshot, config, now=None):
     return True
 
 
+def frame_radar_atual(frame, config, now=None):
+    """Um snapshot recém-gerado não torna uma imagem antiga operacional."""
+    frame = frame or {}
+    momento = parse_datetime(
+        frame.get("data_frame_utc") or frame.get("data_frame"), assume_utc=True
+    )
+    if not momento or frame.get("timestamp_status") == "suspect":
+        return False
+    agora = (now or agora_utc()).astimezone(timezone.utc)
+    idade = (agora - momento.astimezone(timezone.utc)).total_seconds() / 60.0
+    limite = numero_alerta_valido((config or {}).get("radar_max_age_minutes"), 15)
+    return -1.0 <= idade <= limite
+
+
+def _frescor_fonte(timestamp, limite, agora, fonte, *, assume_utc=True):
+    """Revalida a hora da observacao, sem renovar a idade ao ler o snapshot."""
+    momento = parse_datetime(timestamp, assume_utc=assume_utc)
+    idade = (
+        (agora - momento.astimezone(timezone.utc)).total_seconds() / 60.0
+        if momento else None
+    )
+    if idade is None or idade < -1.0:
+        motivo = f"{fonte}_timestamp_invalid"
+    elif idade > limite:
+        motivo = f"{fonte}_stale"
+    else:
+        motivo = None
+    return {
+        "atual": motivo is None,
+        "idade_minutos": round(max(0.0, idade), 1) if idade is not None else None,
+        "limite_minutos": limite,
+        "motivo": motivo,
+    }
+
+
 def preparar_estado_nowcasting_admin(snapshot, config, now=None):
-    """Aplica a mesma semantica fail-safe ao painel e a API administrativos."""
+    """Distingue analise, radar e leitura local, preservando alertas fail-safe."""
+    agora = (now or agora_utc()).astimezone(timezone.utc)
     janela = janela_snapshot_operacional_minutos(config)
     estado = dict(snapshot) if isinstance(snapshot, dict) else None
-    monitoramento_atual = snapshot_operacionalmente_atual(
-        estado, config, now=now
+    analise = _frescor_fonte(
+        (estado or {}).get("gerado_em_utc"), janela, agora, "snapshot"
     )
-    snapshot_desatualizado = bool(snapshot) and not monitoramento_atual
+    radar = (estado or {}).get("radar") or {}
+    radar = dict(radar) if isinstance(radar, dict) else {}
+    frescor_radar = _frescor_fonte(
+        radar.get("data_frame_utc") or radar.get("data_frame"),
+        numero_alerta_valido((config or {}).get("radar_max_age_minutes"), 15),
+        agora, "radar",
+    )
+    if radar.get("timestamp_status") == "suspect":
+        frescor_radar.update(atual=False, motivo="radar_timestamp_invalid")
+    elif frescor_radar["atual"] and radar.get("stale") is True:
+        frescor_radar.update(atual=False, motivo="radar_stale")
+    elif frescor_radar["atual"] and (
+        radar.get("disponivel") is False or radar.get("operacional") is not True
+    ):
+        frescor_radar.update(atual=False, motivo="radar_unavailable")
+
+    escola = (estado or {}).get("escola")
+    escola = dict(escola) if isinstance(escola, dict) else None
+    timestamp_escola = (
+        (escola or {}).get("measured_at_utc") or (escola or {}).get("measured_at")
+    )
+    timestamp_escola_utc = bool((escola or {}).get("measured_at_utc"))
+    estacao = _frescor_fonte(
+        timestamp_escola,
+        numero_alerta_valido((config or {}).get("local_max_age_minutes"), 5),
+        agora, "station", assume_utc=timestamp_escola_utc,
+    )
+    if estacao["atual"] and (escola or {}).get("stale") is not False:
+        estacao.update(atual=False, motivo="station_stale")
+    chuva_na_estacao = None
+    if estacao["atual"]:
+        valor = escola.get("rain_rate")
+        try:
+            taxa = float(valor) if not isinstance(valor, bool) else None
+        except (TypeError, ValueError, OverflowError):
+            taxa = None
+        if taxa is not None and math.isfinite(taxa) and taxa >= 0:
+            chuva_na_estacao = taxa > 0
+            escola["rain_rate"] = taxa
+        else:
+            escola["rain_rate"] = None
+    if escola is not None:
+        medicao = parse_datetime(timestamp_escola, assume_utc=timestamp_escola_utc)
+        if medicao:
+            escola["measured_at"] = iso_local(medicao)
+        escola.update(
+            age_minutes=estacao["idade_minutos"], stale=not estacao["atual"]
+        )
+        estado["escola"] = escola
+
+    monitoramento_atual = snapshot_operacionalmente_atual(
+        estado, config, now=agora
+    ) and frescor_radar["atual"]
+    ultima_observacao_radar = None
+    observacao = _frescor_fonte(
+        radar.get("data_frame_utc") or radar.get("data_frame"),
+        numero_alerta_valido((config or {}).get("radar_display_max_age_minutes"), 45),
+        agora, "radar",
+    )
+    if (
+        analise["atual"] and observacao["atual"]
+        and radar.get("disponivel") is True and radar.get("frame_id")
+        and radar.get("timestamp_status") != "suspect"
+    ):
+        principal = (estado or {}).get("ameaca_principal")
+        distancia = principal.get("distance_km") if isinstance(principal, dict) else None
+        try:
+            distancia = float(distancia) if not isinstance(distancia, bool) else None
+        except (TypeError, ValueError, OverflowError):
+            distancia = None
+        if distancia is not None and (not math.isfinite(distancia) or distancia < 0):
+            distancia = None
+        momento = parse_datetime(
+            radar.get("data_frame_utc") or radar.get("data_frame"), assume_utc=True
+        )
+        momento_local = momento.astimezone(LOCAL_TZ)
+        ultima_observacao_radar = {
+            "data_frame_local": iso_local(momento),
+            "horario_local": momento_local.strftime("%d/%m %H:%M"),
+            "idade_minutos": observacao["idade_minutos"],
+            "limite_minutos": observacao["limite_minutos"],
+            "historica": not monitoramento_atual,
+            "distance_km": distancia,
+            "frame_id": radar["frame_id"],
+            "imagem_disponivel": radar.get("imagem_disponivel") is True,
+        }
+    snapshot_desatualizado = bool(estado) and not analise["atual"]
+    motivo = (
+        analise["motivo"] if not analise["atual"] else frescor_radar["motivo"]
+    )
     ultimo_nivel_calculado = None
 
-    if estado and snapshot_desatualizado:
+    if estado and not monitoramento_atual:
         alerta_anterior = estado.get("alerta_preventivo") or {}
         if isinstance(alerta_anterior, dict):
             ultimo_nivel_calculado = alerta_anterior.get("nivel")
@@ -106,11 +234,28 @@ def preparar_estado_nowcasting_admin(snapshot, config, now=None):
             radar_atualizado=False,
             evento_local=False,
         )
-        alerta_indisponivel["message"] = (
-            "Monitoramento desatualizado. O último alerta calculado não deve ser "
-            "interpretado como situação atual."
-        )
+        if snapshot_desatualizado:
+            alerta_indisponivel["message"] = (
+                "Monitoramento desatualizado. O último alerta calculado não deve ser "
+                "interpretado como situação atual."
+            )
+        elif motivo == "radar_stale":
+            alerta_indisponivel["message"] = (
+                "Radar desatualizado. Aguarde uma imagem recente para acompanhar "
+                "distância, movimento e projeções."
+            )
+        else:
+            alerta_indisponivel["message"] = (
+                "Dados atuais do radar indisponíveis. Aguarde uma imagem válida "
+                "para acompanhar distância, movimento e projeções."
+            )
         estado["alerta_preventivo"] = alerta_indisponivel
+
+    if estado:
+        radar["stale"] = not frescor_radar["atual"]
+        radar["operacional"] = monitoramento_atual
+        estado["radar"] = radar
+        estado["evento_local_observado"] = chuva_na_estacao is True
 
     return {
         "estado": estado,
@@ -118,6 +263,14 @@ def preparar_estado_nowcasting_admin(snapshot, config, now=None):
         "snapshot_desatualizado": snapshot_desatualizado,
         "janela_snapshot_minutos": janela,
         "ultimo_nivel_calculado": ultimo_nivel_calculado,
+        "analise_atual": analise["atual"],
+        "radar_atual": frescor_radar["atual"],
+        "estacao_atual": estacao["atual"],
+        "chuva_na_estacao": chuva_na_estacao,
+        "motivo_indisponibilidade": motivo,
+        "ultima_observacao_radar": ultima_observacao_radar,
+        "frescor_fontes": {"analise": analise, "radar": frescor_radar,
+                          "estacao": estacao},
     }
 
 
@@ -252,6 +405,7 @@ def analisar_ameaca(track, cluster, regional, config, radar_fresh=True):
     track_valid = bool(
         radar_fresh
         and (track.get("quantidade_frames") or 0) >= config["track_min_frames"]
+        and (track.get("duracao_minutos") or 0) >= config.get("track_min_duration_minutes", 10)
         and track.get("velocidade_kmh") is not None
         and track.get("bearing_movimento") is not None
     )
@@ -433,6 +587,7 @@ def analisar_nowcasting(radar, regional, local, config, now=None):
     timestamp_suspect = frame.get("timestamp_status") == "suspect"
     radar_fresh = bool(
         radar.get("disponivel") and not radar.get("stale") and not timestamp_suspect
+        and frame_radar_atual(frame, config, now=now)
     )
     entradas = list(radar.get("tracks_atuais") or [])
     if not entradas and radar.get("cluster_mais_proximo"):

@@ -40,12 +40,12 @@ class PublicAlertsTest(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def snapshot(self, intensity="MEDIUM", minute=0, distance=10, tracking=False):
+    def snapshot(self, intensity="MEDIUM", minute=0, distance=10, tracking=True):
         return {
             "gerado_em_utc": (self.now + timedelta(minutes=minute)).isoformat(),
             "evento_local_observado": False,
             "escola": {"rain_rate": 0, "stale": False},
-            "radar": {"stale": False, "operacional": True, "frame_id": 70,
+            "radar": {"stale": False, "operacional": True, "frame_id": 1000 + minute*10,
                       "data_frame": (self.now + timedelta(minutes=minute)).isoformat()},
             "alerta_preventivo": {
                 "nivel": "VERMELHO", "distance_km": distance,
@@ -56,6 +56,10 @@ class PublicAlertsTest(unittest.TestCase):
                 "track_id": 27, "tracking_valid": tracking,
                 "approaching": tracking, "trajectory_compatible": tracking,
                 "closest_approach_km": 13 if tracking else None,
+                "trajectory_frames_used": 5 if tracking else 1,
+                "trajectory_method": "linear_xy_6_pixel_runs",
+                "trajectory_duration_minutes": 20, "trajectory_confidence": "ALTA" if tracking else "BAIXA",
+                "projected_impact_min_distance_km": 3, "projected_impact": tracking, "projected_impact_horizon_minutes": 120, "projected_impact_eta_minutes": 25 if tracking else None,
                 "clutter": False, "eta_border_minutes": 25,
                 "eta_border_quality": "BOA",
             },
@@ -66,13 +70,16 @@ class PublicAlertsTest(unittest.TestCase):
             snapshot or self.snapshot(minute=minute), config or self.config,
             now=self.now + timedelta(minutes=minute))
 
-    def confirmed_medium(self, minute=0, distance=10, config=None):
-        first = self.snapshot("MEDIUM", minute, distance)
-        first["radar"]["frame_id"] = 500 + minute
-        self.process(first, minute, config)
-        second = self.snapshot("MEDIUM", minute, distance)
-        second["radar"]["frame_id"] = 501 + minute
-        return self.process(second, minute, config)
+    def confirmed_medium(self, minute=0, distance=10, config=None, intensity="MEDIUM"):
+        first = self.snapshot(intensity, minute, distance)
+        first["radar"].update(frame_id=1000+minute*10,
+                              data_frame=(self.now+timedelta(minutes=minute-5)).isoformat())
+        previous = self.process(first, minute, config)
+        second = self.snapshot(intensity, minute, distance)
+        second["radar"]["frame_id"] = 1001+minute*10
+        result = self.process(second, minute, config)
+        result["enfileirados"] += previous["enfileirados"]
+        return result
 
     def rows(self, table):
         conn = self.db.get_db()
@@ -108,7 +115,7 @@ class PublicAlertsTest(unittest.TestCase):
     def test_escalonamento_identidade_prioridades(self):
         identities = []
         for i, intensity in enumerate(["MEDIUM", "MEDIUM", "HIGH", "HIGH", "VERY_HIGH", "HIGH", "MEDIUM"]):
-            snap = self.snapshot(intensity, minute=i, tracking=i % 2 == 1)
+            snap = self.snapshot(intensity, minute=i, tracking=True)
             snap["radar"]["frame_id"] = 70 + i
             snap["alerta_preventivo"]["cluster_id"] = i
             identities.append(self.process(snap, minute=i)["state"]["episode_id"])
@@ -137,21 +144,16 @@ class PublicAlertsTest(unittest.TestCase):
         self.assertEqual(self.process(minute=179)["reason"], "cooldown")
         self.assertEqual(len(self.rows("alertas_eventos")), 1)
         snap = self.snapshot(minute=180)
-        snap["radar"]["frame_id"] = 71
         result = self.process(snap, minute=180)
         self.assertEqual(result["enfileirados"], 2)
         self.assertEqual(result["state"]["episode_id"], new)
 
     def test_histerese_preserva_episodio_em_todas_as_distancias(self):
-        for i, (intensity, near, far) in enumerate((("MEDIUM", 24, 51), ("HIGH", 34, 76),
-                                                   ("VERY_HIGH", 19, 101))):
+        for i, (intensity, near, far) in enumerate((("MEDIUM", 24, 101), ("HIGH", 34, 151),
+                                                   ("VERY_HIGH", 19, 151))):
             with self.subTest(intensity=intensity):
                 start = i * 200
-                first = self.process(self.snapshot(intensity, start, near), start)
-                if intensity == "MEDIUM":
-                    second = self.snapshot(intensity, start, near)
-                    second["radar"]["frame_id"] = 71
-                    first = self.process(second, start)
+                first = self.confirmed_medium(minute=start, distance=near, intensity=intensity)
                 episode = first["state"]["episode_id"]
                 self.assertEqual(first["enfileirados"], 2)
                 for minute, distance in ((1, near + 6), (61, near + 11),
@@ -183,7 +185,7 @@ class PublicAlertsTest(unittest.TestCase):
             ("alerta_preventivo", "tracking_valid", False, "tracking_insufficient_for_early_warning"),
             ("alerta_preventivo", "approaching", False, "not_approaching"),
             ("alerta_preventivo", "trajectory_compatible", False, "trajectory_incompatible"),
-            ("alerta_preventivo", "distance_km", 90, "outside_proximity_range"),
+            ("alerta_preventivo", "distance_km", 101, "outside_proximity_range"),
         ]
         for i, (section, key, value, reason) in enumerate(changes):
             with self.subTest(reason=reason):
@@ -225,6 +227,7 @@ class PublicAlertsTest(unittest.TestCase):
                 if change == "stale": snap["radar"]["stale"] = True
                 if change == "unavailable": snap["radar"]["operacional"] = False
                 if change == "clutter": snap["alerta_preventivo"]["clutter"] = True
+                if change == "tracking": snap["alerta_preventivo"]["tracking_valid"] = False
                 if change == "snapshot": snap["gerado_em_utc"] = "invalid"
                 result = self.process(snap, minute=31)
                 self.assertIsNone(result["state"]["clear_since"])
@@ -254,8 +257,8 @@ class PublicAlertsTest(unittest.TestCase):
         self.assertEqual(self.rows("alertas_fila"), [])
 
     def test_rotas_e_leitura_stale(self):
-        for intensity, distance, tracking in [("MEDIUM", 20, False),
-                                               ("HIGH", 30, False), ("VERY_HIGH", 20, False)]:
+        for intensity, distance, tracking in [("MEDIUM", 20, True),
+                                               ("HIGH", 30, True), ("VERY_HIGH", 20, True)]:
             with self.subTest(intensity=intensity, tracking=tracking):
                 # Rearm e cooldown entre episódios, sem apagar qualquer histórico.
                 minute = len(self.rows("alertas_eventos")) * 200
@@ -264,9 +267,10 @@ class PublicAlertsTest(unittest.TestCase):
                     self.process(self.snapshot("LOW", minute=minute-1), minute=minute-1)
                 snap = self.snapshot(intensity, minute, distance, tracking)
                 snap["escola"].update(rain_rate=2, stale=True)
-                if intensity == "MEDIUM":
-                    self.process(snap, minute)
-                    snap["radar"]["frame_id"] += 1
+                snap["radar"]["data_frame"] = (self.now+timedelta(minutes=minute-5)).isoformat()
+                self.process(snap, minute)
+                snap["radar"].update(frame_id=snap["radar"]["frame_id"]+1,
+                                     data_frame=(self.now+timedelta(minutes=minute)).isoformat())
                 self.assertEqual(self.process(snap, minute)["enfileirados"], 2)
 
     def test_chuva_local_suprime_escalonamento_ate_rearm(self):
@@ -284,7 +288,7 @@ class PublicAlertsTest(unittest.TestCase):
                 for eta, quality in [(25, "BOA"), (25, "MODERADA"), (None, "BOA"),
                                      (float("nan"), "BOA"), (-1, "BOA"), (25, "RUIM")]:
                     snap = self.snapshot(tracking=tracking)
-                    snap["alerta_preventivo"].update(alert_level=level, eta_border_minutes=eta, eta_border_quality=quality)
+                    snap["alerta_preventivo"].update(alert_level=level, projected_impact_eta_minutes=eta, trajectory_confidence="ALTA" if quality in {"BOA", "MODERADA"} else "BAIXA")
                     msg = montar_mensagem_preventiva(snap)
                     self.assertEqual(msg.count("Distrito de São José"), 1)
                     self.assertEqual(msg.count("https://meteo.eesjv.com.br"), 1)
@@ -317,7 +321,7 @@ class PublicAlertsTest(unittest.TestCase):
         for table in ("alertas_eventos", "alertas_fila"):
             self.assertEqual(self.rows(table), [])
         self.assertEqual(json.loads(self.rows("health_check_estado")[0]["mensagem"])
-                         ["pending_medium_proximity_count"], 1)
+                         ["pending_tracking_count"], 1)
 
     def test_estado_corrompido_falha_fechado(self):
         self.confirmed_medium()
@@ -332,10 +336,9 @@ class PublicAlertsTest(unittest.TestCase):
 
     def test_concorrencia(self):
         self.process()
-        original = self.snapshot()
-        original["radar"]["frame_id"] = 71
+        original = self.snapshot(minute=5)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(lambda _: self.process(original), range(2)))
+            results = list(pool.map(lambda _: self.process(original, minute=5), range(2)))
         self.assertEqual(sum(r["enfileirados"] for r in results), 2)
         self.assertEqual(len(self.rows("alertas_eventos")), 1)
 
@@ -365,336 +368,169 @@ class PublicAlertsTest(unittest.TestCase):
         self.assertEqual(config["alert_rearm_minutes"], 60)
         self.assertEqual(config["public_track_intercept_km"], 15)
         self.assertEqual(config["public_very_high_near_km"], 20)
-        self.assertEqual(config["public_impact_radius_km"], 12)
+        self.assertEqual(config["public_impact_radius_km"], 5)
         self.assertEqual(config["public_trajectory_min_frames"], 4)
-        self.assertEqual(config["public_projection_minutes"], 60)
+        self.assertEqual(config["public_projection_minutes"], 120)
         for invalid in ("0", "-1", "nan", "inf", "invalid"):
             with self.subTest(invalid=invalid), mock.patch.dict(
                     os.environ, {"NOWCASTING_PUBLIC_VERY_HIGH_NEAR_KM": invalid}):
                 self.assertEqual(nowcasting_config()["public_very_high_near_km"], 20)
             with self.subTest(impact=invalid), mock.patch.dict(
                     os.environ, {"NOWCASTING_PUBLIC_IMPACT_RADIUS_KM": invalid}):
-                self.assertEqual(nowcasting_config()["public_impact_radius_km"], 12)
+                self.assertEqual(nowcasting_config()["public_impact_radius_km"], 5)
 
-    def test_very_high_publico_limite_e_trajetoria(self):
-        cases = (
-            (20.1, False, False, False, None, "very_high_proximity_requires_tracking"),
-            (40, True, True, True, 20, "public_trajectory_too_far"),
-            (35, True, False, True, 10, "not_approaching"),
-            (35, True, True, False, 10, "trajectory_incompatible"),
-        )
-        for distance, tracking, approaching, compatible, closest, reason in cases:
-            with self.subTest(distance=distance, tracking=tracking, reason=reason):
-                snap = self.snapshot("VERY_HIGH", distance=distance, tracking=tracking)
-                snap["alerta_preventivo"].update(
-                    approaching=approaching, trajectory_compatible=compatible,
-                    closest_approach_km=closest)
-                result = self.process(snap)
-                self.assertEqual(result["reason"], reason)
-                self.assertEqual(result["enfileirados"], 0)
-                self.assertEqual(self.rows("alertas_eventos"), [])
-                self.assertIsNone(result["state"]["clear_since"])
-        snap = self.snapshot("VERY_HIGH", distance=40, tracking=True)
-        snap["alerta_preventivo"].update(
-            closest_approach_km=12, trajectory_frames_used=5,
-            trajectory_confidence="ALTA", projected_impact=True)
-        result = self.process(snap)
-        self.assertEqual(result["enfileirados"], 0)
-        snap["radar"]["frame_id"] = 71
-        result = self.process(snap)
-        self.assertEqual(result["enfileirados"], 2)
-        self.assertEqual(result["state"]["highest_enqueued_severity"], 3)
-
-    def test_very_high_proximo_imediato_no_limite(self):
-        snap = self.snapshot("VERY_HIGH", distance=20.0)
-        result = self.process(snap)
-        self.assertEqual(result["enfileirados"], 2)
-        self.assertEqual(result["state"]["highest_enqueued_severity"], 3)
-
-    def test_very_high_caso_real_e_frame_high_anterior(self):
-        from services.nowcasting_alert_evaluation import avaliar_alerta_preventivo_snapshot
-        high = self.snapshot("HIGH", distance=35.5)
-        high["radar"]["frame_id"] = 7399
-        high["alerta_preventivo"].update(track_id=2321, cluster_id=20071)
-        first = self.process(high)
-        self.assertEqual(first["enfileirados"], 0)
-        very_high = self.snapshot("VERY_HIGH", minute=5, distance=37.6)
-        very_high["radar"]["frame_id"] = 7400
-        very_high["alerta_preventivo"].update(
-            track_id=2321, cluster_id=20071, front_pixels_low=85,
-            front_pixels_medium=124, front_pixels_high=44,
-            front_pixels_very_high=9, tracking_valid=False,
-            approaching=False, trajectory_compatible=False,
-            closest_approach_km=None, projected_impact=False)
-        diagnostic = avaliar_alerta_preventivo_snapshot(
-            very_high, self.config, now=self.now + timedelta(minutes=5))
-        self.assertEqual(diagnostic["decision"]["radar_intensity"], "VERY_HIGH")
-        self.assertEqual(diagnostic["decision"]["alert_level"], "ALERTA")
-        self.assertEqual(diagnostic["decision"]["authorization"], "PROXIMIDADE")
-        from services.nowcasting_test_alerts import avaliar_alerta_teste_admin
-        admin = avaliar_alerta_teste_admin(
-            very_high, {**self.config, "alerts_enabled": False,
-                        "test_alerts_enabled": True}, admin_phone="5567999999999",
-            now=self.now + timedelta(minutes=5))
-        self.assertTrue(admin["eligible"])
-        self.assertEqual(admin["decision"]["authorization"], "PROXIMIDADE")
-        second = self.process(very_high, 5)
-        self.assertEqual(second["reason"], "very_high_proximity_requires_tracking")
-        self.assertEqual(second["enfileirados"], 0)
-        self.assertFalse(second["state"]["active"])
-        self.assertIsNone(second["state"]["episode_id"])
-        self.assertIsNone(second["state"]["clear_since"])
+    def test_todas_intensidades_exigem_impacto_mesmo_muito_perto(self):
+        for intensity in ("MEDIUM", "HIGH", "VERY_HIGH"):
+            for distance in (2, 10, 20, 40, 90):
+                for field, value, reason in (
+                    ("tracking_valid", False, "tracking_insufficient_for_early_warning"),
+                    ("approaching", False, "not_approaching"),
+                    ("trajectory_compatible", False, "trajectory_incompatible"),
+                    ("trajectory_frames_used", 3, "public_trajectory_low_confidence"),
+                    ("trajectory_confidence", "BAIXA", "public_trajectory_low_confidence"),
+                    ("projected_impact", False, "public_projected_impact_absent"),
+                    ("projected_impact_eta_minutes", None, "projected_impact_eta_invalid"),
+                ):
+                    with self.subTest(intensity=intensity, distance=distance, field=field):
+                        snap = self.snapshot(intensity, distance=distance)
+                        snap["alerta_preventivo"][field] = value
+                        result = self.process(snap)
+                        self.assertEqual(result["reason"], reason)
+                        self.assertEqual(result["enfileirados"], 0)
         self.assertEqual(self.rows("alertas_eventos"), [])
         self.assertEqual(self.rows("alertas_fila"), [])
 
-    def test_centro_compativel_mas_area_passa_ao_lado(self):
-        snap = self.distant(approach=8)
-        snap["alerta_preventivo"].update(projected_impact=False)
-        for frame in (100, 101):
-            snap["radar"]["frame_id"] = frame
-            result = self.process(snap)
-            self.assertEqual(result["reason"], "public_projected_impact_absent")
-        self.assertEqual(self.rows("alertas_eventos"), [])
-        self.assertEqual(self.rows("alertas_fila"), [])
-
-    def test_area_larga_pode_interceptar_com_centro_fora_de_15_km(self):
-        snap = self.distant(approach=18)
-        self.assertEqual(self.process(snap)["reason"],
-                         "awaiting_projected_impact_confirmation")
-        snap["radar"]["frame_id"] = 101
-        self.assertEqual(self.process(snap)["enfileirados"], 2)
-
-    def test_projecao_instavel_ou_curta_nao_confirma(self):
-        snap = self.distant()
-        for confidence, frames in (("BAIXA", 5), ("ALTA", 3)):
-            with self.subTest(confidence=confidence, frames=frames):
-                snap["alerta_preventivo"].update(
-                    trajectory_confidence=confidence, trajectory_frames_used=frames)
-                self.assertEqual(self.process(snap)["reason"],
-                                 "public_trajectory_low_confidence")
-        self.assertEqual(self.rows("alertas_eventos"), [])
-
-    def distant(self, intensity="HIGH", frame=100, track=2146, approach=13.4, minute=0):
-        snap = self.snapshot(intensity, minute=minute, distance=55.9, tracking=True)
-        snap["radar"]["frame_id"] = frame
-        snap["alerta_preventivo"].update(
-            track_id=track, closest_approach_km=approach,
-            trajectory_frames_used=5, trajectory_confidence="ALTA",
-            projected_impact=True)
-        return snap
-
-    def test_medium_real_precisa_dois_frames_do_mesmo_track(self):
-        snap = self.snapshot("MEDIUM", distance=9.1)
-        snap["radar"]["frame_id"] = 500
-        snap["alerta_preventivo"].update(
-            track_id=2203, cluster_id=19294, front_pixels_low=70,
-            front_pixels_medium=46, front_pixels_high=0, front_pixels_very_high=0)
-        first = self.process(snap)
-        self.assertEqual(first["reason"], "awaiting_medium_proximity_confirmation")
-        self.assertEqual(first["state"]["pending_medium_proximity_count"], 1)
-        episode = first["state"]["episode_id"]
-        self.assertTrue(first["state"]["active"])
-        self.assertIsNone(first["state"]["clear_since"])
-        self.assertEqual(self.process(snap)["state"]["pending_medium_proximity_count"], 1)
-        self.assertEqual(self.rows("alertas_eventos"), [])
-        snap["radar"]["frame_id"] = 501
-        second = self.process(snap)
-        self.assertEqual(second["enfileirados"], 2)
-        self.assertEqual(second["state"]["episode_id"], episode)
-        self.assertEqual(self.process(snap)["enfileirados"], 0)
-        self.assertEqual(len(self.rows("alertas_eventos")), 1)
-
-    def test_medium_pendente_reseta_ou_reinicia(self):
-        for change in ("LOW", "DISTANT", "TRACK", "SKIP"):
-            with self.subTest(change=change):
-                snap = self.snapshot("MEDIUM", distance=9.1)
-                snap["radar"]["frame_id"] = 500
-                self.process(snap)
-                snap["radar"]["frame_id"] = 502 if change == "SKIP" else 501
-                if change == "LOW":
-                    snap["alerta_preventivo"].update(front_pixels_medium=0, front_pixels_low=100)
-                elif change == "DISTANT":
-                    snap["alerta_preventivo"].update(distance_km=30, tracking_valid=True,
-                        approaching=True, trajectory_compatible=True, closest_approach_km=13)
-                elif change == "TRACK":
-                    snap["alerta_preventivo"]["track_id"] = 2250
-                result = self.process(snap)
-                self.assertEqual(result["enfileirados"], 0)
-                self.assertEqual(result["state"]["pending_medium_proximity_count"],
-                                 0 if change in ("LOW", "DISTANT") else 1)
-                self.assertEqual(self.rows("alertas_eventos"), [])
-                self.assertEqual(self.rows("alertas_fila"), [])
-                self.process(self.snapshot("LOW"))
-
-    def test_medium_pendente_nao_atrasa_intensidade_superior(self):
-        first = self.snapshot("MEDIUM")
-        first["radar"]["frame_id"] = 500
-        self.assertEqual(self.process(first)["enfileirados"], 0)
-        high = self.snapshot("HIGH")
-        high["radar"]["frame_id"] = 501
-        result = self.process(high)
+    def test_medium_antecipado_a_100_km_exige_impacto_em_dois_frames(self):
+        first = self.snapshot("MEDIUM", distance=100)
+        self.assertEqual(self.process(first)["reason"], "awaiting_projected_impact_confirmation")
+        second = self.snapshot("MEDIUM", minute=5, distance=90)
+        second["radar"]["frame_id"] = 1084
+        result = self.process(second, 5)
         self.assertEqual(result["enfileirados"], 2)
-        self.assertEqual(result["state"]["pending_medium_proximity_count"], 0)
-        very_high = self.snapshot("VERY_HIGH")
-        very_high["radar"]["frame_id"] = 502
-        self.assertEqual(self.process(very_high)["enfileirados"], 2)
+        self.assertEqual(result["state"]["highest_enqueued_severity"], 1)
+        self.assertIn("Estimativa de chegada: 25 min.", self.rows("alertas_fila")[0]["mensagem"])
+
+    def test_high_very_high_antecipados_a_150_km(self):
+        for i, intensity in enumerate(("HIGH", "VERY_HIGH")):
+            minute = i * 200
+            if minute:
+                self.process(self.snapshot("LOW", minute=minute-61), minute-61)
+                self.process(self.snapshot("LOW", minute=minute-1), minute-1)
+            result = self.confirmed_medium(minute=minute, distance=150, intensity=intensity)
+            self.assertEqual(result["enfileirados"], 2)
         self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [2, 3])
 
-    def test_medium_pendente_very_high_direto(self):
-        medium = self.snapshot("MEDIUM")
-        medium["radar"]["frame_id"] = 500
-        self.assertEqual(self.process(medium)["enfileirados"], 0)
-        very_high = self.snapshot("VERY_HIGH")
-        very_high["radar"]["frame_id"] = 501
-        self.assertEqual(self.process(very_high)["enfileirados"], 2)
-        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [3])
+    def test_borda_intercepta_com_centro_passando_ao_lado(self):
+        snap = self.snapshot("HIGH", distance=80)
+        snap["alerta_preventivo"].update(closest_approach_km=35, projected_impact=True)
+        self.assertEqual(self.process(snap)["enfileirados"], 0)
+        snap = self.snapshot("HIGH", minute=5, distance=75)
+        snap["alerta_preventivo"].update(closest_approach_km=35, projected_impact=True)
+        self.assertEqual(self.process(snap, 5)["enfileirados"], 2)
 
-    def test_high_distante_exige_dois_frames_do_mesmo_track(self):
-        first = self.process(self.distant(), 0)
-        self.assertEqual(first["reason"], "awaiting_projected_impact_confirmation")
-        self.assertEqual(first["state"]["pending_tracking_count"], 1)
-        for minute in (1, 2, 3):
-            repeat = self.process(self.distant(minute=minute), minute)
-            self.assertEqual(repeat["state"]["pending_tracking_count"], 1)
-            self.assertEqual(repeat["enfileirados"], 0)
-        confirmed = self.process(self.distant(frame=101, minute=4), 4)
-        self.assertEqual(confirmed["enfileirados"], 2)
-        for frame in (102, 103):
-            self.assertEqual(self.process(self.distant(frame=frame, minute=frame-96), frame-96)["enfileirados"], 0)
-        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [2])
+    def test_impacto_perdido_reinicia_confirmacao(self):
+        self.process(self.snapshot("HIGH", distance=60))
+        lost = self.snapshot("HIGH", minute=5, distance=55)
+        lost["alerta_preventivo"]["projected_impact"] = False
+        self.assertEqual(self.process(lost, 5)["state"]["pending_tracking_count"], 0)
+        restart = self.snapshot("HIGH", minute=10, distance=50)
+        self.assertEqual(self.process(restart, 10)["state"]["pending_tracking_count"], 1)
+        second = self.snapshot("HIGH", minute=15, distance=45)
+        self.assertEqual(self.process(second, 15)["enfileirados"], 2)
 
-    def test_high_isolado_real_cai_para_medium(self):
-        first = self.distant()
-        first["alerta_preventivo"].update(front_pixels_low=50, front_pixels_medium=42,
-                                           front_pixels_high=18, front_pixels_very_high=0)
-        self.assertEqual(self.process(first)["reason"], "awaiting_projected_impact_confirmation")
-        medium = self.distant("MEDIUM", frame=101, minute=5)
-        medium["alerta_preventivo"]["distance_km"] = 48.7
-        result = self.process(medium, 5)
-        self.assertEqual(result["reason"], "medium_tracking_monitor_only")
-        self.assertEqual(result["state"]["pending_tracking_count"], 0)
-        self.assertEqual(self.rows("alertas_eventos"), [])
-        self.assertEqual(self.rows("alertas_fila"), [])
-        restarted = self.process(self.distant(frame=102, minute=10), 10)
-        self.assertEqual(restarted["reason"], "awaiting_projected_impact_confirmation")
-        self.assertEqual(restarted["state"]["pending_tracking_count"], 1)
+    def test_confirmacao_repetida_invertida_novo_track_e_gap(self):
+        first = self.snapshot("HIGH", distance=60)
+        self.process(first)
+        repeat = self.snapshot("HIGH", minute=5, distance=55)
+        repeat["radar"]["frame_id"] = first["radar"]["frame_id"]
+        self.assertEqual(self.process(repeat, 5)["state"]["pending_tracking_count"], 1)
+        inverted = self.snapshot("HIGH", minute=5, distance=55)
+        inverted["radar"].update(frame_id=69, data_frame=(self.now-timedelta(minutes=1)).isoformat())
+        self.assertEqual(self.process(inverted, 5)["state"]["pending_tracking_count"], 1)
+        other = self.snapshot("HIGH", minute=10, distance=50)
+        other["alerta_preventivo"]["track_id"] = 99
+        self.assertEqual(self.process(other, 10)["state"]["pending_tracking_count"], 1)
+        gap = self.snapshot("HIGH", minute=30, distance=45)
+        gap["alerta_preventivo"]["track_id"] = 99
+        self.assertEqual(self.process(gap, 30)["state"]["pending_tracking_count"], 1)
+        second = self.snapshot("HIGH", minute=35, distance=40)
+        second["alerta_preventivo"]["track_id"] = 99
+        self.assertEqual(self.process(second, 35)["enfileirados"], 2)
 
-    def test_track_novo_e_frame_pulado_reiniciam_confirmacao(self):
-        self.process(self.distant())
-        changed = self.process(self.distant(frame=101, track=77, minute=1), 1)
-        self.assertEqual(changed["state"]["pending_tracking_count"], 1)
-        skipped = self.process(self.distant(frame=103, track=77, minute=2), 2)
-        self.assertEqual(skipped["state"]["pending_tracking_count"], 1)
+    def test_id_novo_com_mesmo_timestamp_nao_confirma(self):
+        first = self.snapshot("HIGH")
+        self.process(first)
+        duplicate = self.snapshot("HIGH")
+        duplicate["radar"]["frame_id"] += 25
+        self.assertEqual(self.process(duplicate)["enfileirados"], 0)
         self.assertEqual(self.rows("alertas_eventos"), [])
 
-    def test_trajetoria_publica_por_intensidade_e_proximidade(self):
-        for intensity in ("MEDIUM", "HIGH", "VERY_HIGH"):
-            with self.subTest(intensity=intensity):
-                snap = self.distant(intensity, approach=20)
-                snap["alerta_preventivo"]["projected_impact"] = False
-                if intensity == "MEDIUM":
-                    snap["alerta_preventivo"]["distance_km"] = 40
-                result = self.process(snap)
-                self.assertEqual(result["reason"], "public_trajectory_too_far")
-                snap["alerta_preventivo"]["closest_approach_km"] = None
-                self.assertEqual(self.process(snap)["reason"], "public_trajectory_too_far")
-        near = self.distant(approach=None)
-        near["alerta_preventivo"]["distance_km"] = 25
-        self.assertEqual(self.process(near)["enfileirados"], 2)
-
-    def test_very_high_tracking_exige_confirmacao(self):
-        medium = self.distant("MEDIUM", frame=100)
-        medium["alerta_preventivo"]["distance_km"] = 40
-        self.assertEqual(self.process(medium)["reason"], "medium_tracking_monitor_only")
-        self.assertEqual(self.process(self.distant("VERY_HIGH", frame=101, minute=1), 1)["enfileirados"], 0)
-        self.assertEqual(self.process(self.distant("VERY_HIGH", frame=102, minute=2), 2)["enfileirados"], 2)
-
-    def test_medium_tracking_distante_somente_monitoramento(self):
-        from services.nowcasting_alert_evaluation import avaliar_alerta_preventivo_snapshot
-        for minute, distance in enumerate((26, 40, 49)):
-            with self.subTest(distance=distance):
-                snap = self.snapshot("MEDIUM", minute, distance, tracking=True)
-                meteorologia = avaliar_alerta_preventivo_snapshot(
-                    snap, self.config, now=self.now + timedelta(minutes=minute))
-                self.assertTrue(meteorologia["eligible"])
-                self.assertEqual(meteorologia["decision"]["authorization"], "TRACKING")
-                result = self.process(snap, minute)
-                self.assertEqual(result["reason"], "medium_tracking_monitor_only")
-                self.assertFalse(result["state"]["active"])
-                self.assertIsNone(result["state"]["clear_since"])
-        self.assertEqual(self.rows("alertas_eventos"), [])
+    def test_timestamp_real_obrigatorio_e_recente(self):
+        for value, reason in (
+            (None, "invalid_frame_timestamp"),
+            ("invalid", "invalid_frame_timestamp"),
+            ((self.now-timedelta(minutes=16)).isoformat(), "radar_frame_stale"),
+            ((self.now+timedelta(minutes=2)).isoformat(), "radar_frame_stale"),
+        ):
+            with self.subTest(value=value):
+                snap = self.snapshot("VERY_HIGH", distance=2)
+                snap["radar"]["data_frame"] = value
+                self.assertEqual(self.process(snap)["reason"], reason)
         self.assertEqual(self.rows("alertas_fila"), [])
 
-    def test_medium_proximidade_envia_no_limite_e_sem_tracking(self):
-        self.assertEqual(self.confirmed_medium(distance=25)["enfileirados"], 2)
-        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [1])
+    def test_eta_invalido_ou_fora_do_horizonte_nao_envia(self):
+        for eta in (None, True, -1, float("nan"), float("inf"), 121):
+            with self.subTest(eta=eta):
+                snap = self.snapshot("HIGH", distance=2)
+                snap["alerta_preventivo"]["projected_impact_eta_minutes"] = eta
+                self.assertEqual(self.process(snap)["reason"], "projected_impact_eta_invalid")
+        for eta in (0, 120):
+            snap = self.snapshot("HIGH", distance=2)
+            snap["alerta_preventivo"]["projected_impact_eta_minutes"] = eta
+            self.assertEqual(self.process(snap)["reason"], "awaiting_projected_impact_confirmation")
+        self.assertEqual(self.rows("alertas_fila"), [])
 
-    def test_medium_proximidade_sem_tracking_a_24_km(self):
-        self.assertEqual(self.confirmed_medium(distance=24)["enfileirados"], 2)
-
-    def test_medium_distante_preserva_episodio_sem_rearm(self):
-        first = self.confirmed_medium(distance=20)
-        episode = first["state"]["episode_id"]
-        for minute in (5, 65, 125):
-            snap = self.snapshot("MEDIUM", minute, 40, tracking=True)
-            result = self.process(snap, minute)
-            self.assertEqual(result["reason"], "medium_tracking_monitor_only")
-            self.assertEqual(result["state"]["episode_id"], episode)
-            self.assertIsNone(result["state"]["clear_since"])
-        back = self.process(self.snapshot("MEDIUM", 126, 20), 126)
-        self.assertEqual(back["reason"], "same_or_lower_severity")
-        self.assertEqual(back["state"]["episode_id"], episode)
-        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [1])
-
-    def test_high_pendente_medium_proximo_pode_enviar(self):
-        self.assertEqual(self.process(self.distant())["reason"], "awaiting_projected_impact_confirmation")
-        near = self.snapshot("MEDIUM", 1, 20)
-        near["radar"]["frame_id"] = 101
-        self.process(near, 1)
-        near["radar"]["frame_id"] = 102
-        result = self.process(near, 1)
-        self.assertEqual(result["enfileirados"], 2)
-        self.assertEqual(result["state"]["pending_tracking_count"], 0)
-
-    def test_escalonamento_high_confirmado_ignora_cooldown(self):
-        self.confirmed_medium()
-        self.assertEqual(self.process(self.distant(frame=100, minute=1), 1)["enfileirados"], 0)
-        self.assertEqual(self.process(self.distant(frame=101, minute=2), 2)["enfileirados"], 2)
-        self.assertEqual([row["nivel"] for row in self.rows("alertas_eventos")], [1, 2])
-
-    def test_estado_antigo_carrega_sem_campos_de_confirmacao(self):
-        self.confirmed_medium()
+    def test_estado_antigo_exige_nova_confirmacao_com_timestamp(self):
+        self.process()
         conn = self.db.get_db()
         row = conn.execute("SELECT mensagem FROM health_check_estado WHERE chave=?",
                            (self.service.ESTADO_CHAVE,)).fetchone()
         old = json.loads(row["mensagem"])
-        for key in ("pending_tracking_track_id", "pending_tracking_frame_id", "pending_tracking_count",
-                    "pending_medium_proximity_track_id", "pending_medium_proximity_frame_id",
-                    "pending_medium_proximity_count"):
-            old.pop(key)
+        old.pop("pending_tracking_observed_at")
         conn.execute("UPDATE health_check_estado SET mensagem=? WHERE chave=?",
                      (json.dumps(old), self.service.ESTADO_CHAVE))
         conn.commit()
         conn.close()
-        self.assertEqual(self.process(self.distant(frame=100, minute=1), 1)["state"]["pending_tracking_count"], 1)
+        next_frame = self.snapshot(minute=5)
+        self.assertEqual(self.process(next_frame, 5)["state"]["pending_tracking_count"], 1)
+        second = self.snapshot(minute=10)
+        self.assertEqual(self.process(second, 10)["enfileirados"], 2)
 
-    def test_config_sobrescrita_env_aplicada_ao_rearm_e_cooldown(self):
-        from config import nowcasting_config
-        with mock.patch.dict(os.environ, {
-            "NOWCASTING_ALERTS_ENABLED": "true",
-            "NOWCASTING_ALERT_COOLDOWN_MINUTES": "20",
-            "NOWCASTING_ALERT_REARM_MINUTES": "10",
-        }, clear=True):
-            config = nowcasting_config()
-        old = self.confirmed_medium(config=config)["state"]["episode_id"]
-        self.process(self.snapshot("LOW", 1), 1, config)
-        self.assertEqual(self.process(self.snapshot("LOW", 11), 11, config)["reason"], "rearmed")
-        self.assertEqual(self.process(minute=12, config=config)["reason"], "cooldown")
-        snap = self.snapshot(minute=20)
-        snap["radar"]["frame_id"] = 71
-        result = self.process(snap, minute=20, config=config)
-        self.assertEqual(result["enfileirados"], 2)
-        self.assertNotEqual(result["state"]["episode_id"], old)
+    def test_escalonamento_high_confirmado_preserva_episodio_e_ignora_cooldown(self):
+        inicial = self.confirmed_medium()
+        episodio = inicial["state"]["episode_id"]
+        primeiro = self.process(self.snapshot("HIGH", minute=5, distance=120), 5)
+        self.assertEqual(primeiro["enfileirados"], 2)
+        self.assertEqual(primeiro["state"]["episode_id"], episodio)
+        self.assertEqual(primeiro["state"]["highest_enqueued_severity"], 2)
+        self.assertEqual(len(self.rows("alertas_eventos")), 2)
+        self.assertEqual(self.process(self.snapshot("HIGH", minute=10, distance=115), 10)["enfileirados"], 0)
+
+    def test_estado_antigo_sem_campos_de_confirmacao_pede_duas_novas_imagens(self):
+        self.process()
+        conn = self.db.get_db()
+        row = conn.execute("SELECT mensagem FROM health_check_estado WHERE chave=?",
+                           (self.service.ESTADO_CHAVE,)).fetchone()
+        antigo = json.loads(row["mensagem"])
+        for campo in list(antigo):
+            if campo.startswith("pending_"):
+                antigo.pop(campo)
+        conn.execute("UPDATE health_check_estado SET mensagem=? WHERE chave=?",
+                     (json.dumps(antigo), self.service.ESTADO_CHAVE))
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.process(self.snapshot(minute=5), 5)["enfileirados"], 0)
+        self.assertEqual(self.process(self.snapshot(minute=10), 10)["enfileirados"], 2)
 
     def test_snapshot_invalido_interrompe_rearm(self):
         self.confirmed_medium()
@@ -707,8 +543,9 @@ class PublicAlertsTest(unittest.TestCase):
 
     def test_snapshot_antigo_ou_futuro_nao_enfileira(self):
         for minute in (-60, 5):
-            result = self.process(self.snapshot(minute=minute))
-            self.assertEqual(result["reason"], "snapshot_stale")
+            snap = self.snapshot()
+            snap["gerado_em_utc"] = (self.now+timedelta(minutes=minute)).isoformat()
+            self.assertEqual(self.process(snap)["reason"], "snapshot_stale")
         self.assertEqual(self.rows("alertas_fila"), [])
 
     def test_estado_json_invalido_nao_e_resetado(self):

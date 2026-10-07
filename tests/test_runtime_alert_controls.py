@@ -217,7 +217,7 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         state = {
             "gerado_em_utc": now, "gerado_em": now,
             "radar": {"operacional": True, "stale": False, "frame_id": 1,
-                      "imagem_disponivel": True},
+                      "imagem_disponivel": True, "data_frame": now},
             "alerta_preventivo": {"nivel": "VERMELHO"},
             "ameaca_principal": {"distance_km": 42, "approaching": True,
                                   "trajectory_confidence": "ALTA",
@@ -239,6 +239,13 @@ class RuntimeAlertControlsTest(unittest.TestCase):
             self.assertIn("Ainda não há dados suficientes".encode(),
                           self.client.get("/admin/monitoramento").data)
             state["evento_local_observado"] = True
+            self.assertNotIn("Chuva observada em São José".encode(),
+                             self.client.get("/admin/monitoramento").data)
+            state["escola"] = {
+                "measured_at_utc": now, "stale": False, "rain_rate": 2,
+                "temperature": 25, "humidity": 90, "pressure": 1000,
+                "wind_speed": 5, "wind_gust": 10,
+            }
             self.assertIn("Chuva observada em São José".encode(),
                           self.client.get("/admin/monitoramento").data)
 
@@ -247,7 +254,7 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         self.login()
         now = datetime.now(timezone.utc).isoformat()
         state = {"gerado_em_utc": now, "gerado_em": now,
-                 "radar": {"operacional": True, "stale": False},
+                 "radar": {"operacional": True, "stale": False, "data_frame": now},
                  "ameaca_principal": {"distance_km": 42, "approaching": True,
                                        "trajectory_confidence": "ALTA",
                                        "projected_impact": True,

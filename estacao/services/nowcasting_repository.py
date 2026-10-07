@@ -10,7 +10,7 @@ import database
 from config import regional_stations_config
 from services.radar_repository import obter_estado_radar, ler_frente_relevante
 from services.regional_stations_repository import obter_estado_rede
-from time_utils import agora_utc, minutos_desde
+from time_utils import agora_utc, iso_local, iso_utc, parse_datetime
 
 
 def _local_station(config):
@@ -33,15 +33,21 @@ def _local_station(config):
             or row["data_hora_local"]
             or row["data_hora"]
         )
-        age = minutos_desde(
-            timestamp_utc or timestamp_local,
-            assume_utc=bool(timestamp_utc),
+        momento = (
+            parse_datetime(timestamp_utc, assume_utc=True)
+            or parse_datetime(timestamp_local, assume_utc=False)
         )
+        segundos = (agora_utc() - momento).total_seconds() if momento else None
+        age = int(segundos // 60) if segundos is not None else None
         return {
             "_id": row["id"],
-            "measured_at": timestamp_local,
+            "measured_at": iso_local(momento) if momento else timestamp_local,
+            "measured_at_utc": iso_utc(momento) if momento else None,
             "age_minutes": age,
-            "stale": age is None or age > config["local_max_age_minutes"],
+            "stale": (
+                age is None or segundos < -60
+                or segundos > config["local_max_age_minutes"] * 60
+            ),
             "temperature": row["temp"],
             "humidity": row["umidade"],
             "pressure": row["pressao"],
@@ -136,27 +142,35 @@ def _tracks_frame_atual(radar):
                 pontos_geometricos[row["id"]], footprint,
                 GeoBounds(*frame_bounds), frame["largura"], frame["altura"],
                 radar.get("target_lat", -22.4925326), radar.get("target_lon", -54.4610352),
-                radar.get("impact_radius_km", 12), radar.get("projection_minutes", 60))
+                radar.get("impact_radius_km", 5), radar.get("projection_minutes", 120),
+                min_frames=radar.get("trajectory_min_frames", 4),
+                max_gap_minutes=radar.get("trajectory_max_gap_minutes", 15),
+                min_duration_minutes=radar.get("track_min_duration_minutes", 10),
+                max_speed_kmh=radar.get("track_max_speed_kmh", 150))
                 if frame_bounds and row["id"] is not None else {})
+            recente_valido = geometria.get("trajectory_recent_valid") is True
+            aproximando = geometria.get("trajectory_approaching") if recente_valido else None
+            intercepta = bool(recente_valido and aproximando and geometria.get("projected_impact"))
+            status_recente = ("TRAJETORIA_COMPATIVEL" if intercepta else "APROXIMANDO"
+                              if aproximando else "AFASTANDO" if recente_valido
+                              else "DADOS_INSUFICIENTES")
             resultado.append(
                 {
                     "track": {
                         "track_id": row["id"],
-                        "status": row["status"],
-                        "quantidade_frames": row["quantidade_frames"],
-                        "duracao_minutos": row["duracao_minutos"],
-                        "velocidade_kmh": row["velocidade_media_kmh"],
-                        "bearing_movimento": row["bearing_movimento"],
-                        "direcao_movimento": row["direcao_movimento"],
+                        "status": status_recente,
+                        "quantidade_frames": geometria.get("trajectory_frames_used", 0),
+                        "duracao_minutos": geometria.get("trajectory_duration_minutes", 0),
+                        "velocidade_kmh": geometria.get("trajectory_speed_kmh") if recente_valido else None,
+                        "bearing_movimento": geometria.get("trajectory_bearing_degrees") if recente_valido else None,
+                        "direcao_movimento": geometria.get("trajectory_direction") if recente_valido else None,
                         "centro_lat": row["centro_lat_atual"],
                         "centro_lon": row["centro_lon_atual"],
-                        "aproximando": (
-                            None if row["aproximando"] is None else bool(row["aproximando"])
-                        ),
-                        "taxa_aproximacao_kmh": row["taxa_aproximacao_kmh"],
-                        "trajetoria_compativel": bool(row["trajetoria_compativel"]),
-                        "menor_aproximacao_km": row["menor_aproximacao_km"],
-                        "eta_minutos": row["eta_minutos"],
+                        "aproximando": aproximando,
+                        "taxa_aproximacao_kmh": geometria.get("trajectory_approach_rate_kmh") if recente_valido else None,
+                        "trajetoria_compativel": intercepta,
+                        "menor_aproximacao_km": geometria.get("trajectory_closest_center_km"),
+                        "eta_minutos": geometria.get("projected_impact_eta_minutes") if intercepta else None,
                         "suspeito_clutter": bool(row["suspeito_clutter"]),
                         "indice_persistencia_clutter": row["indice_persistencia_clutter"],
                         "clutter_amostras": row["clutter_amostras"],
@@ -192,8 +206,12 @@ def carregar_entradas_nowcasting(config):
     radar = obter_estado_radar(config["radar_max_age_minutes"])
     radar["target_lat"] = config.get("target_lat", -22.4925326)
     radar["target_lon"] = config.get("target_lon", -54.4610352)
-    radar["impact_radius_km"] = config.get("public_impact_radius_km", 12)
-    radar["projection_minutes"] = config.get("public_projection_minutes", 60)
+    radar["impact_radius_km"] = config.get("public_impact_radius_km", 5)
+    radar["projection_minutes"] = config.get("public_projection_minutes", 120)
+    radar["trajectory_min_frames"] = config.get("public_trajectory_min_frames", 4)
+    radar["trajectory_max_gap_minutes"] = config.get("public_trajectory_max_gap_minutes", 15)
+    radar["track_min_duration_minutes"] = config.get("track_min_duration_minutes", 10)
+    radar["track_max_speed_kmh"] = config.get("track_max_speed_kmh", 150)
     tracks_atuais = _tracks_frame_atual(radar)
     radar["tracks_atuais"] = tracks_atuais
 
@@ -207,12 +225,14 @@ def carregar_entradas_nowcasting(config):
     local = _local_station(config)
     fingerprint_body = {
         "algorithm": config["algorithm_version"],
-        # Reavalia entradas iguais a cada ciclo sem sobrescrever snapshots anteriores.
+        # Preserva avaliações de ciclos anteriores mesmo com entradas iguais.
         "evaluation_window": int(
             agora_utc().timestamp() // max(60, config.get("poll_seconds", 300))
         ),
-        "preventive_rules_version": "front-1",
-        "preventive_config": {k: v for k, v in config.items() if k.startswith("alert_")},
+        "preventive_rules_version": "trajectory-2",
+        "preventive_config": {k: v for k, v in config.items()
+                              if k.startswith(("alert_", "public_", "track_"))
+                              or k in ("target_lat", "target_lon")},
         "radar_frame": (radar.get("frame") or {}).get("id"),
         "radar_stale": radar.get("stale"),
         "radar_tracks": [
@@ -258,44 +278,61 @@ def carregar_entradas_nowcasting(config):
 
 
 def salvar_snapshot(estado, input_fingerprint):
+    """Mantem uma linha por entrada, renovando apenas calculos nao regressivos."""
     radar = estado.get("radar") or {}
+    calculado_em = parse_datetime(estado["gerado_em_utc"], assume_utc=True)
+    valores = {
+        "calculado_em_utc": iso_utc(calculado_em) if calculado_em else estado["gerado_em_utc"],
+        "calculado_em_local": estado["gerado_em"],
+        "radar_frame_id": radar.get("frame_id"),
+        "radar_track_id": radar.get("track_id"),
+        "status": estado["status"],
+        "nivel_evidencia": estado["nivel_evidencia"],
+        "indice_evidencia": estado["indice_evidencia"],
+        "distancia_borda_km": radar.get("distancia_borda_km"),
+        "velocidade_kmh": radar.get("velocidade_kmh"),
+        "direcao_movimento": radar.get("direcao"),
+        "aproximando": (
+            None if radar.get("aproximando") is None else int(radar["aproximando"])
+        ),
+        "trajetoria_compativel": int(bool(radar.get("trajetoria_compativel"))),
+        "eta_minutos": radar.get("eta_minutos"),
+        "estacoes_relevantes_json": json.dumps(
+            estado["estacoes_relevantes"], ensure_ascii=False
+        ),
+        "evidencias_json": json.dumps(estado["evidencias"], ensure_ascii=False),
+        "dados_escola_json": json.dumps(estado.get("escola"), ensure_ascii=False),
+        "estado_json": json.dumps(estado, ensure_ascii=False, sort_keys=True),
+        "input_fingerprint": input_fingerprint,
+        "versao_algoritmo": estado["versao_algoritmo"],
+    }
+    colunas = ", ".join(valores)
+    parametros = ", ".join(f":{coluna}" for coluna in valores)
     conn = database.get_db()
     try:
         cursor = conn.execute(
-            """
-            INSERT OR IGNORE INTO nowcasting_snapshots (
-                calculado_em_utc, calculado_em_local, radar_frame_id,
-                radar_track_id, status, nivel_evidencia, indice_evidencia,
-                distancia_borda_km, velocidade_kmh, direcao_movimento,
-                aproximando, trajetoria_compativel, eta_minutos,
-                estacoes_relevantes_json, evidencias_json, dados_escola_json,
-                estado_json, input_fingerprint, versao_algoritmo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                estado["gerado_em_utc"],
-                estado["gerado_em"],
-                radar.get("frame_id"),
-                radar.get("track_id"),
-                estado["status"],
-                estado["nivel_evidencia"],
-                estado["indice_evidencia"],
-                radar.get("distancia_borda_km"),
-                radar.get("velocidade_kmh"),
-                radar.get("direcao"),
-                None if radar.get("aproximando") is None else int(radar["aproximando"]),
-                int(bool(radar.get("trajetoria_compativel"))),
-                radar.get("eta_minutos"),
-                json.dumps(estado["estacoes_relevantes"], ensure_ascii=False),
-                json.dumps(estado["evidencias"], ensure_ascii=False),
-                json.dumps(estado.get("escola"), ensure_ascii=False),
-                json.dumps(estado, ensure_ascii=False, sort_keys=True),
-                input_fingerprint,
-                estado["versao_algoritmo"],
-            ),
+            f"INSERT OR IGNORE INTO nowcasting_snapshots ({colunas}) "
+            f"VALUES ({parametros})",
+            valores,
         )
+        snapshot_id = cursor.lastrowid if cursor.rowcount == 1 else None
+        if snapshot_id is None:
+            atualizacoes = ", ".join(
+                f"{coluna}=:{coluna}" for coluna in valores
+                if coluna != "input_fingerprint"
+            )
+            conn.execute(
+                f"""
+                UPDATE nowcasting_snapshots SET {atualizacoes}
+                WHERE input_fingerprint=:input_fingerprint
+                  AND julianday(:calculado_em_utc) IS NOT NULL
+                  AND (julianday(calculado_em_utc) IS NULL
+                       OR julianday(calculado_em_utc) <= julianday(:calculado_em_utc))
+                """,
+                valores,
+            )
         conn.commit()
-        return cursor.lastrowid if cursor.rowcount == 1 else None
+        return snapshot_id
     except Exception:
         conn.rollback()
         raise
@@ -307,7 +344,8 @@ def obter_ultimo_snapshot():
     conn = database.get_db()
     try:
         row = conn.execute(
-            "SELECT id, estado_json FROM nowcasting_snapshots ORDER BY id DESC LIMIT 1"
+            "SELECT id, estado_json FROM nowcasting_snapshots "
+            "ORDER BY calculado_em_utc DESC, id DESC LIMIT 1"
         ).fetchone()
         if not row:
             return None

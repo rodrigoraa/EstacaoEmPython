@@ -135,8 +135,9 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         self.assertIn("Alertas públicos por radar: ATIVADO".encode(),
                       self.client.get("/admin/radar").data)
         self.assertEqual(self.post("public", "false").status_code, 303)
-        self.assertIn("Monitoramento ativo — alertas públicos desativados".encode(),
-                      self.client.get("/admin/monitoramento").data)
+        page = self.client.get("/admin/monitoramento")
+        self.assertIn("Alertas públicos desativados".encode(), page.data)
+        self.assertNotIn("Monitoramento atualizado".encode(), page.data)
 
     def test_escritas_concorrentes_preservam_os_dois_controles(self):
         with ThreadPoolExecutor(max_workers=2) as pool:

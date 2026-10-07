@@ -10,7 +10,7 @@ import database
 from config import regional_stations_config
 from services.radar_repository import obter_estado_radar, ler_frente_relevante
 from services.regional_stations_repository import obter_estado_rede
-from time_utils import minutos_desde
+from time_utils import agora_utc, minutos_desde
 
 
 def _local_station(config):
@@ -207,6 +207,10 @@ def carregar_entradas_nowcasting(config):
     local = _local_station(config)
     fingerprint_body = {
         "algorithm": config["algorithm_version"],
+        # Reavalia entradas iguais a cada ciclo sem sobrescrever snapshots anteriores.
+        "evaluation_window": int(
+            agora_utc().timestamp() // max(60, config.get("poll_seconds", 300))
+        ),
         "preventive_rules_version": "front-1",
         "preventive_config": {k: v for k, v in config.items() if k.startswith("alert_")},
         "radar_frame": (radar.get("frame") or {}).get("id"),

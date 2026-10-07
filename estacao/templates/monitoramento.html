@@ -35,6 +35,9 @@
     {% elif estado.evento_local_observado %}
       <h2 id="situacao-atual" class="text-xl font-bold">Chuva observada em São José</h2>
       <p>A estação local registra chuva neste momento.</p>
+    {% elif radar.get('operacional') is not true %}
+      <h2 id="situacao-atual" class="text-xl font-bold">Dados do radar indisponíveis</h2>
+      <p>Aguarde uma imagem recente do radar para interpretar a situação atual em São José.</p>
     {% elif not principal %}
       <h2 id="situacao-atual" class="text-xl font-bold">Sem ameaça de chuva para São José</h2>
       <p>Nenhuma área de chuva com trajetória relevante para a região no momento.</p>
@@ -51,7 +54,7 @@
       <h2 id="situacao-atual" class="text-xl font-bold">Chuva sendo monitorada</h2>
       <p>Uma área de chuva foi detectada. Ainda não há dados suficientes para indicar passagem pela região.</p>
     {% endif %}
-    {% if not controls.public.enabled %}<p class="mt-3 text-sm">Monitoramento ativo — alertas públicos desativados.</p>{% endif %}
+    {% if not controls.public.enabled %}<p class="mt-3 text-sm">{% if monitoramento_atual and radar.get('operacional') is true %}Monitoramento atualizado — alertas públicos desativados.{% else %}Alertas públicos desativados.{% endif %}</p>{% endif %}
   </article>
 
   <article class="card monitor-panel monitor-controls" aria-labelledby="controle-alertas">

@@ -238,6 +238,13 @@ a estação local confirma a chegada à escola. O serviço não acessa REDEMET, 
 Ambient Weather nem Open-Meteo; lê somente o SQLite preenchido pelos workers
 independentes.
 
+O nowcasting salva uma nova avaliação a cada janela de `NOWCASTING_POLL_SECONDS`,
+mesmo quando as leituras das fontes se repetem. Execuções com as mesmas entradas
+na mesma janela permanecem idempotentes; avaliações anteriores são preservadas.
+Uma análise recém-gerada não torna um radar antigo utilizável: a idade das fontes
+continua sendo conferida em cada ciclo. O painel só informa monitoramento atualizado
+quando a análise passa na verificação de atualidade.
+
 Estações com `DADOS_ESTAGNADOS` não fornecem confirmação regional, mesmo quando existe tendência histórica anterior. Os alertas preventivos de nowcasting continuam bloqueados nesta versão, inclusive se a variável reservada for habilitada.
 
 ### WhatsApp e double opt-in

@@ -318,6 +318,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
         self.assertIn("Dados recentes indisponíveis".encode(), page.data)
+        self.assertNotIn("Monitoramento atualizado".encode(), page.data)
         self.assertIn("Último nível calculado".encode(), page.data)
         self.assertNotIn(b"preventive-alert--vermelho", page.data)
         self.assertNotIn(b"ALERTA OPERACIONAL ANTIGO", page.data)
@@ -353,10 +354,22 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertIn("Monitoramento Meteorológico".encode(), page.data)
         self.assertIn("Situação atual".encode(), page.data)
         self.assertNotIn("MONITORAMENTO DESATUALIZADO".encode(), page.data)
+        self.assertIn("Monitoramento atualizado".encode(), page.data)
         self.assertTrue(payload["monitoramento_atual"])
         self.assertFalse(payload["snapshot_desatualizado"])
         self.assertEqual(payload["alerta_preventivo"]["nivel"], "VERMELHO")
         self.assertIsNone(payload["ultimo_nivel_calculado"])
+
+    def test_monitoramento_analise_recente_sem_radar_nao_declara_ausencia_de_ameaca(self):
+        from services.nowcasting_repository import salvar_snapshot
+
+        self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-sem-radar"))
+        self.autenticar_admin()
+        page = self.client.get("/admin/monitoramento")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Dados do radar indisponíveis".encode(), page.data)
+        self.assertNotIn("Sem ameaça de chuva para São José".encode(), page.data)
+        self.assertNotIn("Monitoramento atualizado".encode(), page.data)
 
     def test_monitoramento_timestamp_invalido_ou_ausente_nao_quebra(self):
         self.autenticar_admin()

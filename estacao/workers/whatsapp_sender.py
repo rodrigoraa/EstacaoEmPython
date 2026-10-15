@@ -5,15 +5,20 @@ import sqlite3
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
+
+load_dotenv(os.path.join(BASE_DIR, ".env"), encoding="utf-8")
+load_dotenv(encoding="utf-8")
 
 import database
 from services.whatsapp_service import enviar_whatsapp
 from time_utils import agora_utc, parse_datetime
 from config import env_int, nowcasting_config, numero_alerta_valido
 from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
+from unsubscribe_tokens import telefone_com_codigo_pais
 
 
 INTERVALO_ENVIO_USUARIOS = env_int("INTERVALO_ENVIO_USUARIOS", 20)
@@ -48,7 +53,13 @@ def reivindicar_proximo_envio(conn, retry_failed=False):
         ]
         parametros = [f"-{ENVIANDO_EXPIRADO_MINUTOS} minutes"]
         if retry_failed:
-            condicoes.append("alertas_fila.status = 'falhou'")
+            condicoes.append(
+                "(alertas_fila.status = 'falhou' "
+                "AND COALESCE(alertas_fila.erro_permanente, 0) = 0 "
+                "AND COALESCE(alertas_fila.tentativas, 0) "
+                "< COALESCE(alertas_fila.max_tentativas, ?))"
+            )
+            parametros.append(MAX_TENTATIVAS)
 
         row = conn.execute(
             f"""
@@ -174,6 +185,10 @@ def erro_e_permanente(erro):
         "erro evolution api 401",
         "erro evolution api 403",
         "erro evolution api 404",
+        "erro http 400 na evolution api",
+        "erro http 401 na evolution api",
+        "erro http 403 na evolution api",
+        "erro http 404 na evolution api",
         "telefone invalido",
         "telefone inválido",
     )
@@ -309,16 +324,39 @@ def marcar_cancelado(conn, item, motivo):
     conn.commit()
 
 
+def revalidar_destinatario(conn, item):
+    """Confere o consentimento atual, pois o cadastro pode mudar na fila."""
+    if item["usuario_id"] is None:
+        # Envios legados e administrativos podem nao pertencer a um cadastro.
+        return None
+    usuario = conn.execute(
+        "SELECT ativo, receber_whatsapp, status_cadastro, telefone FROM usuarios WHERE id = ?",
+        (item["usuario_id"],),
+    ).fetchone()
+    if usuario is None:
+        return "Destinatario excluido do cadastro de alertas"
+    if usuario["ativo"] not in (1, None):
+        return "Destinatario inativo no cadastro de alertas"
+    if usuario["receber_whatsapp"] != 1:
+        return "Destinatario sem consentimento atual para alertas por WhatsApp"
+    if usuario["status_cadastro"] not in ("ativo", None):
+        return "Cadastro do destinatario nao esta confirmado e ativo"
+    if telefone_com_codigo_pais(usuario["telefone"]) != telefone_com_codigo_pais(item["telefone"]):
+        return "Telefone do destinatario alterado depois do enfileiramento"
+    return None
+
+
 def processar_um_envio(retry_failed=False):
     conn = database.get_db()
     try:
         item = reivindicar_proximo_envio(conn, retry_failed=retry_failed)
         if item:
             item = dict(item)
-            motivo = revalidar_previsao_nowcasting(conn, item)
+            motivo = (revalidar_previsao_nowcasting(conn, item)
+                      or revalidar_destinatario(conn, item))
             if motivo:
                 marcar_cancelado(conn, item, motivo)
-                log(f"Previsao de radar cancelada na fila (id={item['id']}): {motivo}")
+                log(f"Alerta cancelado na fila (id={item['id']}): {motivo}")
                 return "cancelado"
     finally:
         conn.close()
@@ -402,7 +440,10 @@ def parse_args():
     parser.add_argument("--once", action="store_true", help="Processa apenas um envio pendente.")
     parser.add_argument("--limite", type=int, default=None, help="Processa ate N envios e encerra.")
     parser.add_argument("--intervalo", type=int, default=INTERVALO_ENVIO_USUARIOS)
-    parser.add_argument("--retry-failed", action="store_true", help="Tenta reenviar itens com status falhou.")
+    parser.add_argument(
+        "--retry-failed", action="store_true",
+        help="Retenta falhas temporarias que ainda nao atingiram o limite de tentativas.",
+    )
     return parser.parse_args()
 
 

@@ -13,12 +13,13 @@ from services.preventive_alerts import (
     possui_clutter_forte,
     qualidade_tracking,
     selecionar_eco_alerta_proximidade,
+    status_envio_preventivo,
     ALERT_SEVERITY,
 )
 from time_utils import LOCAL_TZ, agora_utc, iso_local, iso_utc, parse_datetime
 
 
-NOWCASTING_ALGORITHM_VERSION = "1.7"
+NOWCASTING_ALGORITHM_VERSION = "1.8"
 EVIDENCE_LEVELS = (
     (70, "MUITO_ELEVADA"),
     (50, "ELEVADA"),
@@ -252,6 +253,9 @@ def preparar_estado_nowcasting_admin(snapshot, config, now=None):
         estado["alerta_preventivo"] = alerta_indisponivel
 
     if estado:
+        alerta = dict(estado.get("alerta_preventivo") or {})
+        alerta.update(status_envio_preventivo(alerta, config))
+        estado["alerta_preventivo"] = alerta
         radar["stale"] = not frescor_radar["atual"]
         radar["operacional"] = monitoramento_atual
         estado["radar"] = radar

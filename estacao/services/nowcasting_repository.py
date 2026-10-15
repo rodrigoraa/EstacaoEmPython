@@ -229,7 +229,7 @@ def carregar_entradas_nowcasting(config):
         "evaluation_window": int(
             agora_utc().timestamp() // max(60, config.get("poll_seconds", 300))
         ),
-        "preventive_rules_version": "trajectory-2",
+        "preventive_rules_version": "trajectory-3",
         "preventive_config": {k: v for k, v in config.items()
                               if k.startswith(("alert_", "public_", "track_"))
                               or k in ("target_lat", "target_lon")},

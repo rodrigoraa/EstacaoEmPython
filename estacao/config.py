@@ -99,7 +99,7 @@ def radar_config():
         "anima": max(1, env_int("RADAR_ANIMA", 15)),
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
-        "poll_seconds": max(30, env_int("RADAR_POLL_SECONDS", 300)),
+        "poll_seconds": max(30, env_int("RADAR_POLL_SECONDS", 60)),
         "request_timeout_seconds": max(
             1, env_int("RADAR_REQUEST_TIMEOUT_SECONDS", 30)
         ),
@@ -189,11 +189,14 @@ def regional_stations_config():
 
 def nowcasting_config():
     """Fusao observacional, sempre separada dos coletores e alertas."""
+    # Compatibilidade com a opção de radar: os nomes específicos do
+    # nowcasting, quando definidos, continuam tendo precedência.
+    radar_alerts_enabled = env_bool("RADAR_ALERTS_ENABLED", False)
     return {
         **config_alerta_preventivo(),
-        "enabled": env_bool("NOWCASTING_ENABLED", False),
+        "enabled": env_bool("NOWCASTING_ENABLED", radar_alerts_enabled),
         "poll_seconds": max(60, env_int("NOWCASTING_POLL_SECONDS", 300)),
-        "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", False),
+        "alerts_enabled": env_bool("NOWCASTING_ALERTS_ENABLED", radar_alerts_enabled),
         "alert_cooldown_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_COOLDOWN_MINUTES"), 180),
         "alert_rearm_minutes": numero_alerta_valido(env_str("NOWCASTING_ALERT_REARM_MINUTES"), 60),
         "test_alerts_enabled": env_bool(
@@ -226,7 +229,7 @@ def nowcasting_config():
         "local_max_age_minutes": max(
             5, env_int("HEALTH_MAX_READING_AGE_SECONDS", 300) // 60
         ),
-        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.7") or "1.7",
+        "algorithm_version": env_str("NOWCASTING_ALGORITHM_VERSION", "1.8") or "1.8",
         "target_lat": env_float("RADAR_TARGET_LAT", -22.4925326),
         "target_lon": env_float("RADAR_TARGET_LON", -54.4610352),
         "track_min_frames": max(2, env_int("RADAR_TRACK_MIN_FRAMES", 3)),

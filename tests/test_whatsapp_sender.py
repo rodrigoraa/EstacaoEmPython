@@ -64,6 +64,13 @@ class WhatsAppSenderTest(unittest.TestCase):
     def enfileirar(self, usuarios):
         conn = self.abrir_banco()
         conn.executemany(
+            """INSERT OR IGNORE INTO usuarios
+                (id, nome, telefone, ativo, receber_whatsapp, status_cadastro)
+                VALUES (?, ?, ?, 1, 1, 'ativo')""",
+            [(usuario_id, nome, telefone) for usuario_id, nome, telefone, _ in usuarios
+             if usuario_id is not None],
+        )
+        conn.executemany(
             """
             INSERT INTO alertas_fila (
                 usuario_id,
@@ -110,6 +117,11 @@ class WhatsAppSenderTest(unittest.TestCase):
         evento_id = f"nowcasting:{episode_id}:{nivel_texto.lower()}"
         momento = self.now - timedelta(minutes=idade_minutos)
         conn = self.abrir_banco()
+        conn.execute(
+            """INSERT OR IGNORE INTO usuarios
+                (id, nome, telefone, ativo, receber_whatsapp, status_cadastro)
+                VALUES (1, 'Maria', '5567999999999', 1, 1, 'ativo')"""
+        )
         conn.execute(
             """INSERT INTO alertas_eventos
                 (evento_id, data_referencia, tipo, nivel, ocorrido_em_local,
@@ -280,6 +292,137 @@ class WhatsAppSenderTest(unittest.TestCase):
         self.sender.processar_fila(limite=1, intervalo=0)
 
         self.assertEqual(envios, ["Critico"])
+
+    def test_http_permanente_real_da_evolution_nao_reenvia_nem_com_retry_failed(self):
+        for codigo in (400, 401, 403, 404):
+            with self.subTest(codigo=codigo):
+                self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+                with mock.patch.object(
+                    self.sender, "enviar_whatsapp",
+                    side_effect=RuntimeError(f"Erro HTTP {codigo} na Evolution API"),
+                ) as enviar:
+                    self.assertEqual(self.sender.processar_um_envio(), "falhou")
+                    self.assertIsNone(self.sender.processar_um_envio(retry_failed=True))
+                    enviar.assert_called_once()
+                conn = self.abrir_banco()
+                fila = conn.execute("SELECT * FROM alertas_fila ORDER BY id DESC LIMIT 1").fetchone()
+                conn.close()
+                self.assertEqual(fila["status"], "falhou")
+                self.assertEqual(fila["erro_permanente"], 1)
+                self.assertIsNone(fila["proxima_tentativa_em"])
+
+    def test_http_temporario_da_evolution_mantem_backoff(self):
+        for codigo in (408, 429, 500, 503):
+            with self.subTest(codigo=codigo):
+                self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+                with mock.patch.object(
+                    self.sender, "enviar_whatsapp",
+                    side_effect=RuntimeError(f"Erro HTTP {codigo} na Evolution API"),
+                ) as enviar:
+                    self.assertEqual(self.sender.processar_um_envio(), "falhou")
+                    self.assertIsNone(self.sender.processar_um_envio(retry_failed=True))
+                    enviar.assert_called_once()
+                conn = self.abrir_banco()
+                fila = conn.execute("SELECT * FROM alertas_fila ORDER BY id DESC LIMIT 1").fetchone()
+                conn.close()
+                self.assertEqual(fila["status"], "pendente")
+                self.assertEqual(fila["erro_permanente"], 0)
+                self.assertIsNotNone(fila["proxima_tentativa_em"])
+
+    def test_retry_failed_recupera_falha_temporaria_abaixo_do_limite(self):
+        self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+        conn = self.abrir_banco()
+        conn.execute("UPDATE alertas_fila SET status='falhou', tentativas=2, max_tentativas=4")
+        conn.commit()
+        conn.close()
+        with mock.patch.object(self.sender, "enviar_whatsapp") as enviar:
+            self.assertEqual(self.sender.processar_um_envio(retry_failed=True), "enviado")
+            enviar.assert_called_once()
+
+    def test_retry_failed_nao_ultrapassa_limite_ou_cria_loop_de_falhas(self):
+        self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+        conn = self.abrir_banco()
+        conn.execute("UPDATE alertas_fila SET status='falhou', tentativas=3, max_tentativas=4")
+        conn.commit()
+        conn.close()
+        with mock.patch.object(self.sender, "enviar_whatsapp", side_effect=RuntimeError("offline")) as enviar:
+            self.assertEqual(
+                self.sender.processar_fila(intervalo=0, retry_failed=True),
+                {"processados": 1, "enviados": 0, "falhas": 1},
+            )
+            enviar.assert_called_once()
+            self.assertIsNone(self.sender.processar_um_envio(retry_failed=True))
+
+    def test_destinatario_excluido_ou_sem_consentimento_cancela_item_da_fila(self):
+        alteracoes = (
+            ("DELETE FROM usuarios WHERE id=1", "excluido"),
+            ("UPDATE usuarios SET ativo=0 WHERE id=1", "inativo"),
+            ("UPDATE usuarios SET receber_whatsapp=0 WHERE id=1", "consentimento"),
+            ("UPDATE usuarios SET status_cadastro='pendente' WHERE id=1", "confirmado"),
+            ("UPDATE usuarios SET status_cadastro='cancelado' WHERE id=1", "confirmado"),
+        )
+        for sql, motivo in alteracoes:
+            with self.subTest(sql=sql):
+                conn = self.abrir_banco()
+                conn.execute("DELETE FROM usuarios")
+                conn.commit()
+                conn.close()
+                self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+                conn = self.abrir_banco()
+                conn.execute(sql)
+                conn.commit()
+                conn.close()
+                self.assert_previsao_cancelada(motivo=motivo)
+                with mock.patch.object(self.sender, "enviar_whatsapp") as enviar:
+                    self.assertIsNone(self.sender.processar_um_envio(retry_failed=True))
+                    enviar.assert_not_called()
+
+    def test_cancelamento_de_assinatura_revalida_tambem_previsao_valida(self):
+        self.enfileirar_previsao()
+        conn = self.abrir_banco()
+        conn.execute("DELETE FROM usuarios WHERE id=1")
+        conn.commit()
+        conn.close()
+        self.assert_previsao_cancelada(motivo="excluido")
+
+    def test_fila_legada_sem_usuario_id_continua_enviando(self):
+        self.enfileirar([(None, "Administrador", "5567999999999", "Alerta legado")])
+        with mock.patch.object(self.sender, "enviar_whatsapp") as enviar:
+            self.assertEqual(self.sender.processar_um_envio(), "enviado")
+            enviar.assert_called_once_with("5567999999999", "Alerta legado")
+
+    def test_assinante_legado_com_ativo_ou_status_nulos_continua_enviando(self):
+        for ativo, status in ((None, "ativo"), (1, None), (None, None)):
+            with self.subTest(ativo=ativo, status=status):
+                self.enfileirar([(1, "Maria", "5567999999999", "Alerta legado")])
+                conn = self.abrir_banco()
+                conn.execute("UPDATE usuarios SET ativo=?, status_cadastro=? WHERE id=1",
+                             (ativo, status))
+                conn.commit()
+                conn.close()
+                with mock.patch.object(self.sender, "enviar_whatsapp") as enviar:
+                    self.assertEqual(self.sender.processar_um_envio(), "enviado")
+                    enviar.assert_called_once_with("5567999999999", "Alerta legado")
+
+    def test_telefone_alterado_depois_do_enfileiramento_cancela_envio_antigo(self):
+        self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+        conn = self.abrir_banco()
+        conn.execute("UPDATE usuarios SET telefone='5567888888888' WHERE id=1")
+        conn.commit()
+        conn.close()
+        self.assert_previsao_cancelada(motivo="Telefone do destinatario alterado")
+
+    def test_telefone_equivalente_com_ou_sem_formatacao_e_codigo_do_pais_envia(self):
+        for telefone in ("+55 (67) 99999-9999", "(67) 99999-9999"):
+            with self.subTest(telefone=telefone):
+                self.enfileirar([(1, "Maria", "5567999999999", "Alerta de teste")])
+                conn = self.abrir_banco()
+                conn.execute("UPDATE usuarios SET telefone=? WHERE id=1", (telefone,))
+                conn.commit()
+                conn.close()
+                with mock.patch.object(self.sender, "enviar_whatsapp") as enviar:
+                    self.assertEqual(self.sender.processar_um_envio(), "enviado")
+                    enviar.assert_called_once_with("5567999999999", "Alerta de teste")
 
     def test_previsao_expirada_e_cancelada_sem_envio_ou_retentativa(self):
         self.enfileirar_previsao(idade_minutos=16)

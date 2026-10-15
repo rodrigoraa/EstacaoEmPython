@@ -654,6 +654,18 @@ def _segmento_movel(a, b, velocidade, horizonte_h, raio_km):
     return entrada, menor
 
 
+def _trecho_em_aproximacao(a, b, velocidade):
+    """Recorta os pixels cuja distância ao alvo ainda está diminuindo."""
+    produto_a, produto_b = float(np.dot(a, velocidade)), float(np.dot(b, velocidade))
+    if min(produto_a, produto_b) >= -1e-9:
+        return None
+    if produto_a > 0:
+        a = a + (b - a) * produto_a / (produto_a - produto_b)
+    elif produto_b > 0:
+        b = a + (b - a) * produto_a / (produto_a - produto_b)
+    return a, b
+
+
 def projetar_footprint(pontos, footprint, bounds, width, height, target_lat, target_lon,
                        impact_radius_km=5, projection_minutes=120,
                        min_frames=4, min_duration_minutes=10, max_gap_minutes=15,
@@ -736,11 +748,17 @@ def projetar_footprint(pontos, footprint, bounds, width, height, target_lat, tar
         return vazio
     horizonte_h = float(projection_minutes) / 60
     entrada, menor = None, math.inf
+    impacto_em_aproximacao = False
     for a, b in segmentos:
         instante, distancia = _segmento_movel(a, b, velocidade, horizonte_h, impact_radius_km)
         menor = min(menor, distancia)
         if instante is not None:
             entrada = instante if entrada is None else min(entrada, instante)
+        trecho_entrante = _trecho_em_aproximacao(a, b, velocidade)
+        if trecho_entrante is not None:
+            instante_entrante, _ = _segmento_movel(
+                *trecho_entrante, velocidade, horizonte_h, impact_radius_km)
+            impacto_em_aproximacao |= instante_entrante is not None
     if vertices is not None and cv2.pointPolygonTest(vertices.astype(np.float32), (0.0, 0.0), False) >= 0:
         entrada, menor = 0.0, 0.0
     horizontes = sorted(set([0.0, projection_minutes / 4, projection_minutes / 2,
@@ -758,8 +776,11 @@ def projetar_footprint(pontos, footprint, bounds, width, height, target_lat, tar
     velocidade2 = float(np.dot(velocidade, velocidade))
     instante_centro = max(0.0, -float(np.dot(centros[-1], velocidade)) / velocidade2) if velocidade2 > 1e-12 else 0.0
     menor_centro = float(np.linalg.norm(centros[-1] + velocidade * instante_centro))
-    aproximando = bool(np.dot(centros[-1], velocidade) < -1 and
-                       np.dot(centros[-1], passos[-1]) < 0) if confiavel else None
+    # O centro pode já passar ao lado enquanto outra parte real da chuva ainda
+    # vai alcançar o distrito. Também não basta haver cobertura agora: uma área
+    # inteira saindo do raio não justifica um novo aviso de chuva se aproximando.
+    aproximando = bool(impacto_em_aproximacao or
+                       menor < projecoes[0]["min_distance_km"] - 0.001) if confiavel else None
     return dict(trajectory_method="linear_xy_6_pixel_runs" if reais else "linear_xy_6_legacy_polygon",
                 trajectory_frames_used=len(recentes), trajectory_confidence=confianca,
                 trajectory_recent_valid=confiavel, trajectory_approaching=aproximando,

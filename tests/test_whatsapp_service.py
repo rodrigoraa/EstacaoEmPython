@@ -3,7 +3,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +20,9 @@ class WhatsAppServiceTest(unittest.TestCase):
         import services.whatsapp_service as whatsapp_service
 
         self.whatsapp_service = importlib.reload(whatsapp_service)
+        post_patch = patch.object(self.whatsapp_service.requests, "post")
+        post_patch.start()
+        self.addCleanup(post_patch.stop)
 
     def tearDown(self):
         for chave in (
@@ -51,3 +54,13 @@ class WhatsAppServiceTest(unittest.TestCase):
                 "linkPreview": False,
             },
         )
+
+    def test_http_de_erro_informa_status_sem_expor_resposta_da_api(self):
+        for codigo in (400, 401, 403, 404, 408, 429, 500, 503):
+            with self.subTest(codigo=codigo):
+                self.whatsapp_service.requests.post = Mock(
+                    return_value=Mock(status_code=codigo, text="segredo da resposta")
+                )
+                with self.assertRaises(RuntimeError) as erro:
+                    self.whatsapp_service.enviar_whatsapp("5567999999999", "Alerta")
+                self.assertEqual(str(erro.exception), f"Erro HTTP {codigo} na Evolution API")

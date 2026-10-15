@@ -13,6 +13,7 @@ from services.nowcasting_service import (  # noqa: E402
     classificar_estacao_montante,
     janela_snapshot_operacional_minutos,
     snapshot_operacionalmente_atual,
+    preparar_estado_nowcasting_admin,
 )
 
 
@@ -49,6 +50,19 @@ class NowcastingServiceTest(unittest.TestCase):
                 snapshot, {"poll_seconds": 300}, now=self.now
             )
         )
+
+    def test_api_atualiza_status_envio_depois_de_alterar_controle(self):
+        snapshot = self.snapshot()
+        snapshot["alerta_preventivo"].update(
+            preventive_sending="DESATIVADO", would_send=True,
+        )
+        preparado = preparar_estado_nowcasting_admin(
+            snapshot, {**self.config, "alerts_enabled": True}, now=self.now,
+        )
+        self.assertEqual(
+            preparado["estado"]["alerta_preventivo"]["preventive_sending"], "ATIVADO",
+        )
+        self.assertEqual(snapshot["alerta_preventivo"]["preventive_sending"], "DESATIVADO")
 
     def test_snapshot_velho_stale_ou_sem_radar_operacional_nao_e_atual(self):
         casos = (

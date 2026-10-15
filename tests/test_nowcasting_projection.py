@@ -44,6 +44,38 @@ class ProjectionTest(unittest.TestCase):
         self.assertFalse(result["projected_impact"])
         self.assertGreater(result["projected_impact_min_distance_km"], 12)
 
+    def test_chuva_ainda_chega_quando_centro_do_sistema_ja_afasta(self):
+        # O centro inclui eco fraco; a chuva MEDIUM+ pode estar atrás dele.
+        points = self.pontos([(10, 30), (15, 30), (20, 30), (25, 30), (30, 30)])
+        result = self.calcular(points, self.footprint((-25, -15), (-5, 5)))
+        self.assertEqual(result["trajectory_confidence"], "ALTA")
+        self.assertGreater(result["trajectory_closest_center_km"], 25)
+        self.assertTrue(result["trajectory_approaching"])
+        self.assertTrue(result["projected_impact"])
+        self.assertGreater(result["projected_impact_eta_minutes"], 0)
+
+    def test_area_sobre_o_raio_ainda_tem_chuva_entrando(self):
+        points = self.pontos([(10, 30), (15, 30), (20, 30), (25, 30), (30, 30)])
+        result = self.calcular(points, self.footprint((-20, 80), (3, 57)))
+        self.assertEqual(result["projected_impact_eta_minutes"], 0)
+        self.assertTrue(result["trajectory_approaching"])
+
+    def test_area_inteira_saindo_do_raio_nao_se_aproxima(self):
+        points = self.pontos([(1, 0), (2, 0), (3, 0), (4, 0), (5, 0)])
+        result = self.calcular(points, self.footprint((3, 7), (-2, 2)))
+        self.assertTrue(result["trajectory_recent_valid"])
+        self.assertEqual(result["projected_impact_eta_minutes"], 0)
+        self.assertFalse(result["trajectory_approaching"])
+
+    def test_chuva_saindo_e_fragmento_entrante_lateral_nao_autorizam(self):
+        points = self.pontos([(10, 30), (15, 30), (20, 30), (25, 30), (30, 30)])
+        saindo = self.footprint((3, 7), (-2, 2))
+        lateral = self.footprint((-25, -15), (19, 25))
+        footprint = {"format": "pixel_runs_v1", "runs": saindo["runs"] + lateral["runs"]}
+        result = self.calcular(points, footprint)
+        self.assertEqual(result["projected_impact_eta_minutes"], 0)
+        self.assertFalse(result["trajectory_approaching"])
+
     def test_movimento_irregular_baixa_confianca(self):
         points = self.pontos([(-60, 0), (-50, 10), (-40, -12), (-46, 5), (-30, 0)])
         result = self.calcular(points, self.footprint((-35, -25), (-5, 5)))

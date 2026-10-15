@@ -1,0 +1,17 @@
+[Unit]
+Description=Worker da estação meteorológica (%i)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=servidor
+WorkingDirectory=/var/www/EstacaoEmPython/estacao
+ExecStart=/var/www/EstacaoEmPython/estacao/venv/bin/python -u -m workers.%i
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+UMask=0007
+
+[Install]
+WantedBy=multi-user.target

@@ -293,6 +293,25 @@ def _mensagem_nivel(nivel, distancia):
     return "Nenhum eco confiável dentro de 100 km."
 
 
+def status_envio_preventivo(alerta, config):
+    """Descreve a configuração de envio sem confundi-la com elegibilidade."""
+    habilitado = (config or {}).get("alerts_enabled") is True
+    if not habilitado:
+        mensagem = "O envio está desativado para usuários."
+    elif alerta.get("would_send"):
+        mensagem = (
+            "Candidato elegível; envio público habilitado, sujeito à confirmação "
+            "em imagens distintas e ao controle de repetição."
+        )
+    else:
+        mensagem = "Envio público habilitado; nenhum candidato elegível nesta avaliação."
+    return {
+        "preventive_sending": "ATIVADO" if habilitado else "DESATIVADO",
+        # Nome legado preservado para consumidores do snapshot.
+        "simulation_message": mensagem,
+    }
+
+
 def criar_alerta_preventivo(
     eco_alerta,
     *,
@@ -380,7 +399,6 @@ def criar_alerta_preventivo(
         "local_event": bool(evento_local),
         "message": mensagem,
         **{campo: ameaca.get(campo) for campo in CAMPOS_INTENSIDADE},
-        "preventive_sending": "DESATIVADO",
     }
     decisao = decidir_alerta_preventivo(
         {**ameaca, **alerta}, radar_atualizado=radar_atualizado, evento_local=evento_local,
@@ -389,15 +407,7 @@ def criar_alerta_preventivo(
     alerta.update(decisao)
     if not tracking_confirmado(alerta):
         alerta.update(eta_minutes=None, eta_border_minutes=None, eta_border_quality=None)
-    would_send = decisao["would_send"]
-    alerta.update({
-        "would_send": would_send,
-        "simulation_message": (
-            "Este evento é candidato preventivo; o envio está desativado para usuários."
-            if would_send
-            else "Nenhum alerta preventivo será enviado aos usuários por esta versão."
-        ),
-    })
+    alerta.update(status_envio_preventivo(alerta, config))
     return alerta
 
 

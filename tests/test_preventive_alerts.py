@@ -229,6 +229,27 @@ class PreventiveAlertsTest(unittest.TestCase):
         self.assertTrue(alerta["regional_confirmation"])
         self.assertIn("Sinais também observados", alerta["message"])
 
+    def test_snapshot_reflete_envio_publico_habilitado(self):
+        alerta = criar_alerta_preventivo(
+            self.ameaca(24), radar_atualizado=True, evento_local=False,
+            config={"alerts_enabled": True},
+        )
+        self.assertTrue(alerta["would_send"])
+        self.assertEqual(alerta["preventive_sending"], "ATIVADO")
+        self.assertIn("confirmação", alerta["simulation_message"])
+        self.assertNotIn("desativado", alerta["simulation_message"])
+
+    def test_envio_habilitado_nao_torna_eco_lateral_elegivel(self):
+        ameaca = self.ameaca(24)
+        ameaca["projected_impact"] = False
+        alerta = criar_alerta_preventivo(
+            ameaca, radar_atualizado=True, evento_local=False,
+            config={"alerts_enabled": True},
+        )
+        self.assertFalse(alerta["would_send"])
+        self.assertEqual(alerta["preventive_sending"], "ATIVADO")
+        self.assertIn("nenhum candidato", alerta["simulation_message"])
+
     def test_evento_local_tem_prioridade_na_mensagem(self):
         alerta = criar_alerta_preventivo(
             self.ameaca(20),

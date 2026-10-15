@@ -5,13 +5,14 @@
 {% set nivel_alerta = alerta.get('nivel', 'AGUARDANDO ANÁLISE') %}
 {% set rotulo_nivel_alerta = 'INDISPONÍVEL' if nivel_alerta == 'INDISPONIVEL' else nivel_alerta %}
 {% set classe_alerta = alerta.get('nivel', 'aguardando')|lower %}
-<section class="radar-page admin-weather-page max-w-7xl mx-auto space-y-6">
+<section class="radar-page admin-weather-page max-w-7xl mx-auto space-y-6" data-admin-auto-refresh>
   <header class="admin-weather-header">
     <div class="flex items-start gap-3">
       <span class="radar-title-icon"><i class="fa-solid fa-satellite-dish"></i></span>
       <div>
         <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Radar Meteorológico</h1>
         <p class="text-slate-500 mt-1">Radar de Jaraguari/MS · REDEMET/DECEA</p>
+        <p class="text-xs text-slate-500 mt-2"><span data-admin-refresh-status>Consulte novas imagens.</span> <a href="{{ request.full_path }}" class="underline" data-admin-refresh-now>Atualizar agora</a></p>
       </div>
     </div>
     <span class="admin-experimental-badge"><i class="fa-solid fa-flask"></i> Experimental · somente admin</span>

@@ -8,12 +8,13 @@
 {% set projecao_util = monitoramento_atual and confianca in ('MODERADA', 'ALTA') and (principal.get('trajectory_frames_used') or 0) >= min_frames_public %}
 {% set observacao_radar = ultima_observacao_radar|default(none) %}
 {% set observacao_historica = observacao_radar and observacao_radar.historica %}
-<section class="monitor-page admin-weather-page max-w-7xl mx-auto space-y-6">
+<section class="monitor-page admin-weather-page max-w-7xl mx-auto space-y-6" data-admin-auto-refresh>
   <header class="admin-weather-header">
     <div>
       <h1 class="text-2xl md:text-3xl font-bold text-slate-800">Monitoramento Meteorológico</h1>
       <p class="text-slate-500 mt-1">Distrito de São José</p>
       <p class="text-sm text-slate-500 mt-1">{% if estado %}Atualizado em {{ estado.gerado_em or 'horário indisponível' }}{% else %}Aguardando a primeira análise{% endif %}</p>
+      <p class="text-xs text-slate-500 mt-2"><span data-admin-refresh-status>Consulte novas imagens e análises.</span> <a href="{{ request.full_path }}" class="underline" data-admin-refresh-now>Atualizar agora</a></p>
     </div>
     <div class="flex flex-wrap gap-2" aria-label="Estado dos alertas">
       <span class="regional-status">Alertas públicos: {{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</span>

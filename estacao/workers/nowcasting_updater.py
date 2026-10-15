@@ -56,7 +56,7 @@ def executar_ciclo(config=None):
     ) or "nenhuma"
     logger.info(
         "Nowcasting: track=%s distancia_borda=%s status=%s evidencia=%s "
-        "alerta_visual=%s candidato_simulado=%s ameacas=%s "
+        "alerta_visual=%s candidato_elegivel=%s ameacas=%s "
         "estacoes_relevantes=%s snapshot=%s",
         estado["radar"].get("track_id"),
         estado["radar"].get("distancia_borda_km"),

@@ -704,9 +704,9 @@ class RadarIntegrationTest(unittest.TestCase):
 
     def test_alertas_desabilitados_nao_enfileiram(self):
         from config import radar_config
-        from workers.radar_updater import enfileirar_alertas_radar
+        from workers.radar_updater import executar_ciclo
 
-        self.assertEqual(enfileirar_alertas_radar(radar_config(), {}), 0)
+        self.assertTrue(executar_ciclo(config=radar_config())["desabilitado"])
         conn = self.database.get_db()
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_fila").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_eventos").fetchone()[0], 0)

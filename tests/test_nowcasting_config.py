@@ -5,10 +5,23 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "estacao"))
-from config import nowcasting_config
+from config import nowcasting_config, radar_config
 
 
 class NowcastingConfigTest(unittest.TestCase):
+    def test_radar_consulta_a_cada_minuto_sem_ampliar_validade_da_imagem(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(radar_config()["poll_seconds"], 60)
+            self.assertEqual(nowcasting_config()["radar_max_age_minutes"], 15)
+            self.assertEqual(nowcasting_config()["alert_delivery_max_age_minutes"], 15)
+
+    def test_intervalo_radar_explicito_continua_prevalecendo(self):
+        for seconds, expected in (("300", 300), ("10", 30), ("invalid", 60)):
+            with self.subTest(seconds=seconds), mock.patch.dict(os.environ, {
+                "RADAR_POLL_SECONDS": seconds,
+            }, clear=True):
+                self.assertEqual(radar_config()["poll_seconds"], expected)
+
     def test_defaults_antecipam_monitoramento_com_interceptacao_local(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             config = nowcasting_config()
@@ -22,7 +35,33 @@ class NowcastingConfigTest(unittest.TestCase):
         self.assertEqual(config["radar_max_age_minutes"], 15)
         self.assertEqual(config["radar_display_max_age_minutes"], 45)
         self.assertEqual(config["alert_delivery_max_age_minutes"], 15)
-        self.assertEqual(config["algorithm_version"], "1.7")
+        self.assertEqual(config["algorithm_version"], "1.8")
+
+    def test_alias_radar_habilita_motor_e_envio(self):
+        with mock.patch.dict(os.environ, {"RADAR_ALERTS_ENABLED": "true"}, clear=True):
+            config = nowcasting_config()
+        self.assertTrue(config["enabled"])
+        self.assertTrue(config["alerts_enabled"])
+
+    def test_opcoes_explicitas_nowcasting_prevalecem_sobre_alias(self):
+        with mock.patch.dict(os.environ, {
+            "RADAR_ALERTS_ENABLED": "true",
+            "NOWCASTING_ENABLED": "false",
+            "NOWCASTING_ALERTS_ENABLED": "false",
+        }, clear=True):
+            config = nowcasting_config()
+        self.assertFalse(config["enabled"])
+        self.assertFalse(config["alerts_enabled"])
+
+    def test_alias_desligado_nao_bloqueia_opcoes_especificas(self):
+        with mock.patch.dict(os.environ, {
+            "RADAR_ALERTS_ENABLED": "false",
+            "NOWCASTING_ENABLED": "true",
+            "NOWCASTING_ALERTS_ENABLED": "true",
+        }, clear=True):
+            config = nowcasting_config()
+        self.assertTrue(config["enabled"])
+        self.assertTrue(config["alerts_enabled"])
 
     def test_limite_visual_do_radar_nao_altera_validade_de_alertas(self):
         with mock.patch.dict(os.environ, {"RADAR_STALE_MINUTES": "30"}, clear=True):

@@ -32,9 +32,9 @@ Open-Meteo ---------------------------------------> /previsao
 updater + fila -----------------------------------> alertas atuais
 ```
 
-O radar é uma fonte independente, complementar e experimental. O navegador nunca consulta a REDEMET: o worker baixa e analisa os PNGs, persiste o estado e a aplicação lê somente SQLite/arquivos locais. Sua visualização exige a sessão administrativa; visitantes não recebem o painel, a API nem as imagens. Nesta fase ele não envia alertas preventivos; `RADAR_ALERTS_ENABLED=false` é o default e a função de integração permanece deliberadamente inativa até validação meteorológica.
+O radar é uma fonte independente, complementar e experimental. O navegador nunca consulta a REDEMET: o worker baixa e analisa os PNGs, persiste o estado e a aplicação lê somente SQLite/arquivos locais. Sua visualização exige a sessão administrativa; visitantes não recebem o painel, a API nem as imagens. Alertas de chuva com passagem projetada sobre São José são avaliados pelo nowcasting e entregues pelo worker de WhatsApp. O coletor não faz envio próprio. `RADAR_ALERTS_ENABLED=false` é o default; quando habilitado, serve de fallback para ativar o motor e o envio público, respeitando as opções explícitas `NOWCASTING_*` e o controle administrativo.
 
-A rede PIN-MS e o nowcasting também são experimentais e visíveis somente no painel administrativo. Dourados A721, Caarapó S706, Juti A749, Naviraí S735, Ivinhema A709 e Culturama S708 complementam a observação local, mas não são sensores da escola e não produzem previsão ou alertas. Os três workers continuam executando em background sem depender de sessão ou navegador autenticado.
+A rede PIN-MS e o nowcasting também são experimentais e visíveis somente no painel administrativo. Dourados A721, Caarapó S706, Juti A749, Naviraí S735, Ivinhema A709 e Culturama S708 complementam a observação local e não são sensores da escola. A rede regional não envia alertas por conta própria; o nowcasting pode enfileirar avisos de chegada provável de chuva pelo radar. Os workers continuam executando em background sem depender de sessão ou navegador autenticado.
 
 O acesso a `/previsao` nunca coleta uma nova leitura oficial nem grava em `leituras_brutas`; a página usa a última leitura persistida pelo updater. Os processos principais são:
 
@@ -154,7 +154,7 @@ Também permanecem os limites `ALERTA_CALOR_*`, `ALERTA_FRIO_*`, `ALERTA_VENTO_*
 | `RADAR_ANIMA` | `15` | quantidade solicitada à API |
 | `RADAR_TARGET_LAT` | `-22.4925326` | latitude da EE São José |
 | `RADAR_TARGET_LON` | `-54.4610352` | longitude da EE São José |
-| `RADAR_POLL_SECONDS` | `300` | intervalo mínimo entre ciclos |
+| `RADAR_POLL_SECONDS` | `60` | cadência entre inícios de coleta; processamento conta no intervalo, com pausa mínima de 30 s se houver falha ou atraso |
 | `RADAR_REQUEST_TIMEOUT_SECONDS` | `30` | timeout HTTP |
 | `RADAR_MIN_CLUSTER_PIXELS` | `100` | filtro de componentes pequenos |
 | `RADAR_MORPH_CLOSE_ITERATIONS` | `2` | fechamento morfológico 3x3 |
@@ -171,7 +171,7 @@ Também permanecem os limites `ALERTA_CALOR_*`, `ALERTA_FRIO_*`, `ALERTA_VENTO_*
 | `RADAR_STALE_MINUTES` | `45` | idade para aviso visual |
 | `RADAR_MAX_FUTURE_MINUTES` | `30` | tolerância antes de marcar timestamp futuro como `suspect` |
 | `RADAR_DATA_DIR` | `estacao/data/radar` | originais e imagens anotadas |
-| `RADAR_ALERTS_ENABLED` | `false` | reservado; não envia nesta versão |
+| `RADAR_ALERTS_ENABLED` | `false` | fallback para `NOWCASTING_ENABLED` e `NOWCASTING_ALERTS_ENABLED`; exige os workers de nowcasting e WhatsApp |
 
 Exemplo de `.env` não versionado:
 
@@ -235,7 +235,7 @@ A metadata do ArcGIS informa os tipos dos campos, mas não registra unidades nos
 | `NOWCASTING_REGIONAL_MAX_AGE_MINUTES` | `180` | idade máxima de estação confirmadora |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_SIGNALS` | `2` | sinais independentes mínimos para confirmação |
 | `NOWCASTING_REGIONAL_CONFIRM_MIN_STATIONS` | `1` | estações a montante mínimas com sinais |
-| `NOWCASTING_ALGORITHM_VERSION` | `1.7` | versão persistida junto ao snapshot |
+| `NOWCASTING_ALGORITHM_VERSION` | `1.8` | versão persistida junto ao snapshot |
 
 Nowcasting aqui não é previsão numérica. É fusão observacional de curtíssimo prazo:
 o radar acompanha ecos, as estações regionais confirmam alterações em superfície e
@@ -251,7 +251,7 @@ Uma análise recém-gerada não torna um radar antigo utilizável: a idade das f
 continua sendo conferida em cada ciclo. O painel só informa monitoramento atualizado
 quando a análise passa na verificação de atualidade.
 
-Estações com `DADOS_ESTAGNADOS` não fornecem confirmação regional, mesmo quando existe tendência histórica anterior. Os alertas preventivos de nowcasting continuam bloqueados nesta versão, inclusive se a variável reservada for habilitada.
+Estações com `DADOS_ESTAGNADOS` não fornecem confirmação regional, mesmo quando existe tendência histórica anterior. O envio público depende de trajetória consistente, impacto da área de chuva projetado sobre São José e confirmação em imagens distintas; proximidade isolada não autoriza mensagens.
 
 ### WhatsApp e double opt-in
 
@@ -686,9 +686,14 @@ NOWCASTING_ALERT_COOLDOWN_MINUTES=180
 NOWCASTING_ALERT_REARM_MINUTES=60
 ```
 
-`RADAR_ALERTS_ENABLED` continua sem enviar mensagens públicas. Nenhum ajuste de
-deploy ou mudança de `.env` é realizado automaticamente. O painel administrativo
-de radar/monitoramento mostra flag, episódio, último nível enfileirado e motivo.
+`RADAR_ALERTS_ENABLED=true` é um alias de compatibilidade para habilitar motor e
+envio quando as opções específicas `NOWCASTING_ENABLED` e
+`NOWCASTING_ALERTS_ENABLED` não estiverem definidas. Um `false` explícito nessas
+opções prevalece. Os controles persistidos no painel continuam tendo precedência
+sobre o ambiente para envio público/teste. O coletor, o nowcasting e o sender
+precisam estar executando. Consulte [a ativação no servidor](deploy/radar-alerts.md)
+e o diagnóstico offline `python -m estacao.workers.radar_alert_status --json`.
+O painel administrativo mostra flag, episódio, último nível enfileirado e motivo.
 
 ### Alertas preventivos experimentais para o administrador
 
@@ -750,7 +755,7 @@ NOWCASTING_RADAR_MAX_AGE_MINUTES=15
 NOWCASTING_ALERT_DELIVERY_MAX_AGE_MINUTES=15
 ```
 
-O radar já detecta ecos em toda a cobertura disponível na imagem. Na versão 1.7,
+O radar já detecta ecos em toda a cobertura disponível na imagem. Na versão 1.8,
 áreas MEDIUM podem ser avaliadas para aviso antecipado até 100 km e HIGH/VERY_HIGH
 até 150 km. Estar nessa faixa não autoriza envio por si só: a chegada precisa ser
 projetada em até 120 minutos dentro de 5 km do alvo configurado em São José.
@@ -759,6 +764,9 @@ de pixels reais MEDIUM ou superiores projetada, preservando espaços sem eco e
 concavidades. Azul/ciano permanece visível no diagnóstico, mas sua passagem
 isolada não comprova chegada de chuva para enviar um alerta. Polígonos
 convexos antigos não comprovam interceptação e ficam somente no diagnóstico.
+Uma faixa de chuva ainda entrando no alvo pode autorizar aviso mesmo quando o
+centro do sistema já começou a se afastar; a aproximação considera os pixels
+reais entrantes. Uma área inteira em afastamento não autoriza novo preventivo.
 
 Todos os alertas, inclusive próximos e os testes ao administrador, exigem pelo
 menos quatro imagens distintas, dez minutos de observação contínua, movimento
@@ -792,7 +800,7 @@ ou mais de um minuto no futuro bloqueiam a previsão. Confirmação regional
 continua no diagnóstico e não é requisito obrigatório.
 
 Antes da entrega, a fila confere novamente o controle público, a validade da
-mensagem e o snapshot atual. Preventivos vencidos, desativados ou que perderam
+mensagem, o snapshot atual e o cadastro/consentimento do destinatário. Preventivos vencidos, desativados ou que perderam
 confirmação são marcados como `cancelado` e não seguem para retries. Alertas de
 condições já observadas seguem suas regras próprias. Reinicie os workers de radar,
 nowcasting e WhatsApp para carregar esta versão. Valores explícitos antigos no

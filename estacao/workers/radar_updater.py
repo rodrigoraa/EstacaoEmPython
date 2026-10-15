@@ -44,10 +44,11 @@ from services.radar_service import (
     RedemetRadarClient,
     avaliar_timestamp_frame,
 )
-from time_utils import agora_utc
+from time_utils import agora_utc, parse_datetime
 
 
 logger = logging.getLogger(__name__)
+RADAR_MIN_IDLE_SECONDS = 30.0
 
 
 def _nome_base(frame) -> str:
@@ -165,17 +166,6 @@ def processar_frame(client, frame, config, coletado_em_utc=None) -> tuple[int, i
         raise
 
 
-def enfileirar_alertas_radar(config, _estado) -> int:
-    """Ponto de extensao futuro; nesta fase nunca cria alertas automaticamente."""
-    if not config.get("alerts_enabled", False):
-        return 0
-    logger.warning(
-        "RADAR_ALERTS_ENABLED=true, mas o envio preventivo ainda nao foi habilitado "
-        "sem validacao meteorologica"
-    )
-    return 0
-
-
 def executar_ciclo(client=None, config=None) -> dict:
     config = config or radar_config()
     if not config["enabled"]:
@@ -184,6 +174,7 @@ def executar_ciclo(client=None, config=None) -> dict:
     if not config["api_key"]:
         raise RadarServiceError("REDEMET_API_KEY nao configurada")
 
+    inicio_ciclo = time.monotonic()
     database.init_db()
     client = client or RedemetRadarClient(
         config["api_key"],
@@ -194,6 +185,16 @@ def executar_ciclo(client=None, config=None) -> dict:
     )
     resultado = client.obter_frames()
     coletado_em_utc = agora_utc()
+    inicio_processamento = time.monotonic()
+    mais_recente = max(resultado.frames, key=lambda frame: frame.data_frame_utc, default=None)
+    if mais_recente is not None:
+        idade_coleta = (coletado_em_utc - mais_recente.data_frame_utc).total_seconds() / 60
+        logger.info(
+            "Radar recebido: latest_remote_utc=%s idade_na_coleta_min=%.1f frames=%d",
+            mais_recente.data_utc_texto, idade_coleta, len(resultado.frames),
+        )
+    else:
+        logger.info("Radar recebido: nenhum frame remoto disponivel")
     novos = falhas = 0
     for frame in resultado.frames:
         existente = frame_existente(frame.path_remoto)
@@ -212,7 +213,21 @@ def executar_ciclo(client=None, config=None) -> dict:
                 erro_externo_seguro(erro),
             )
     estado = obter_estado_radar(config["stale_minutes"])
-    enfileirar_alertas_radar(config, estado)
+    fim_ciclo = time.monotonic()
+    frame_publicado = estado.get("frame") or {}
+    publicado_em = parse_datetime(
+        frame_publicado.get("data_frame_utc") or frame_publicado.get("data_frame"),
+        assume_utc=True,
+    )
+    idade_final = frame_publicado.get("idade_minutos")
+    logger.info(
+        "Ciclo radar: duracao_s=%.1f processamento_s=%.1f "
+        "latest_published_utc=%s idade_final_min=%s novos=%d falhas=%d",
+        fim_ciclo - inicio_ciclo, fim_ciclo - inicio_processamento,
+        publicado_em.isoformat() if publicado_em else "indisponivel",
+        f"{idade_final:.1f}" if idade_final is not None else "indisponivel",
+        novos, falhas,
+    )
     return {
         "desabilitado": False,
         "recebidos": resultado.recebidos,
@@ -358,11 +373,18 @@ def main(argv=None):
         imprimir_resumo(executar_ciclo(config=config))
         return 0
     while True:
+        prazo = time.monotonic() + config["poll_seconds"]
+        falhou = False
         try:
             imprimir_resumo(executar_ciclo(config=config))
         except Exception as erro:
+            falhou = True
             logger.error("Ciclo do radar falhou: %s", erro_externo_seguro(erro))
-        time.sleep(config["poll_seconds"])
+        restante = prazo - time.monotonic()
+        if falhou or restante <= 0:
+            # Ciclos lentos ou com erro precisam de pausa antes da nova consulta.
+            restante = max(restante, RADAR_MIN_IDLE_SECONDS)
+        time.sleep(restante)
 
 
 if __name__ == "__main__":

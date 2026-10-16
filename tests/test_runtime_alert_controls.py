@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import importlib
 import json
 import os
@@ -37,10 +38,7 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         self.controls = runtime_alert_controls
 
     def login(self):
-        with self.client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
-            session["csrf_token"] = "csrf-test"
+        autenticar_admin(self.client, csrf_token='csrf-test')
 
     def post(self, name, enabled, csrf="csrf-test"):
         return self.client.post(f"/admin/alert-controls/{name}",
@@ -104,6 +102,8 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         self.assertTrue(self.controls.aplicar_controles(base)["alerts_enabled"])
 
     def test_post_auth_csrf_boolean_estrito_e_chave_separada(self):
+        with self.client.session_transaction() as session:
+            session["csrf_token"] = "csrf-test"
         self.assertEqual(self.post("public", "true").status_code, 401)
         self.assertEqual(self.client.get("/admin/api/alert-controls").status_code, 401)
         self.login()

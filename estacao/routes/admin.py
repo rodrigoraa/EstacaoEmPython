@@ -1,19 +1,15 @@
 import hmac
 import os
-import secrets
 import sqlite3
-import time
 
 import bcrypt
 import requests
 from flask import (
     Blueprint,
-    abort,
     flash,
     redirect,
     render_template,
     request,
-    session,
     url_for,
 )
 
@@ -21,9 +17,10 @@ import database
 from extensions import limiter
 from time_utils import agora_local as agora_local
 from time_utils import formatar_local, minutos_desde
-from unsubscribe_tokens import normalizar_telefone
 from config import env_str
-from admin_auth import admin_autenticado
+from admin_auth import admin_autenticado, encerrar_sessao_admin, iniciar_sessao_admin
+from csrf import gerar_csrf_token, validar_csrf
+from services.whatsapp_service import obter_configuracao_evolution
 
 admin_routes = Blueprint("admin", __name__)
 
@@ -113,32 +110,15 @@ def redirecionar_usuarios():
     return redirect(url_for("admin.admin", **parametros_retorno_usuarios()))
 
 
-def gerar_csrf_token():
-    token = session.get("csrf_token")
-    if not token:
-        token = secrets.token_urlsafe(32)
-        session["csrf_token"] = token
-    return token
-
-
 @admin_routes.app_context_processor
 def injetar_csrf_token():
     return {"csrf_token": gerar_csrf_token}
 
 
-def validar_csrf():
-    token_form = request.form.get("csrf_token", "")
-    token_sessao = session.get("csrf_token", "")
-
-    if not token_form or not token_sessao:
-        abort(403)
-
-    if not hmac.compare_digest(token_form, token_sessao):
-        abort(403)
-
-
 def senha_admin_valida(senha):
     senha = senha or ""
+    if not isinstance(senha, str) or len(senha.encode("utf-8")) > 72:
+        return False
     senha_admin = env_str("ADMIN_PASSWORD")
     senha_admin_hash = env_str("ADMIN_PASSWORD_HASH")
 
@@ -175,26 +155,40 @@ def obter_status_evolution():
             "detalhe": "Faltando: " + ", ".join(faltando),
         }
 
-    url = f"{evolution_url}/instance/connectionState/{instance}"
-    headers = {"apikey": api_key}
+    try:
+        configuracao = obter_configuracao_evolution()
+    except RuntimeError:
+        return {"ok": False, "status": "nao_configurada", "estado": "Configuração inválida",
+                "detalhe": "Revise a configuração da integração no servidor."}
+    url = f"{configuracao['url']}/instance/connectionState/{configuracao['instance']}"
+    headers = {"apikey": configuracao["api_key"]}
 
     try:
-        resposta = requests.get(url, headers=headers, timeout=5)
-    except requests.exceptions.RequestException as e:
+        resposta = requests.get(url, headers=headers, timeout=5, allow_redirects=False)
+    except requests.exceptions.RequestException:
         return {
             "ok": False,
             "status": "erro_conexao",
             "estado": "Sem resposta",
-            "detalhe": str(e),
+            "detalhe": "Não foi possível consultar a integração. Tente novamente mais tarde.",
         }
+
+    if 300 <= resposta.status_code < 400:
+        return {"ok": False, "status": "erro_http", "estado": "Redirecionamento bloqueado",
+                "detalhe": f"HTTP {resposta.status_code}"}
 
     try:
         payload = resposta.json()
     except ValueError:
         payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    instancia = payload.get("instance")
+    if not isinstance(instancia, dict):
+        instancia = {}
 
     estado = (
-        payload.get("instance", {}).get("state")
+        instancia.get("state")
         or payload.get("state")
         or payload.get("status")
         or "desconhecido"
@@ -437,15 +431,18 @@ def editar_usuario(id):
 
     validar_csrf()
 
-    nome = request.form.get("nome", "").strip()
-    telefone = normalizar_telefone(request.form.get("telefone"))
-    endereco = request.form.get("endereco", "").strip()
+    from services.subscriber_security import validar_cadastro
+
+    try:
+        nome, telefone, endereco = validar_cadastro(
+            request.form.get("nome", ""), request.form.get("telefone", ""),
+            request.form.get("endereco", ""),
+        )
+    except ValueError as erro:
+        flash(str(erro))
+        return redirecionar_usuarios()
     receber_whatsapp = 1 if request.form.get("receber_whatsapp") == "1" else 0
     ativo = 1 if request.form.get("ativo") == "1" else 0
-
-    if not nome or not telefone or not endereco:
-        flash("Preencha nome, telefone e endereço antes de salvar.")
-        return redirecionar_usuarios()
 
     conn = database.get_db()
     garantir_estruturas_admin(conn)
@@ -496,7 +493,7 @@ def admin_logout():
     if admin_autenticado():
         validar_csrf()
 
-    session.clear()
+    encerrar_sessao_admin()
     return redirect(url_for("admin.admin"))
 
 
@@ -507,11 +504,7 @@ def admin():
         validar_csrf()
 
         if senha_admin_valida(request.form.get("senha")):
-            session.clear()
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
-            session["csrf_token"] = secrets.token_urlsafe(32)
-            session.permanent = True
+            iniciar_sessao_admin()
             return redirect(url_for("admin.admin"))
 
         flash("Senha incorreta!")

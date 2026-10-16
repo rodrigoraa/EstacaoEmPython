@@ -1,10 +1,10 @@
-import os
 import logging
 import requests
 from dotenv import load_dotenv
 
 from config import env_str
-from logging_utils import erro_externo_seguro, mascarar_telefone
+from logging_utils import mascarar_telefone
+from services.outbound_security import InvalidOutboundURL, validar_destino_evolution
 
 load_dotenv(encoding="utf-8")
 
@@ -28,6 +28,10 @@ def obter_configuracao_evolution():
     ]
     if faltantes:
         raise RuntimeError("Configuração Evolution incompleta: " + ", ".join(faltantes))
+    try:
+        valores["url"] = validar_destino_evolution(valores["url"], valores["instance"])
+    except InvalidOutboundURL:
+        raise RuntimeError("Configuração do destino Evolution inválida") from None
     return valores
 
 
@@ -45,16 +49,16 @@ def enviar_whatsapp(numero, mensagem):
 
     try:
 
-        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        response = requests.post(
+            url, json=payload, headers=headers, timeout=15, allow_redirects=False
+        )
 
-    except requests.Timeout as erro:
-        raise RuntimeError("Timeout na Evolution API") from erro
-    except requests.ConnectionError as erro:
-        raise RuntimeError("Falha de conexão/DNS com a Evolution API") from erro
-    except requests.RequestException as erro:
-        raise RuntimeError(
-            f"Erro de conexão Evolution API: {erro_externo_seguro(erro)}"
-        ) from erro
+    except requests.Timeout:
+        raise RuntimeError("Timeout na Evolution API") from None
+    except requests.ConnectionError:
+        raise RuntimeError("Falha de conexão/DNS com a Evolution API") from None
+    except requests.RequestException:
+        raise RuntimeError("Erro de conexão Evolution API") from None
 
     if not 200 <= response.status_code < 300:
 

@@ -1,0 +1,93 @@
+{
+  "checked_at_utc": "2026-10-15T23:33:45.582646+00:00",
+  "host": "https://meteo.eesjv.com.br",
+  "method": "HEAD only; no authentication or response bodies",
+  "results": [
+    {
+      "path": "/",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8",
+      "headers": {
+        "Strict-Transport-Security": null,
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": null,
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "same-origin",
+        "Cache-Control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0"
+      },
+      "cookie_attributes": {
+        "present": false,
+        "secure": false,
+        "httponly": false,
+        "samesite_lax": false
+      }
+    },
+    {
+      "path": "/admin",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8",
+      "headers": {
+        "Strict-Transport-Security": null,
+        "Content-Security-Policy": null,
+        "X-Content-Type-Options": null,
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "same-origin",
+        "Cache-Control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0"
+      },
+      "cookie_attributes": {
+        "present": false,
+        "secure": false,
+        "httponly": false,
+        "samesite_lax": false
+      }
+    },
+    {
+      "path": "/.env",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/estacao/.env",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/static/.env",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/.git/HEAD",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/.git/config",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/estacao.db",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/estacao/estacao.db",
+      "status": 530,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/api/clima",
+      "status": 530,
+      "probe": "cors",
+      "allow_origin": null,
+      "allow_credentials": null
+    },
+    {
+      "path": "/admin",
+      "scheme": "http",
+      "status": 530,
+      "redirects_to_https": false
+    }
+  ]
+}

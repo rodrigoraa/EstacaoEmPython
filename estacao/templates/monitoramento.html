@@ -79,7 +79,7 @@
         <h3 class="font-bold">Alertas públicos preventivos <span class="monitor-control-badge">{{ 'ATIVADOS' if controls.public.enabled else 'DESATIVADOS' }}</span></h3>
         <p>Envia aos usuários cadastrados apenas quando os critérios públicos do nowcasting forem atendidos.</p>
         <p class="text-sm">Origem: {{ 'Proteção de segurança' if controls.public.source == 'fail_safe' else 'Painel administrativo' if controls.public.source == 'admin' else 'Configuração do servidor' }}. Última alteração: {{ controls.public.updated_at or '—' }}.</p>
-        <button type="button" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}" onclick="document.getElementById('public-confirm').showModal()">{{ 'Desativar alertas públicos' if controls.public.enabled else 'Ativar alertas públicos' }}</button>
+        <button type="button" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}" data-open-dialog="public-confirm">{{ 'Desativar alertas públicos' if controls.public.enabled else 'Ativar alertas públicos' }}</button>
       </section>
       <section class="monitor-control-item">
         <h3 class="font-bold">Alertas de teste ao administrador <span class="monitor-control-badge">{{ 'ATIVADOS' if controls.test.enabled else 'DESATIVADOS' }}</span></h3>
@@ -100,7 +100,7 @@
     <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='public') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="enabled" value="{{ 'false' if controls.public.enabled else 'true' }}">
-      <div class="monitor-dialog-actions"><button type="button" onclick="this.closest('dialog').close()" class="monitor-action monitor-action--cancel">Cancelar</button><button type="submit" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}">{{ 'Desativar alertas' if controls.public.enabled else 'Ativar alertas' }}</button></div>
+      <div class="monitor-dialog-actions"><button type="button" data-close-dialog="true" class="monitor-action monitor-action--cancel">Cancelar</button><button type="submit" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}">{{ 'Desativar alertas' if controls.public.enabled else 'Ativar alertas' }}</button></div>
     </form>
   </dialog>
 

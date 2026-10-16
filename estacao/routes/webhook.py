@@ -5,6 +5,7 @@ import hashlib
 import os
 import logging
 import threading
+import re
 
 from config import env_str
 
@@ -30,6 +31,9 @@ def verificar_github(req):
     if sha_name != "sha256":
         return False
 
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", assinatura):
+        return False
+
     mac = hmac.new(webhook_secret.encode(), msg=req.data, digestmod=hashlib.sha256)
     return hmac.compare_digest(mac.hexdigest(), assinatura)
 
@@ -42,10 +46,13 @@ def validar_payload_deploy():
         abort(403)
 
     payload = request.get_json(silent=True)
-    if not payload:
+    if not isinstance(payload, dict) or not payload:
         return None, "payload inválido"
 
-    repo = payload.get("repository", {}).get("full_name")
+    repository = payload.get("repository")
+    if not isinstance(repository, dict):
+        return None, "payload inválido"
+    repo = repository.get("full_name")
     if repo != env_str("ALLOWED_DEPLOY_REPO", "rodrigoraa/EstacaoEmPython"):
         return None, "repo ignorado"
 

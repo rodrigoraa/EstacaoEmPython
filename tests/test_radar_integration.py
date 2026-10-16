@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import importlib
 import json
 import os
@@ -48,10 +49,7 @@ class RadarIntegrationTest(unittest.TestCase):
         self.client = self.app.test_client()
 
     def autenticar_admin(self):
-        with self.client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
-            session["csrf_token"] = "csrf-teste"
+        autenticar_admin(self.client, csrf_token='csrf-teste')
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -369,9 +367,7 @@ class RadarIntegrationTest(unittest.TestCase):
         os.environ.pop("REDEMET_API_KEY", None)
         aplicacao = self.app_module.create_app({"TESTING": True, "RATELIMIT_ENABLED": False})
         client = aplicacao.test_client()
-        with client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
+        autenticar_admin(client, csrf_token='csrf-teste')
         self.assertEqual(client.get("/admin/radar").status_code, 200)
 
     def test_stale(self):

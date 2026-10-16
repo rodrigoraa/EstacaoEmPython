@@ -26,7 +26,7 @@
         class="flex flex-col sm:flex-row md:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto justify-between md:justify-end"
       >
         <button
-          onclick="abrirCadastro()"
+          type="button" data-public-action="abrirCadastro"
           class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-2 w-full sm:flex-1 md:w-auto md:flex-none justify-center transition-colors"
         >
           <i class="fa-brands fa-whatsapp"></i>
@@ -335,13 +335,13 @@
     </div>
 
     <div class="mt-8 mb-4 text-center w-full flex justify-center">
-      <button onclick="abrirCancelarAlertas()" class="text-xs font-bold text-slate-400 hover:text-rose-500 underline transition-colors">
+      <button type="button" data-public-action="abrirCancelarAlertas" class="text-xs font-bold text-slate-400 hover:text-rose-500 underline transition-colors">
         Deseja parar de receber alertas no WhatsApp? Clique aqui.
       </button>
     </div>
   </div>
 
-  <script>
+  <script nonce="{{ csp_nonce }}">
     Chart.defaults.font.family = "'Inter',sans-serif";
 
     let chartTemp, chartSemana, chartMes, chartVento;
@@ -684,23 +684,6 @@
       fecharModal("modalCancelar");
     }
 
-    function confirmarCancelamento() {
-      let input = document.getElementById("input-tel-cancelar").value;
-      let telefone = input.replace(/\D/g, "");
-
-      if (telefone.length < 10) {
-        alert("Por favor, insira um número de WhatsApp válido com o DDD.");
-        return;
-      }
-
-      if (!telefone.startsWith("55")) {
-        telefone = "55" + telefone;
-      }
-
-      document.getElementById("telefone-cancelar-normalizado").value = telefone;
-      document.getElementById("form-cancelar-alertas").submit();
-    }
-
     function iniciarRelogioAoVivo() {
       setInterval(() => {
         if (!horaEstacao) return;
@@ -719,7 +702,7 @@
 
       input.addEventListener("input", function () {
         let valor = this.value.replace(/\D/g, "");
-        if (valor.startsWith("55")) valor = valor.substring(2);
+        if (valor.length > 11 && valor.startsWith("55")) valor = valor.substring(2);
         if (valor.length > 11) valor = valor.substring(0, 11);
         if (valor.length > 6)
           valor = `(${valor.substring(0, 2)}) ${valor.substring(2, 7)}-${valor.substring(7)}`;
@@ -761,6 +744,10 @@
 
       aplicarMascaraTelefone(document.getElementById("telefone"));
       aplicarMascaraTelefone(document.getElementById("input-tel-cancelar"));
+      const acoes = { abrirCadastro, fecharCadastro, abrirCancelarAlertas, fecharCancelarAlertas };
+      document.querySelectorAll("[data-public-action]").forEach((botao) => {
+        botao.addEventListener("click", acoes[botao.dataset.publicAction]);
+      });
     });
   
   </script>
@@ -778,11 +765,13 @@
         Receber Alertas Meteorológicos
       </h2>
 
-      <form method="POST">
+      <form method="POST" data-protect-submit>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="space-y-4">
           <input
             type="text"
             name="nome"
+            minlength="2" maxlength="120" autocomplete="name"
             placeholder="Seu nome"
             required
             class="w-full border rounded-lg px-3 py-2"
@@ -792,6 +781,8 @@
             type="text"
             id="telefone"
             name="telefone"
+            maxlength="32" inputmode="tel" autocomplete="tel"
+            pattern="[0-9+\(\) .\-]{10,32}"
             placeholder="WhatsApp"
             required
             class="w-full border rounded-lg px-3 py-2"
@@ -800,6 +791,7 @@
           <input
             type="text"
             name="endereco"
+            minlength="2" maxlength="240" autocomplete="street-address"
             placeholder="Endereço / Fazenda / Bairro"
             required
             class="w-full border rounded-lg px-3 py-2"
@@ -824,7 +816,7 @@
         <div class="flex justify-end gap-3 mt-6">
           <button
             type="button"
-            onclick="fecharCadastro()"
+            data-public-action="fecharCadastro"
             class="px-4 py-2 text-sm bg-gray-200 hover:bg-gray-300 transition rounded-lg"
           >
             Cancelar
@@ -858,11 +850,13 @@
         Insira o seu número de WhatsApp abaixo para receber um link seguro de confirmação.
       </p>
 
-      <form id="form-cancelar-alertas" method="POST" action="/unsubscribe/request">
-        <input type="hidden" id="telefone-cancelar-normalizado" name="telefone">
+      <form id="form-cancelar-alertas" method="POST" action="/unsubscribe/request" data-protect-submit>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input
           type="text"
           id="input-tel-cancelar"
+          name="telefone" required maxlength="32" inputmode="tel" autocomplete="tel"
+          pattern="[0-9+\(\) .\-]{10,32}"
           placeholder="(DD) 9XXXX-XXXX"
           class="w-full border-2 border-slate-200 rounded-xl px-3 py-2 mb-6 focus:outline-none focus:border-rose-400 font-bold text-slate-700"
         >
@@ -871,14 +865,13 @@
       <div class="flex justify-end gap-3">
         <button 
           type="button"
-          onclick="fecharCancelarAlertas()" 
+          data-public-action="fecharCancelarAlertas"
           class="px-4 py-2 text-sm bg-gray-200 hover:bg-gray-300 transition text-slate-700 rounded-lg font-bold"
         >
           Voltar
         </button>
         <button 
-          type="button"
-          onclick="confirmarCancelamento()" 
+          type="submit" form="form-cancelar-alertas"
           class="px-4 py-2 text-sm bg-rose-500 hover:bg-rose-600 transition text-white rounded-lg font-bold shadow-md"
         >
           Enviar Link

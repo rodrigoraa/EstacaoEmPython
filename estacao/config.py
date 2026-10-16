@@ -1,6 +1,8 @@
 import math
 import os
+import re
 from pathlib import Path
+from ipaddress import ip_address
 from urllib.parse import urlsplit, urlunsplit
 
 
@@ -247,10 +249,30 @@ def public_base_url():
     if env_str("APP_ENV", "development").lower() == "production" and not configurado:
         raise RuntimeError("PUBLIC_BASE_URL não configurada em produção")
 
-    valor = (configurado or "http://meteo.eesjv.com.br").rstrip("/")
-    partes = urlsplit(valor)
-    if partes.scheme not in {"http", "https"} or not partes.netloc:
+    valor = (configurado or "https://meteo.eesjv.com.br").rstrip("/")
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in valor) or "\\" in valor:
+        raise RuntimeError("PUBLIC_BASE_URL contem caracteres invalidos")
+    try:
+        partes = urlsplit(valor)
+        host = partes.hostname
+        porta = partes.port
+    except ValueError as erro:
+        raise RuntimeError("PUBLIC_BASE_URL possui host ou porta invalida") from erro
+    if (partes.scheme not in {"http", "https"} or not host or "@" in partes.netloc
+            or porta == 0 or partes.query or partes.fragment):
         raise RuntimeError("PUBLIC_BASE_URL deve ser uma URL http(s) absoluta")
+    try:
+        ip_address(host)
+    except ValueError:
+        try:
+            ascii_host = host.encode("idna").decode("ascii").rstrip(".")
+        except UnicodeError as erro:
+            raise RuntimeError("PUBLIC_BASE_URL possui hostname invalido") from erro
+        if (len(ascii_host) > 253 or not ascii_host or any(
+            not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+            for label in ascii_host.split(".")
+        )):
+            raise RuntimeError("PUBLIC_BASE_URL possui hostname invalido")
     return urlunsplit((partes.scheme, partes.netloc, partes.path.rstrip("/"), "", ""))
 
 
@@ -265,11 +287,35 @@ def validar_configuracao_web():
     faltantes = []
     if not env_str("SECRET_KEY"):
         faltantes.append("SECRET_KEY")
-    if not (env_str("ADMIN_PASSWORD") or env_str("ADMIN_PASSWORD_HASH")):
-        faltantes.append("ADMIN_PASSWORD ou ADMIN_PASSWORD_HASH")
+    if not env_str("ADMIN_PASSWORD_HASH"):
+        faltantes.append("ADMIN_PASSWORD_HASH")
     if not env_str("WEBHOOK_SECRET"):
         faltantes.append("WEBHOOK_SECRET")
     if not env_str("PUBLIC_BASE_URL"):
         faltantes.append("PUBLIC_BASE_URL")
     if faltantes:
         raise RuntimeError("Configuracao de producao incompleta: " + ", ".join(faltantes))
+
+    for nome in ("SECRET_KEY", "WEBHOOK_SECRET", "SIGNUP_CONFIRM_SECRET", "UNSUBSCRIBE_SECRET"):
+        valor = env_str(nome, "")
+        if nome in {"SIGNUP_CONFIRM_SECRET", "UNSUBSCRIBE_SECRET"} and not valor:
+            continue
+        if len(valor) < 32 or len(set(valor)) < 8:
+            raise RuntimeError(f"{nome} deve conter pelo menos 32 caracteres e ser aleatorio")
+    senha_hash = env_str("ADMIN_PASSWORD_HASH", "")
+    if not re.fullmatch(r"\$2[aby]\$(1[2-6])\$[./A-Za-z0-9]{53}", senha_hash):
+        raise RuntimeError("ADMIN_PASSWORD_HASH deve ser bcrypt valido com custo entre 12 e 16")
+    if env_str("ADMIN_PASSWORD"):
+        raise RuntimeError("Remova ADMIN_PASSWORD; producao aceita somente ADMIN_PASSWORD_HASH")
+    partes = urlsplit(public_base_url())
+    if partes.scheme != "https" or partes.username or partes.password:
+        raise RuntimeError("PUBLIC_BASE_URL deve usar HTTPS sem credenciais")
+    if not env_bool("SESSION_COOKIE_SECURE", True):
+        raise RuntimeError("SESSION_COOKIE_SECURE deve permanecer true em producao")
+    if not env_bool("HSTS_ENABLED", True):
+        raise RuntimeError("HSTS_ENABLED deve permanecer true em producao")
+    if not env_bool("RATELIMIT_ENABLED", True):
+        raise RuntimeError("RATELIMIT_ENABLED deve permanecer true em producao")
+    storage = env_str("RATELIMIT_STORAGE_URI", "")
+    if urlsplit(storage).scheme not in {"redis", "rediss", "redis+unix"}:
+        raise RuntimeError("RATELIMIT_STORAGE_URI deve configurar Redis compartilhado em producao")

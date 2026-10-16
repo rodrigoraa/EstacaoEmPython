@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import importlib
 import json
 import os
@@ -46,10 +47,7 @@ class RegionalStationsIntegrationTest(unittest.TestCase):
         self.collected = datetime(2026, 9, 2, 20, tzinfo=timezone.utc)
 
     def autenticar_admin(self):
-        with self.client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
-            session["csrf_token"] = "csrf-teste"
+        autenticar_admin(self.client, csrf_token='csrf-teste')
 
     def tearDown(self):
         self.tmp.cleanup()

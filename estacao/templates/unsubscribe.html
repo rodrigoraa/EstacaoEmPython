@@ -16,8 +16,7 @@
     <div class="bg-white border border-slate-200 rounded-xl shadow-sm max-w-md w-full p-8 text-center"
         style="border-top: 4px solid {{ estado.cor }};">
 
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="EESJ" class="h-12 mx-auto mb-6 opacity-80"
-            onerror="this.style.display='none'">
+        <img src="{{ url_for('static', filename='logo.png') }}" alt="EESJ" class="h-12 mx-auto mb-6 opacity-80">
 
         <div class="mx-auto flex items-center justify-center w-16 h-16 rounded-full mb-4 shadow-sm"
             style="background-color: {{ estado.cor }}15; color: {{ estado.cor }}; font-size: 1.75rem;">
@@ -33,7 +32,8 @@
         </div>
 
         {% if estado.mostrar_formulario %}
-        <form method="POST" action="{{ url_for('public.unsubscribe') }}" class="mb-4">
+        <form method="POST" action="{{ url_for('public.unsubscribe') }}" class="mb-4" data-protect-submit>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="token" value="{{ estado.token }}">
             <button type="submit"
                 class="inline-block px-6 py-3 bg-rose-600 text-white font-medium text-sm rounded-lg hover:bg-rose-700 transition-colors w-full shadow-sm">
@@ -48,6 +48,7 @@
         </a>
     </div>
 
+    <script src="{{ url_for('static', filename='js/form-guard.js') }}" defer></script>
 </body>
 
 </html>

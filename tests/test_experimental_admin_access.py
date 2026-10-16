@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import importlib
 import os
 import sys
@@ -45,10 +46,7 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
             os.environ.pop(key, None)
 
     def autenticar(self):
-        with self.client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
-            session["csrf_token"] = "csrf-teste"
+        autenticar_admin(self.client, csrf_token='csrf-teste')
 
     def test_publico_preserva_paginas_e_menu_da_master(self):
         for path in ("/", "/historico", "/previsao", "/sobre"):

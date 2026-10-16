@@ -30,6 +30,7 @@
     <title>Painel Admin | EESJ</title>
     {% include "includes/common_head_assets.html" %}
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <script src="{{ url_for('static', filename='js/form-guard.js') }}" defer></script>
 </head>
 <body class="admin-app admin-dashboard bg-slate-50 font-sans text-slate-800 pb-12">
     {% include "includes/admin_navigation.html" %}
@@ -349,15 +350,15 @@
                             </td>
                             <td class="px-4 py-3">
                                 <label class="sr-only" for="nome-{{ row.id }}">Nome</label>
-                                <input id="nome-{{ row.id }}" name="nome" value="{{ row.nome or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input">
+                                <input id="nome-{{ row.id }}" name="nome" value="{{ row.nome or '' }}" form="editar-usuario-{{ row.id }}" required minlength="2" maxlength="120" class="admin-table-input">
                             </td>
                             <td class="px-4 py-3">
                                 <label class="sr-only" for="telefone-{{ row.id }}">Telefone</label>
-                                <input id="telefone-{{ row.id }}" name="telefone" value="{{ row.telefone or '' }}" form="editar-usuario-{{ row.id }}" required inputmode="numeric" class="admin-table-input font-mono">
+                                <input id="telefone-{{ row.id }}" name="telefone" value="{{ row.telefone or '' }}" form="editar-usuario-{{ row.id }}" required minlength="10" maxlength="32" pattern="[0-9+\(\) .\-]{10,32}" inputmode="tel" class="admin-table-input font-mono">
                             </td>
                             <td class="px-4 py-3">
                                 <label class="sr-only" for="endereco-{{ row.id }}">Endereço</label>
-                                <input id="endereco-{{ row.id }}" name="endereco" value="{{ row.endereco or '' }}" form="editar-usuario-{{ row.id }}" required class="admin-table-input">
+                                <input id="endereco-{{ row.id }}" name="endereco" value="{{ row.endereco or '' }}" form="editar-usuario-{{ row.id }}" required minlength="2" maxlength="240" class="admin-table-input">
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex gap-4">
@@ -376,7 +377,7 @@
                                     <button type="submit" form="editar-usuario-{{ row.id }}" class="admin-icon-button admin-icon-button--save bg-indigo-600 hover:bg-indigo-500" title="Salvar alterações">
                                         <i class="fa-solid fa-floppy-disk"></i>
                                     </button>
-                                    <form action="{{ url_for('admin.deletar_usuario', id=row.id) }}" method="POST" onsubmit="return confirm('Apagar este usuário?')">
+                                    <form action="{{ url_for('admin.deletar_usuario', id=row.id) }}" method="POST" data-confirm="Apagar este usuário?">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <input type="hidden" name="retorno_pagina" value="{{ paginacao.pagina }}">
                                         <input type="hidden" name="retorno_por_pagina" value="{{ paginacao.por_pagina }}">

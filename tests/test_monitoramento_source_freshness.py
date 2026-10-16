@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import os
 import re
 import sys
@@ -141,14 +142,21 @@ class SourceFreshnessTest(unittest.TestCase):
 
 class SourceFreshnessPageTest(unittest.TestCase):
     def setUp(self):
-        self.env = mock.patch.dict(os.environ, {"APP_ENV": "development"})
+        import importlib
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.env = mock.patch.dict(os.environ, {
+            "APP_ENV": "development", "ESTACAO_DB": str(Path(self.tmp.name) / "teste.db")
+        })
         self.env.start()
         self.addCleanup(self.env.stop)
+        import database
+        importlib.reload(database).init_db()
         from app import create_app
         self.client = create_app({"TESTING": True, "SECRET_KEY": "teste",
                                   "RATELIMIT_ENABLED": False}).test_client()
-        with self.client.session_transaction() as session:
-            session.update(logado=True, ultimo_acesso=time.time(), csrf_token="teste")
+        autenticar_admin(self.client, csrf_token='teste')
         controls = {name: {"enabled": False, "source": "server", "updated_at": None}
                     for name in ("public", "test")}
         for target, value in (

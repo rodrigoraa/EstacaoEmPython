@@ -7,6 +7,17 @@ alert_state.json
 estado_alertas.json
 
 .env
+.env.*
+!.env.example
+!*.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.bak
+*.backup
+.test-tmp/
+.security-venv/
 
 venv/
 .venv/

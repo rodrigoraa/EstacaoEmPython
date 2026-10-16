@@ -6,6 +6,7 @@ import re
 import sys
 import tempfile
 import unittest
+import bcrypt
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,16 +14,18 @@ from unittest.mock import patch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ESTACAO_DIR = PROJECT_ROOT / "estacao"
 sys.path.insert(0, str(ESTACAO_DIR))
+ADMIN_HASH = bcrypt.hashpw(b"strong-test-password", bcrypt.gensalt(rounds=12)).decode()
 
 
 class ConfiguracaoProducaoTest(unittest.TestCase):
     def configuracao_valida(self):
         return {
             "APP_ENV": "production",
-            "SECRET_KEY": "segredo-producao",
-            "ADMIN_PASSWORD": "senha-admin",
-            "WEBHOOK_SECRET": "segredo-webhook",
+            "SECRET_KEY": "production-secret-0123456789-abcdefghijklmnop",
+            "ADMIN_PASSWORD_HASH": ADMIN_HASH,
+            "WEBHOOK_SECRET": "production-webhook-0123456789-abcdefghijklmnop",
             "PUBLIC_BASE_URL": "https://meteo.exemplo.test",
+            "RATELIMIT_STORAGE_URI": "redis://127.0.0.1:6379/0",
         }
 
     def test_producao_exige_segredos_e_url_publica(self):
@@ -30,7 +33,7 @@ class ConfiguracaoProducaoTest(unittest.TestCase):
 
         casos = (
             ("SECRET_KEY", "SECRET_KEY"),
-            ("ADMIN_PASSWORD", "ADMIN_PASSWORD ou ADMIN_PASSWORD_HASH"),
+            ("ADMIN_PASSWORD_HASH", "ADMIN_PASSWORD_HASH"),
             ("WEBHOOK_SECRET", "WEBHOOK_SECRET"),
             ("PUBLIC_BASE_URL", "PUBLIC_BASE_URL"),
         )
@@ -46,10 +49,25 @@ class ConfiguracaoProducaoTest(unittest.TestCase):
         import config
 
         ambiente = self.configuracao_valida()
-        ambiente.pop("ADMIN_PASSWORD")
-        ambiente["ADMIN_PASSWORD_HASH"] = "scrypt:hash-de-teste"
         with patch.dict(os.environ, ambiente, clear=True):
             config.validar_configuracao_web()
+
+    def test_producao_recusa_hash_senha_segredos_e_storage_inseguros(self):
+        import config
+
+        for campo, valor in (("ADMIN_PASSWORD_HASH", "scrypt:hash-de-teste"),
+                             ("ADMIN_PASSWORD", "plaintext"), ("SECRET_KEY", "short"),
+                             ("WEBHOOK_SECRET", "a" * 64),
+                             ("SIGNUP_CONFIRM_SECRET", "weak"),
+                             ("UNSUBSCRIBE_SECRET", "weak"),
+                             ("PUBLIC_BASE_URL", "http://meteo.exemplo.test"),
+                             ("RATELIMIT_STORAGE_URI", "memory://"),
+                             ("RATELIMIT_ENABLED", "false"), ("HSTS_ENABLED", "false")):
+            with self.subTest(campo=campo):
+                ambiente = self.configuracao_valida()
+                ambiente[campo] = valor
+                with patch.dict(os.environ, ambiente, clear=True), self.assertRaises(RuntimeError):
+                    config.validar_configuracao_web()
 
     def test_public_base_url_sem_fallback_em_producao(self):
         import config
@@ -58,23 +76,33 @@ class ConfiguracaoProducaoTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PUBLIC_BASE_URL"):
                 config.public_base_url()
 
-    def test_producao_avisa_quando_cookie_secure_esta_desativado(self):
+    def test_public_base_url_recusa_host_porta_credenciais_e_controles(self):
+        import config
+
+        for url in ("https://", "https://:443", "https://user:secret@meteo.test",
+                    "https://@meteo.test", "https://meteo.test:not-a-port",
+                    "https://meteo.test:99999", "https://meteo.test:0",
+                    "https://[invalid", "https://bad host.test", "https://bad_host.test",
+                    "https://meteo.test/path\\secret", "https://meteo.test/?secret=token",
+                    "https://meteo.test/#token", "https://meteo.\ttest"):
+            with self.subTest(url=url), patch.dict(os.environ, {"PUBLIC_BASE_URL": url}, clear=True):
+                with self.assertRaises(RuntimeError):
+                    config.public_base_url()
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.public_base_url(), "https://meteo.eesjv.com.br")
+
+    def test_producao_recusa_cookie_secure_desativado(self):
         import app as app_module
 
         ambiente = self.configuracao_valida()
         ambiente.update(
             {
                 "SESSION_COOKIE_SECURE": "false",
-                "RATELIMIT_ENABLED": "false",
             }
         )
         with patch.dict(os.environ, ambiente, clear=True):
-            with self.assertLogs("app", level="WARNING") as logs:
-                importlib.reload(app_module)
-
-        self.assertTrue(
-            any("SESSION_COOKIE_SECURE=false" in registro for registro in logs.output)
-        )
+            with self.assertRaisesRegex(RuntimeError, "SESSION_COOKIE_SECURE"):
+                app_module.create_app()
 
 
 class RotasSegurancaTest(unittest.TestCase):
@@ -170,17 +198,33 @@ class RotasSegurancaTest(unittest.TestCase):
         self.assertEqual(incorreta.status_code, 200)
         self.assertEqual(correta.status_code, 302)
 
-        with self.client.session_transaction() as sessao:
-            sessao["logado"] = True
-            sessao["ultimo_acesso"] = 0
+        with self.database.get_db() as conn:
+            conn.execute("UPDATE admin_sessoes SET ultimo_acesso = 0")
+        conn.close()
         expirada = self.client.get("/admin")
         self.assertEqual(expirada.status_code, 200)
         with self.client.session_transaction() as sessao:
-            self.assertNotIn("logado", sessao)
+            self.assertNotIn("admin_session", sessao)
 
     def assinatura(self, corpo):
         digest = hmac.new(b"webhook-teste", corpo, hashlib.sha256).hexdigest()
         return f"sha256={digest}"
+
+    def test_webhook_rejeita_tipos_json_e_assinaturas_malformadas_sem_executar(self):
+        headers = {"Content-Type": "application/json", "X-GitHub-Event": "push"}
+        with patch.object(self.webhook.subprocess, "Popen") as popen:
+            for corpo in (b'[]', b'null', b'123', b'{"repository":[]}', b'{"repository":null}'):
+                with self.subTest(corpo=corpo):
+                    response = self.client.post("/deploy/python", data=corpo, headers={
+                        **headers, "X-Hub-Signature-256": self.assinatura(corpo)})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn("payload inv".encode(), response.data)
+            for signature in ("sha256=0", "sha256=" + "g" * 64, "sha256=" + "é" * 64):
+                with self.subTest(signature=signature):
+                    response = self.client.post("/deploy/python", data=b'{}', headers={
+                        **headers, "X-Hub-Signature-256": signature})
+                    self.assertEqual(response.status_code, 403)
+            popen.assert_not_called()
 
     def test_webhook_valida_assinatura_repo_branch_e_concorrencia(self):
         corpo = (

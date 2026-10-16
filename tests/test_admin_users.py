@@ -3,12 +3,12 @@ import os
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask
+from security_helpers import autenticar_admin
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +29,7 @@ class AdminUsuariosTest(unittest.TestCase):
         self.database = importlib.reload(database)
         self.extensions = importlib.reload(extensions)
         self.admin_module = importlib.reload(admin_module)
+        self.addCleanup(setattr, self.admin_module, "obter_status_evolution", self.admin_module.obter_status_evolution)
         self.database.init_db()
 
         self.app = Flask(
@@ -57,10 +58,7 @@ class AdminUsuariosTest(unittest.TestCase):
         return conn
 
     def autenticar_admin(self):
-        with self.client.session_transaction() as sess:
-            sess["logado"] = True
-            sess["ultimo_acesso"] = time.time()
-            sess["csrf_token"] = "csrf-teste"
+        autenticar_admin(self.client)
 
     def cadastrar_usuario(self, nome="Maria", telefone="67999999999"):
         conn = self.abrir_banco()
@@ -106,13 +104,13 @@ class AdminUsuariosTest(unittest.TestCase):
         conn.close()
 
         self.assertEqual(usuario["nome"], "Maria Silva")
-        self.assertEqual(usuario["telefone"], "67988887777")
+        self.assertEqual(usuario["telefone"], "5567988887777")
         self.assertEqual(usuario["endereco"], "Rua Central")
         self.assertEqual(usuario["receber_whatsapp"], 1)
         self.assertEqual(usuario["ativo"], 0)
         self.assertEqual(evento["acao"], "edicao_admin")
         self.assertEqual(evento["nome"], "Maria Silva")
-        self.assertEqual(evento["telefone"], "67988887777")
+        self.assertEqual(evento["telefone"], "5567988887777")
         self.assertIn("painel administrativo", evento["detalhe"])
 
     def test_admin_renderiza_tabela_de_usuarios(self):

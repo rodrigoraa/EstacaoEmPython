@@ -40,7 +40,7 @@
     </div>
 
     <button
-      onclick="carregarDados()"
+      id="buscarHistorico"
       class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors"
     >
       <i class="fa-solid fa-magnifying-glass"></i> Buscar Dados
@@ -72,7 +72,7 @@
     class="hidden bg-slate-800 text-white rounded-xl p-6 shadow-lg relative transition-all"
   >
     <button
-      onclick="fecharDetalhes()"
+      id="fecharDetalhesHistorico"
       class="absolute top-4 right-4 text-slate-400 hover:text-white"
     >
       <i class="fa-solid fa-xmark text-xl"></i>
@@ -181,7 +181,9 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
+  document.getElementById("buscarHistorico").addEventListener("click", carregarDados);
+  document.getElementById("fecharDetalhesHistorico").addEventListener("click", fecharDetalhes);
   let charts = {};
   let dadosGlobais = {};
   const mediaQueryMobile = window.matchMedia("(max-width: 767px)");

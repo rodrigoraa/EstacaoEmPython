@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import colorsys
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
@@ -15,6 +16,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 EARTH_RADIUS_KM = 6371.0088
+# O produto atual tem dimensões muito menores; limita o trabalho do Pillow,
+# OpenCV e arrays intermediários antes de decodificar pixels não confiáveis.
+MAX_RADAR_IMAGE_DIMENSION = 4096
+MAX_RADAR_IMAGE_PIXELS = 4_194_304
 
 # Paleta observada em 42 PNGs MaxCAPPI reais de Jaraguari em 03/09/2026.
 # Os grupos representam somente níveis relativos de refletividade: não há aqui
@@ -915,14 +920,25 @@ def analisar_track(
 
 def abrir_imagem_png(conteudo: bytes) -> Image.Image:
     try:
-        original = Image.open(BytesIO(conteudo))
-        formato = original.format
-        original.verify()
-        imagem = Image.open(BytesIO(conteudo)).convert("RGBA")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(conteudo)) as original:
+                if (original.format or "").upper() != "PNG":
+                    raise ValueError("Imagem do radar nao esta no formato PNG")
+                width, height = original.size
+                if (
+                    width < 2 or height < 2
+                    or max(width, height) > MAX_RADAR_IMAGE_DIMENSION
+                    or width * height > MAX_RADAR_IMAGE_PIXELS
+                ):
+                    raise ValueError("Dimensoes da imagem do radar excedem o limite permitido")
+                if getattr(original, "n_frames", 1) != 1:
+                    raise ValueError("Imagem do radar deve conter somente um frame PNG")
+                original.verify()
+            with Image.open(BytesIO(conteudo)) as verificada:
+                imagem = verificada.convert("RGBA")
     except Exception as erro:
-        raise ValueError("Arquivo recebido nao e uma imagem PNG valida") from erro
-    if (formato or "").upper() != "PNG":
-        raise ValueError("Imagem do radar nao esta no formato PNG")
+        raise ValueError("Arquivo recebido nao e uma imagem PNG valida ou permitida") from erro
     return imagem
 
 

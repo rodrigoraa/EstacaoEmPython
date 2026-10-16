@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import json
 import math
 import os
@@ -53,9 +54,7 @@ class NowcastingRefreshTest(unittest.TestCase):
         self.client = app.create_app({
             "TESTING": True, "RATELIMIT_ENABLED": False,
         }).test_client()
-        with self.client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
+        autenticar_admin(self.client, csrf_token='csrf-teste')
 
         network = mock.patch(
             "requests.sessions.Session.request",

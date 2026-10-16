@@ -2,8 +2,11 @@ import importlib
 import os
 import sys
 import unittest
+import traceback
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import requests
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +57,7 @@ class WhatsAppServiceTest(unittest.TestCase):
                 "linkPreview": False,
             },
         )
+        self.assertFalse(kwargs["allow_redirects"])
 
     def test_http_de_erro_informa_status_sem_expor_resposta_da_api(self):
         for codigo in (400, 401, 403, 404, 408, 429, 500, 503):
@@ -64,3 +68,43 @@ class WhatsAppServiceTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError) as erro:
                     self.whatsapp_service.enviar_whatsapp("5567999999999", "Alerta")
                 self.assertEqual(str(erro.exception), f"Erro HTTP {codigo} na Evolution API")
+
+    def test_redirect_rejeitado_sem_seguir_ou_expor_destino(self):
+        post = Mock(return_value=Mock(status_code=307, headers={"Location": "https://evil.invalid"}))
+        self.whatsapp_service.requests.post = post
+        with self.assertRaisesRegex(RuntimeError, "HTTP 307"):
+            self.whatsapp_service.enviar_whatsapp("5567999999999", "Alerta")
+        self.assertFalse(post.call_args.kwargs["allow_redirects"])
+        post.assert_called_once()
+
+    def test_configuracao_invalida_nao_faz_chamada_http(self):
+        for url, instance in (
+            ("file:///tmp/evolution", "instance"),
+            ("https://user:secret@example.test", "instance"),
+            ("https://example.test?apikey=secret", "instance"),
+            ("https://example.test/#fragment", "instance"),
+            ("https://example.test", "../instance"),
+            ("https://example.test", "instance?redirect=evil"),
+            ("https://example.test", "instance/endpoint"),
+        ):
+            with self.subTest(url=url, instance=instance):
+                self.whatsapp_service.requests.post = Mock()
+                with patch.dict(os.environ, {"EVOLUTION_URL": url, "EVOLUTION_INSTANCE": instance}):
+                    with self.assertRaises(RuntimeError) as erro:
+                        self.whatsapp_service.enviar_whatsapp("5567999999999", "Alerta")
+                self.assertNotIn("secret", str(erro.exception))
+                self.whatsapp_service.requests.post.assert_not_called()
+
+    def test_evolution_local_configurada_e_permitida(self):
+        with patch.dict(os.environ, {"EVOLUTION_URL": "http://127.0.0.1:8081/base", "EVOLUTION_INSTANCE": "local-instance"}):
+            config = self.whatsapp_service.obter_configuracao_evolution()
+        self.assertEqual(config["url"], "http://127.0.0.1:8081/base")
+
+    def test_erro_de_requisicao_nao_revela_detalhes(self):
+        self.whatsapp_service.requests.post = Mock(
+            side_effect=requests.RequestException("https://secret-host/?apikey=secret")
+        )
+        with self.assertRaises(RuntimeError) as erro:
+            self.whatsapp_service.enviar_whatsapp("5567999999999", "Alerta")
+        self.assertEqual(str(erro.exception), "Erro de conexão Evolution API")
+        self.assertNotIn("secret-host", "".join(traceback.format_exception(erro.exception)))

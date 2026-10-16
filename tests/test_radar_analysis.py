@@ -1,8 +1,11 @@
 import sys
 import unittest
+import struct
+import zlib
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -276,6 +279,46 @@ class RadarAnalysisTest(unittest.TestCase):
         Image.new("RGB", (10, 10), "black").save(jpeg, "JPEG")
         with self.assertRaisesRegex(ValueError, "PNG"):
             abrir_imagem_png(jpeg.getvalue())
+
+    def test_dimensoes_e_bomba_rejeitadas_antes_da_conversao(self):
+        arquivo = BytesIO()
+        Image.new("RGB", (10, 10), "black").save(arquivo, "PNG")
+        for width, height in ((4097, 2), (2, 4097), (3000, 3000), (100000, 100000), (1, 10)):
+            with self.subTest(width=width, height=height):
+                # Altera apenas o cabeçalho e seu CRC: não aloca a imagem enorme.
+                png = bytearray(arquivo.getvalue())
+                png[16:24] = struct.pack(">II", width, height)
+                png[29:33] = struct.pack(">I", zlib.crc32(png[12:29]) & 0xffffffff)
+                with mock.patch.object(Image.Image, "convert") as converter:
+                    with self.assertRaisesRegex(ValueError, "PNG"):
+                        abrir_imagem_png(bytes(png))
+                    converter.assert_not_called()
+
+    def test_png_animado_rejeitado(self):
+        arquivo = BytesIO()
+        primeiro = Image.new("RGB", (10, 10), "black")
+        segundo = Image.new("RGB", (10, 10), "white")
+        primeiro.save(arquivo, "PNG", save_all=True, append_images=[segundo])
+        with self.assertRaisesRegex(ValueError, "PNG"):
+            abrir_imagem_png(arquivo.getvalue())
+
+    def test_aviso_pillow_de_bomba_e_tratado_como_erro(self):
+        arquivo = BytesIO()
+        Image.new("RGB", (10, 10), "black").save(arquivo, "PNG")
+        with mock.patch.object(Image, "MAX_IMAGE_PIXELS", 75):
+            with mock.patch.object(Image.Image, "convert") as converter:
+                with self.assertRaises(ValueError) as erro:
+                    abrir_imagem_png(arquivo.getvalue())
+                self.assertIsInstance(erro.exception.__cause__, Image.DecompressionBombWarning)
+                converter.assert_not_called()
+
+    def test_png_verificado_e_independente_do_stream_fechado(self):
+        arquivo = BytesIO()
+        Image.new("RGB", (10, 10), "red").save(arquivo, "PNG")
+        imagem = abrir_imagem_png(arquivo.getvalue())
+        self.addCleanup(imagem.close)
+        self.assertEqual(imagem.mode, "RGBA")
+        self.assertEqual(imagem.getpixel((5, 5)), (255, 0, 0, 255))
 
 
 if __name__ == "__main__":

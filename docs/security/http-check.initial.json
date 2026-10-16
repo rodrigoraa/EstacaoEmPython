@@ -1,0 +1,30 @@
+{
+  "sequence": "First successful external HEAD check, before the later HTTP 530 response",
+  "audit_date": "2026-10-15",
+  "host": "https://meteo.eesjv.com.br",
+  "method": "HEAD only; no authentication or response bodies",
+  "results": [
+    {"path": "/", "status": 200},
+    {
+      "path": "/admin",
+      "status": 200,
+      "cookie_attributes": {"present": true, "secure": true, "httponly": true, "samesite_lax": true},
+      "headers": {
+        "Strict-Transport-Security": null,
+        "Cache-Control": null,
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+      }
+    },
+    {"path": "/.env", "status": 404},
+    {"path": "/estacao/.env", "status": 404},
+    {"path": "/static/.env", "status": 404},
+    {"path": "/.git/HEAD", "status": 404},
+    {"path": "/.git/config", "status": 404},
+    {"path": "/estacao.db", "status": 404},
+    {"path": "/estacao/estacao.db", "status": 404},
+    {"path": "/api/clima", "status": 200, "origin": "https://audit.invalid", "allow_origin": null, "allow_credentials": null}
+  ]
+}

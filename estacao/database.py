@@ -9,7 +9,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 logger = logging.getLogger(__name__)
 
 
@@ -873,6 +873,11 @@ def init_db():
         )
 
     garantir_tabela_usuarios(conn)
+    from admin_auth import garantir_tabela_sessoes_admin
+    from services.subscriber_security import garantir_seguranca_cadastros
+
+    garantir_tabela_sessoes_admin(conn)
+    garantir_seguranca_cadastros(conn)
     garantir_tabela_alertas_envios(conn)
     garantir_tabela_alertas_fila(conn)
     garantir_tabela_alertas_eventos(conn)

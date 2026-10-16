@@ -1,3 +1,4 @@
+from security_helpers import autenticar_admin
 import importlib
 import json
 import os
@@ -36,10 +37,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.client = self.app_module.app.test_client()
 
     def autenticar_admin(self):
-        with self.client.session_transaction() as session:
-            session["logado"] = True
-            session["ultimo_acesso"] = time.time()
-            session["csrf_token"] = "csrf-teste"
+        autenticar_admin(self.client, csrf_token='csrf-teste')
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -244,12 +242,12 @@ class NowcastingIntegrationTest(unittest.TestCase):
                          for tabela in ("radar_frames", "radar_clusters", "nowcasting_snapshots")}
             finally:
                 conn.close()
-            self.assertEqual(self.database.SCHEMA_VERSION, 9)
+            self.assertGreaterEqual(self.database.SCHEMA_VERSION, 9)
             for _ in range(2):
                 self.database.init_db()
                 conn = self.database.get_db()
                 try:
-                    self.assertEqual(conn.execute("SELECT versao FROM schema_version").fetchone()[0], 9)
+                    self.assertEqual(conn.execute("SELECT versao FROM schema_version").fetchone()[0], self.database.SCHEMA_VERSION)
                     coluna = next(row for row in conn.execute("PRAGMA table_info(radar_clusters)")
                                   if row["name"] == "frente_relevante_json")
                     self.assertEqual(coluna["type"], "TEXT")

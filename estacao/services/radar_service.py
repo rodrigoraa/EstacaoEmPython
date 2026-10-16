@@ -4,18 +4,42 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import json
 from typing import Any, Iterable
-from urllib.parse import urlsplit
 
 import requests
+
+from services.outbound_security import InvalidOutboundURL, validar_url_imagem_redemet
 
 
 REDEMET_RADAR_URL = "https://api-redemet.decea.mil.br/produtos/radar/maxcappi"
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_METADATA_BYTES = 2 * 1024 * 1024
 
 
 class RadarServiceError(RuntimeError):
     """Falha externa sanitizada, sem URL completa nem credenciais."""
+
+
+def _ler_corpo_limitado(resposta, limite: int, nome: str) -> bytes:
+    declarado = resposta.headers.get("Content-Length")
+    if declarado is not None:
+        try:
+            tamanho = int(declarado)
+        except (TypeError, ValueError) as erro:
+            raise RadarServiceError("Tamanho declarado da resposta invalido") from erro
+        if tamanho < 0 or tamanho > limite:
+            raise RadarServiceError(f"{nome} excede o limite permitido")
+    conteudo = bytearray()
+    for bloco in resposta.iter_content(chunk_size=64 * 1024):
+        if not bloco:
+            continue
+        if len(conteudo) + len(bloco) > limite:
+            raise RadarServiceError(f"{nome} excede o limite permitido")
+        conteudo.extend(bloco)
+    if not conteudo:
+        raise RadarServiceError(f"{nome} vazia")
+    return bytes(conteudo)
 
 
 @dataclass(frozen=True)
@@ -125,9 +149,10 @@ def normalizar_frame(frame: dict[str, Any], produto_padrao: str) -> RadarFrame:
         )
 
     path = str(frame["path"]).strip()
-    partes = urlsplit(path)
-    if partes.scheme not in {"http", "https"} or not partes.netloc:
-        raise RadarServiceError("Frame REDEMET possui URL de imagem invalida")
+    try:
+        validar_url_imagem_redemet(path)
+    except InvalidOutboundURL as erro:
+        raise RadarServiceError("Frame REDEMET possui URL de imagem nao permitida") from erro
     data_frame_raw = str(frame["data"])
     try:
         data_frame = datetime.strptime(
@@ -211,34 +236,56 @@ class RedemetRadarClient:
         self.session = session or requests.Session()
 
     def obter_frames(self) -> RadarFetchResult:
+        resposta = None
         try:
             resposta = self.session.get(
                 REDEMET_RADAR_URL,
                 params={"api_key": self._api_key, "area": self.area, "anima": self.anima},
                 timeout=self.timeout,
+                allow_redirects=False,
+                stream=True,
+                headers={"Accept": "application/json", "Accept-Encoding": "identity"},
             )
             resposta.raise_for_status()
-        except requests.Timeout as erro:
-            raise RadarServiceError("Timeout ao consultar a REDEMET") from erro
-        except requests.RequestException as erro:
-            raise RadarServiceError("Falha HTTP ao consultar a REDEMET") from erro
-        try:
-            payload = resposta.json()
-        except (ValueError, TypeError) as erro:
-            raise RadarServiceError("REDEMET retornou JSON invalido") from erro
+            if not 200 <= resposta.status_code < 300:
+                raise RadarServiceError("REDEMET retornou resposta HTTP nao permitida")
+            try:
+                conteudo = _ler_corpo_limitado(resposta, MAX_METADATA_BYTES, "Resposta REDEMET")
+                payload = json.loads(conteudo)
+            except (ValueError, TypeError, RecursionError) as erro:
+                raise RadarServiceError("REDEMET retornou JSON invalido") from erro
+        except requests.Timeout:
+            raise RadarServiceError("Timeout ao consultar a REDEMET") from None
+        except requests.RequestException:
+            raise RadarServiceError("Falha HTTP ao consultar a REDEMET") from None
+        finally:
+            if resposta is not None:
+                resposta.close()
         return normalizar_resposta(payload, produto_padrao=self.produto)
 
     def baixar_imagem(self, frame: RadarFrame) -> bytes:
+        # Revalida também frames reconstruídos do banco ou criados diretamente.
         try:
-            resposta = self.session.get(frame.path_remoto, timeout=self.timeout)
+            validar_url_imagem_redemet(frame.path_remoto)
+        except InvalidOutboundURL as erro:
+            raise RadarServiceError("URL da imagem do radar nao permitida") from erro
+        resposta = None
+        try:
+            resposta = self.session.get(
+                frame.path_remoto,
+                timeout=self.timeout,
+                allow_redirects=False,
+                stream=True,
+                headers={"Accept": "image/png", "Accept-Encoding": "identity"},
+            )
             resposta.raise_for_status()
-        except requests.Timeout as erro:
-            raise RadarServiceError("Timeout ao baixar imagem do radar") from erro
-        except requests.RequestException as erro:
-            raise RadarServiceError("Falha HTTP ao baixar imagem do radar") from erro
-        conteudo = resposta.content
-        if not conteudo:
-            raise RadarServiceError("Imagem do radar vazia")
-        if len(conteudo) > MAX_IMAGE_BYTES:
-            raise RadarServiceError("Imagem do radar excede o limite permitido")
-        return conteudo
+            if not 200 <= resposta.status_code < 300:
+                raise RadarServiceError("Download do radar retornou resposta HTTP nao permitida")
+            return _ler_corpo_limitado(resposta, MAX_IMAGE_BYTES, "Imagem do radar")
+        except requests.Timeout:
+            raise RadarServiceError("Timeout ao baixar imagem do radar") from None
+        except requests.RequestException:
+            raise RadarServiceError("Falha HTTP ao baixar imagem do radar") from None
+        finally:
+            if resposta is not None:
+                resposta.close()

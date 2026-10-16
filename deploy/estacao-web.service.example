@@ -1,0 +1,27 @@
+[Unit]
+Description=Estação meteorológica - aplicação web
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=servidor
+Group=servidor
+WorkingDirectory=/var/www/EstacaoEmPython/estacao
+EnvironmentFile=/var/www/EstacaoEmPython/estacao/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/var/www/EstacaoEmPython/estacao/venv/bin/gunicorn --bind 127.0.0.1:8080 --workers 2 --timeout 60 --access-logfile - --error-logfile - app:app
+Restart=on-failure
+RestartSec=5
+UMask=0077
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

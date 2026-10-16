@@ -1,0 +1,36 @@
+{
+  "source": "OSV",
+  "environment": ".venv-cleanup (local; not the production server)",
+  "checked_packages": 29,
+  "matched_results": 29,
+  "complete": true,
+  "findings": [
+    {
+      "name": "pip",
+      "version": "26.1.2",
+      "advisories": [
+        "GHSA-qwm4-qh6w-59xr",
+        "PYSEC-2026-3721"
+      ]
+    },
+    {
+      "name": "urllib3",
+      "version": "2.7.0",
+      "advisories": [
+        "GHSA-8988-9cw3-xx77",
+        "GHSA-gh4c-6fx4-qh6g",
+        "GHSA-vxq7-64xx-v4gw",
+        "PYSEC-2026-4175",
+        "PYSEC-2026-4176",
+        "PYSEC-2026-4177"
+      ]
+    },
+    {
+      "name": "Werkzeug",
+      "version": "3.1.8",
+      "advisories": [
+        "GHSA-g6x2-hccm-hh4m"
+      ]
+    }
+  ]
+}

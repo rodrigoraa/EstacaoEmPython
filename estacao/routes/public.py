@@ -6,9 +6,11 @@ from flask import Blueprint, g, render_template, request
 
 import database
 from extensions import limiter
+from csrf import gerar_csrf_token, validar_csrf
 from config import env_str, public_url
 from logging_utils import erro_externo_seguro, mascarar_telefone
 from services.weather_service import obter_previsao
+from services.subscriber_security import buscar_cadastro, reservar_envio, validar_cadastro, validar_telefone
 from signup_tokens import (
     TokenConfirmacaoExpirado,
     TokenConfirmacaoInvalido,
@@ -28,6 +30,11 @@ public_routes = Blueprint("public", __name__)
 PUBLIC_CADASTRO_RATE_LIMIT = os.environ.get("PUBLIC_CADASTRO_RATE_LIMIT", "60 per hour")
 SIGNUP_RESEND_RATE_LIMIT = os.environ.get("SIGNUP_RESEND_RATE_LIMIT", "5 per hour")
 logger = logging.getLogger(__name__)
+
+
+@public_routes.context_processor
+def contexto_seguranca_publico():
+    return {"csrf_token": gerar_csrf_token}
 
 
 def deduzir_rate_limit_reenvio(_response):
@@ -65,17 +72,9 @@ def variantes_telefone(telefone):
 
 
 def buscar_usuario_por_telefone(conn, telefone):
-    telefone_sem_55, telefone_com_55 = variantes_telefone(telefone)
-    usuario = conn.execute(
-        """
-        SELECT id, nome, telefone, endereco, receber_whatsapp,
-               ativo, status_cadastro
-        FROM usuarios
-        WHERE telefone = ? OR telefone = ?
-        LIMIT 1
-        """,
-        (telefone_sem_55, telefone_com_55),
-    ).fetchone()
+    telefone_com_55 = validar_telefone(telefone)
+    telefone_sem_55 = telefone_com_55[2:]
+    usuario = buscar_cadastro(conn, telefone_com_55)
     return usuario, telefone_sem_55, telefone_com_55
 
 
@@ -143,105 +142,68 @@ def index():
     mensagem = ""
 
     if request.method == "POST":
-        nome = request.form.get("nome", "").strip()
-        telefone = request.form.get("telefone", "")
-        endereco = request.form.get("endereco", "").strip()
-        whatsapp = request.form.get("whatsapp")
-        receber_whatsapp = 1 if whatsapp else 0
-
-        telefone = normalizar_telefone(telefone)
-
-        if not nome or not endereco or not 10 <= len(telefone) <= 13:
-            mensagem = "❌ Preencha todos os campos!"
-        else:
-            conn = database.get_db()
-            cursor = conn.cursor()
-
+        validar_csrf()
+        try:
+            nome, telefone, endereco = validar_cadastro(
+                request.form.get("nome"), request.form.get("telefone"), request.form.get("endereco")
+            )
+            if request.form.get("whatsapp") not in (None, "", "1"):
+                raise ValueError("Opção de recebimento inválida.")
+        except ValueError as erro:
+            return render_template("index.html", mensagem=f"❌ {erro}"), 400
+        receber_whatsapp = request.form.get("whatsapp") == "1"
+        conn = database.get_db()
+        try:
             try:
-                status_cadastro = "pendente" if receber_whatsapp else "ativo"
-                receber_inicial = 0
-                cursor.execute(
-                    """
-                    INSERT INTO usuarios (
-                        nome, telefone, endereco, receber_whatsapp, status_cadastro
-                    ) VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (nome, telefone, endereco, receber_inicial, status_cadastro),
-                )
+                cursor = conn.execute("""
+                    INSERT INTO usuarios (nome, telefone, endereco, receber_whatsapp, status_cadastro)
+                    VALUES (?, ?, ?, 0, ?)
+                """, (nome, telefone, endereco, "pendente" if receber_whatsapp else "ativo"))
                 usuario_id = cursor.lastrowid
                 database.registrar_cadastro_evento(
-                    conn,
-                    "cadastro",
-                    usuario_id=usuario_id,
-                    nome=nome,
-                    telefone=telefone,
-                    endereco=endereco,
-                    receber_whatsapp=receber_inicial,
-                    detalhe=f"Cadastro realizado pelo site; status={status_cadastro}",
+                    conn, "cadastro", usuario_id=usuario_id, nome=nome, telefone=telefone,
+                    endereco=endereco, receber_whatsapp=0,
+                    detalhe="Cadastro pendente de consentimento" if receber_whatsapp else "Cadastro sem alertas",
                 )
-                conn.commit()
-                if receber_whatsapp:
+                enviar = receber_whatsapp and reservar_envio(conn, telefone, "confirmacao")
+                conn.commit()  # Never hold a write lock while waiting for WhatsApp.
+                if enviar:
                     try:
                         enviar_confirmacao_cadastro(usuario_id, telefone)
                         mensagem = "✅ Cadastro pendente. Confira seu WhatsApp para confirmar."
                     except Exception as erro:
-                        logger.error(
-                            "Falha ao enviar confirmacao para %s: %s",
-                            mascarar_telefone(telefone),
-                            erro_externo_seguro(erro),
-                        )
-                        mensagem = (
-                            "⚠️ Cadastro salvo como pendente, mas não foi possível enviar "
-                            "a confirmação agora. Tente novamente mais tarde."
-                        )
+                        logger.error("Falha ao enviar confirmacao para %s: %s",
+                                     mascarar_telefone(telefone), erro_externo_seguro(erro))
+                        mensagem = ("⚠️ Cadastro salvo como pendente, mas não foi possível enviar "
+                                    "a confirmação agora. Tente novamente mais tarde.")
                 else:
                     mensagem = "✅ Cadastro realizado com sucesso!"
             except sqlite3.IntegrityError:
                 conn.rollback()
-                usuario, _, _ = buscar_usuario_por_telefone(conn, telefone)
-                cadastro_pendente = bool(
-                    usuario
-                    and usuario["status_cadastro"] == "pendente"
-                    and receber_whatsapp
-                )
-
-                if cadastro_pendente:
+                usuario = buscar_cadastro(conn, telefone)
+                enviar = False
+                if usuario and usuario["status_cadastro"] == "pendente" and receber_whatsapp:
                     g.signup_confirmation_resent = True
+                    enviar = reservar_envio(conn, telefone, "confirmacao")
+                conn.commit()
+                acao = "cadastro_duplicado"
+                if enviar:
                     try:
-                        enviar_confirmacao_cadastro(usuario["id"], usuario["telefone"])
+                        enviar_confirmacao_cadastro(usuario["id"], telefone)
                         acao = "confirmacao_reenviada"
-                        detalhe = "Novo link de confirmacao solicitado pelo site"
                     except Exception as erro:
-                        logger.error(
-                            "Falha ao reenviar confirmacao para %s: %s",
-                            mascarar_telefone(usuario["telefone"]),
-                            erro_externo_seguro(erro),
-                        )
+                        logger.error("Falha ao reenviar confirmacao para %s: %s",
+                                     mascarar_telefone(telefone), erro_externo_seguro(erro))
                         acao = "confirmacao_reenvio_falhou"
-                        detalhe = "Reenvio solicitado, mas o provedor estava indisponivel"
-                else:
-                    acao = "cadastro_duplicado"
-                    detalhe = "Numero ja cadastrado; nenhum token enviado"
-
                 database.registrar_cadastro_evento(
-                    conn,
-                    acao,
-                    usuario_id=usuario["id"] if usuario else None,
-                    nome=usuario["nome"] if usuario else nome,
-                    telefone=usuario["telefone"] if usuario else telefone,
-                    endereco=usuario["endereco"] if usuario else endereco,
-                    receber_whatsapp=(
-                        usuario["receber_whatsapp"] if usuario else receber_whatsapp
-                    ),
-                    detalhe=detalhe,
+                    conn, acao, usuario_id=usuario["id"] if usuario else None,
+                    telefone=telefone, detalhe="Solicitação repetida; cooldown por destinatário aplicado",
                 )
                 conn.commit()
-                mensagem = (
-                    "ℹ️ Se o número estiver com confirmação pendente, enviaremos um "
-                    "novo link. Se já estiver ativo, nenhuma ação é necessária."
-                )
-            finally:
-                conn.close()
+                mensagem = ("ℹ️ Se o número estiver com confirmação pendente, enviaremos um "
+                            "novo link após o intervalo de segurança. Se já estiver ativo, nenhuma ação é necessária.")
+        finally:
+            conn.close()
 
     return render_template("index.html", mensagem=mensagem)
 
@@ -249,9 +211,10 @@ def index():
 @public_routes.route("/unsubscribe/request", methods=["POST"])
 @limiter.limit("10 per hour")
 def solicitar_cancelamento():
-    telefone = normalizar_telefone(request.form.get("telefone"))
-
-    if len(telefone) < 10:
+    validar_csrf()
+    try:
+        telefone = validar_telefone(request.form.get("telefone"))
+    except ValueError:
         estado = estado_cancelamento(
             "Número inválido",
             "Informe um número de WhatsApp válido com DDD para receber o link de confirmação.",
@@ -264,11 +227,12 @@ def solicitar_cancelamento():
     try:
         conn = database.get_db()
         usuario, _, telefone_com_55 = buscar_usuario_por_telefone(conn, telefone)
-
+        enviar = False
         if usuario:
-            token = gerar_token_cancelamento(usuario["telefone"])
-            link_cancelamento = public_url(f"unsubscribe?token={token}")
-            enviar_link_cancelamento_whatsapp(telefone_com_55, link_cancelamento)
+            enviar = reservar_envio(conn, telefone, "cancelamento")
+            if enviar:
+                token = gerar_token_cancelamento(telefone, conn=conn)
+                link_cancelamento = public_url(f"unsubscribe?token={token}")
             database.registrar_cadastro_evento(
                 conn,
                 "cancelamento_solicitado",
@@ -277,7 +241,7 @@ def solicitar_cancelamento():
                 telefone=usuario["telefone"],
                 endereco=usuario["endereco"],
                 receber_whatsapp=usuario["receber_whatsapp"],
-                detalhe="Link seguro de cancelamento enviado por WhatsApp",
+                detalhe="Solicitação de cancelamento; cooldown por destinatário aplicado",
             )
         else:
             database.registrar_cadastro_evento(
@@ -288,6 +252,8 @@ def solicitar_cancelamento():
             )
 
         conn.commit()
+        if enviar:
+            enviar_link_cancelamento_whatsapp(telefone_com_55, link_cancelamento)
     except Exception as e:
         if conn:
             conn.rollback()
@@ -315,6 +281,8 @@ def solicitar_cancelamento():
 @public_routes.route("/unsubscribe", methods=["GET", "POST"])
 @limiter.limit("60 per hour")
 def unsubscribe():
+    if request.method == "POST":
+        validar_csrf()
     token = request.values.get("token")
     conn = None
 
@@ -328,9 +296,10 @@ def unsubscribe():
         return render_template("unsubscribe.html", estado=estado), 400
 
     try:
-        telefone = validar_token_cancelamento(token)
         conn = database.get_db()
-        usuario, telefone_sem_55, telefone_com_55 = buscar_usuario_por_telefone(conn, telefone)
+        if request.method == "POST":
+            conn.execute("BEGIN IMMEDIATE")
+        usuario = validar_token_cancelamento(token, conn=conn, retornar_cadastro=True)
 
         if request.method == "GET":
             conn.close()
@@ -345,28 +314,29 @@ def unsubscribe():
             )
             return render_template("unsubscribe.html", estado=estado)
 
-        if usuario:
+        # A legacy duplicate is quarantined during migration, but still has an
+        # original UNIQUE telefone value. Explicit cancellation removes the
+        # same destination's quarantined registrations too, preserving their
+        # history and permitting a future, independently identified opt-in.
+        cancelados = [usuario] + conn.execute("""
+            SELECT id, nome, telefone, endereco, receber_whatsapp
+            FROM usuarios WHERE duplicado_de = ? AND telefone_canonico = ?
+        """, (usuario["id"], usuario["telefone_canonico"])).fetchall()
+        for cancelado in cancelados:
             database.registrar_cadastro_evento(
                 conn,
                 "cancelamento",
-                usuario_id=usuario["id"],
-                nome=usuario["nome"],
-                telefone=usuario["telefone"],
-                endereco=usuario["endereco"],
-                receber_whatsapp=usuario["receber_whatsapp"],
+                usuario_id=cancelado["id"],
+                nome=cancelado["nome"],
+                telefone=cancelado["telefone"],
+                endereco=cancelado["endereco"],
+                receber_whatsapp=cancelado["receber_whatsapp"],
                 detalhe="Cancelamento confirmado por token assinado",
             )
-        else:
-            database.registrar_cadastro_evento(
-                conn,
-                "cancelamento_nao_encontrado",
-                telefone=telefone,
-                detalhe="Telefone nao encontrado no momento do cancelamento por token",
-            )
-
         conn.execute(
-            "DELETE FROM usuarios WHERE telefone = ? OR telefone = ?",
-            (telefone_sem_55, telefone_com_55),
+            """DELETE FROM usuarios WHERE (id = ? AND cadastro_nonce = ?)
+               OR (duplicado_de = ? AND telefone_canonico = ?)""",
+            (usuario["id"], usuario["cadastro_nonce"], usuario["id"], usuario["telefone_canonico"]),
         )
         conn.commit()
         conn.close()
@@ -437,11 +407,15 @@ def confirmar_cadastro():
 
     conn = database.get_db()
     try:
+        conn.execute("BEGIN IMMEDIATE")
+        # Recheck identity under the same transaction as activation so a phone
+        # edit/deletion between signature validation and UPDATE cannot race it.
+        usuario_id, telefone = validar_token_confirmacao(token, conn=conn)
         usuario = conn.execute(
             "SELECT id, telefone, status_cadastro FROM usuarios WHERE id = ?",
             (usuario_id,),
         ).fetchone()
-        if not usuario or normalizar_telefone(usuario["telefone"]) != normalizar_telefone(telefone):
+        if not usuario or telefone_com_codigo_pais(usuario["telefone"]) != telefone:
             estado = estado_cancelamento(
                 "Cadastro não encontrado",
                 "Este cadastro não existe mais.",
@@ -477,6 +451,13 @@ def confirmar_cadastro():
             "<i class='fa-solid fa-check'></i>",
         )
         return render_template("unsubscribe.html", estado=estado)
+    except (TokenConfirmacaoExpirado, TokenConfirmacaoInvalido):
+        conn.rollback()
+        estado = estado_cancelamento(
+            "Link inválido", "O cadastro foi alterado. Solicite uma nova confirmação.",
+            "#f59e0b", "<i class='fa-solid fa-triangle-exclamation'></i>",
+        )
+        return render_template("unsubscribe.html", estado=estado), 400
     finally:
         conn.close()
 

@@ -149,7 +149,10 @@
   </div>
 
   <article class="card monitor-panel">
-    <h2 class="text-xl font-bold">Confirmação regional</h2>
+    <div class="admin-section-title">
+      <h2 class="text-xl font-bold">Confirmação regional</h2>
+      <a class="admin-weather-nav-link" href="{{ url_for('regional_stations.pagina_estacoes_regionais_admin') }}">Ver estações regionais <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+    </div>
     <div class="monitor-stations">
     {% for station in regional_stations %}<section><strong>{{ station.name }}</strong><p>{{ 'Aguardando nova análise' if snapshot_desatualizado else 'Dados disponíveis' if station.status == 'OK' else 'Sem dados atuais' if station.status == 'SEM_DADOS' else station.status|replace('_', ' ') }}</p></section>{% endfor %}
     </div>
@@ -163,7 +166,6 @@
 
   <details class="card monitor-panel" {% if request.args.get('detalhes') == 'radar' %}open{% endif %}>
     <summary class="font-bold cursor-pointer">Detalhes técnicos</summary>
-    <p><a href="{{ url_for('radar.radar_admin') }}">Diagnóstico técnico do radar</a> · <a href="{{ url_for('regional_stations.pagina_estacoes_regionais_admin') }}">Estações regionais</a></p>
     {% include "includes/admin_public_alert_status.html" %}
     {% include "includes/admin_test_alert_status.html" %}
     <div class="monitor-technical-note">

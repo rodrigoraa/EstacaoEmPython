@@ -109,6 +109,17 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(b"Painel Administrativo", response.data)
                 self.assertIn(b"Sair", response.data)
+                navigation = response.get_data(as_text=True).split(
+                    '<nav class="admin-weather-nav"', 1
+                )[1].split('</nav>', 1)[0]
+                for destination in (
+                    '/admin/monitoramento', '/admin/radar', '/admin/estacoes-regionais',
+                ):
+                    self.assertIn(f'href="{destination}"', navigation)
+                self.assertIn(
+                    f'href="{path}" class="admin-weather-nav-link" aria-current="page"',
+                    navigation,
+                )
         for path in (
             "/admin/api/radar/status", "/admin/api/nowcasting/status",
             "/admin/api/regional-stations",
@@ -119,8 +130,8 @@ class ExperimentalAdminAccessTest(unittest.TestCase):
         panel = self.client.get("/admin")
         self.assertEqual(panel.status_code, 200)
         self.assertIn(b'href="/admin/monitoramento"', panel.data)
-        self.assertNotIn(b'href="/admin/radar"', panel.data)
-        self.assertNotIn(b'href="/admin/estacoes-regionais"', panel.data)
+        self.assertIn(b'href="/admin/radar"', panel.data)
+        self.assertIn(b'href="/admin/estacoes-regionais"', panel.data)
         self.assertEqual(self.client.get("/admin/radar/imagem/1").status_code, 404)
 
     def test_aliases_antigos_autenticados_redirecionam_para_admin(self):

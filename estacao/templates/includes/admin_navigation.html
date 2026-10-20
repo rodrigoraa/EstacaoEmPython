@@ -43,9 +43,17 @@
                 {% endif %}
             </a>
         {% endfor %}
-        <a href="/admin/monitoramento" class="admin-tab admin-tab--monitor {% if aba_ativa == 'monitoramento' %}admin-tab-active{% endif %}" {% if aba_ativa == 'monitoramento' %}aria-current="page"{% endif %}>
-            <i class="fa-solid fa-binoculars"></i>
-            <span>Monitoramento</span>
+    </nav>
+    <nav class="admin-weather-nav" aria-label="Monitoramento meteorológico">
+        {% for chave, caminho, icone, rotulo in [
+            ('monitoramento', '/admin/monitoramento', 'fa-binoculars', 'Monitoramento'),
+            ('radar', '/admin/radar', 'fa-satellite-dish', 'Radar'),
+            ('estacoes-regionais', '/admin/estacoes-regionais', 'fa-tower-broadcast', 'Estações regionais')
+        ] %}
+        <a href="{{ caminho }}" class="admin-weather-nav-link" {% if aba_ativa == chave %}aria-current="page"{% endif %}>
+            <i class="fa-solid {{ icone }}" aria-hidden="true"></i>
+            <span>{{ rotulo }}</span>
         </a>
+        {% endfor %}
     </nav>
 </div>

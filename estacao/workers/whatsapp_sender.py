@@ -229,6 +229,11 @@ def marcar_falhou(conn, item, erro):
 def revalidar_previsao_nowcasting(conn, item, *, now=None):
     """Cancela previsao invalida ou renova seu texto antes de enviar."""
     evento_id = item["evento_id"] or ""
+    from services.nowcasting_manual_alerts import (
+        EVENT_PREFIX, EVENT_TYPE, revalidar_alerta_manual,
+    )
+    if item["evento_tipo"] == EVENT_TYPE or evento_id.startswith(EVENT_PREFIX):
+        return revalidar_alerta_manual(conn, item, nowcasting_config(), now=now or agora_utc())
     if (item["evento_tipo"] != "nowcasting_radar"
             and not evento_id.startswith("nowcasting:")):
         return None

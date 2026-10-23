@@ -697,6 +697,21 @@ O painel administrativo mostra flag, episódio, último nível enfileirado e mot
 
 ### Alertas preventivos experimentais para o administrador
 
+Com os alertas públicos automáticos desativados, cada novo alerta entregue ao
+administrador fica disponível em **Admin → Monitoramento → Enviar um alerta
+recebido**. O cartão mostra o texto original e o horário; **Enviar este alerta
+a todos → Confirmar envio** enfileira essa mesma mensagem para os usuários ativos
+que assinam alertas por WhatsApp, sem ativar o envio automático. O teste ao
+administrador precisa estar ativo para receber novos alertas selecionáveis.
+
+Cada mensagem recebida só pode ser enfileirada uma vez, inclusive em cliques
+simultâneos. Antes da autorização e de cada entrega, são verificados a validade
+da observação original (`NOWCASTING_ALERT_DELIVERY_MAX_AGE_MINUTES`, padrão de
+15 minutos), a trajetória e a intensidade atuais. A fila também confere o
+consentimento de cada destinatário. Alertas antigos recebidos antes desta versão
+não possuem uma cópia persistida: aguarde o próximo alerta ao administrador.
+O worker de WhatsApp continua responsável pela entrega e pelo histórico.
+
 A paleta real permanece: azul/ciano = `LOW` (somente monitoramento), verde =
 `MEDIUM` (já permite possível chuva), amarelo/laranja = `HIGH`, vermelho =
 `VERY_HIGH`. São classes relativas de refletividade do PNG MaxCAPPI, sem conversão

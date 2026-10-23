@@ -1,0 +1,44 @@
+{% set manual = manual_alert|default({}) %}
+{% set recebido = manual.get('alert') %}
+{% set envio_disponivel = recebido and manual.get('can_send') and not controls.public.enabled %}
+<article class="card monitor-panel" aria-labelledby="alerta-manual-title">
+  <span class="admin-section-kicker">Decisão do administrador</span>
+  <h2 id="alerta-manual-title" class="text-xl font-bold">Enviar um alerta recebido</h2>
+  <p>Compartilhe a mesma mensagem recebida pelo administrador com os assinantes ativos do WhatsApp. O envio manual está disponível com os alertas automáticos desativados.</p>
+  {% if recebido %}
+    <p class="text-sm text-slate-500 mt-3">Recebido em {{ formatar_local(recebido.received_at) }} · Nível: {{ recebido.alert_level or '—' }}.</p>
+    <pre class="monitor-technical-data mt-3" aria-label="Mensagem original do alerta">{{ recebido.mensagem }}</pre>
+    {% if recebido.enqueued_at %}
+      <p class="mt-3" role="status">Este alerta já foi enfileirado para {{ recebido.enfileirados }} destinatários em {{ formatar_local(recebido.enqueued_at) }}. A entrega depende do processamento da fila e da validade do alerta.</p>
+    {% endif %}
+  {% endif %}
+  {% if controls.public.enabled or manual.get('reason') == 'public_alerts_enabled' %}
+    <p class="mt-3">O envio manual está bloqueado porque os alertas públicos automáticos estão ativados.</p>
+  {% elif envio_disponivel %}
+    <p class="text-sm mt-3">A mensagem e as condições do radar serão conferidas novamente ao confirmar e antes da entrega.</p>
+    <button type="button" class="monitor-action monitor-action--on mt-3" data-open-dialog="manual-alert-confirm">Enviar este alerta a todos</button>
+  {% elif manual.get('reason') == 'expired' %}
+    <p class="mt-3">Este alerta expirou. Aguarde um novo alerta recebido pelo administrador.</p>
+  {% elif manual.get('reason') == 'invalidated' %}
+    <p class="mt-3">As condições atuais não permitem mais enviar este alerta. Aguarde uma nova análise.</p>
+  {% elif manual.get('reason') == 'unavailable' %}
+    <p class="mt-3">O envio manual está temporariamente indisponível. Atualize a página para tentar novamente.</p>
+  {% elif not recebido %}
+    <p class="mt-3">Nenhum alerta recebido está disponível para envio. Aguarde um alerta entregue ao administrador.</p>
+  {% elif not recebido.enqueued_at %}
+    <p class="mt-3">Este alerta não está disponível para envio. Aguarde um novo alerta recebido pelo administrador.</p>
+  {% endif %}
+</article>
+{% if envio_disponivel %}
+<dialog id="manual-alert-confirm" class="monitor-dialog" aria-labelledby="manual-alert-confirm-title">
+  <h2 id="manual-alert-confirm-title" class="text-xl font-bold">Enviar este alerta a todos?</h2>
+  <p class="my-4">A mensagem original acima será enfileirada para os assinantes ativos do WhatsApp. Os alertas automáticos continuam desativados. Este alerta só pode ser enfileirado uma vez.</p>
+  <form method="post" action="{{ url_for('nowcasting.enviar_alerta_manual_admin', alert_id=recebido.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="monitor-dialog-actions">
+      <button type="button" data-close-dialog="true" class="monitor-action monitor-action--cancel">Cancelar</button>
+      <button type="submit" class="monitor-action monitor-action--on">Confirmar envio</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}

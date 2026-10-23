@@ -2,7 +2,8 @@
 
 Este modulo nunca consulta usuarios e nunca escreve em ``alertas_fila`` ou
 ``alertas_eventos``. O estado antispam usa uma chave propria da estrutura
-generica ``health_check_estado``, ja existente no schema 8.
+generica ``health_check_estado``, ja existente no schema 8. A mensagem entregue
+é preservada em ``estado_alertas`` para uma eventual autorização manual no painel.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from services.admin_notification_service import (
     obter_admin_alert_phone,
 )
 from services.preventive_alerts import ALERT_SEVERITY
+from services.nowcasting_manual_alerts import registrar_alerta_recebido
 from services.nowcasting_alert_evaluation import (
     avaliar_alerta_preventivo_snapshot,
     montar_mensagem_preventiva as montar_mensagem_alerta_teste,
@@ -355,8 +357,9 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
 
     if deve_enviar:
         enviar = sender or enviar_mensagem_admin
+        mensagem = montar_mensagem_alerta_teste(snapshot)
         try:
-            enviar(admin_phone, montar_mensagem_alerta_teste(snapshot))
+            enviar(admin_phone, mensagem)
         except Exception as erro:
             erro_seguro = _erro_resumido(erro)
             logger.error(
@@ -372,12 +375,13 @@ def processar_alerta_teste_admin(snapshot, config, *, now=None, sender=None):
                 alerta.get("track_id"),
                 alerta.get("distance_km"),
             )
-            _finalizar_tentativa(enviado=True, erro=None, now=agora, decisao=decisao)
+            _finalizar_tentativa(enviado=True, erro=None, now=agora, decisao=decisao,
+                                snapshot=snapshot, mensagem=mensagem)
 
     return obter_status_alerta_teste_admin(snapshot, config, now=agora)
 
 
-def _finalizar_tentativa(*, enviado, erro, now, decisao=None):
+def _finalizar_tentativa(*, enviado, erro, now, decisao=None, snapshot=None, mensagem=None):
     conn = database.get_db()
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -392,6 +396,8 @@ def _finalizar_tentativa(*, enviado, erro, now, decisao=None):
             estado["highest_sent_severity"] = max(estado["highest_sent_severity"], ALERT_SEVERITY.get(decisao.get("alert_level"), 0))
             estado["last_sent_alert_level"] = decisao.get("alert_level")
             estado["last_sent_radar_intensity"] = decisao.get("radar_intensity")
+            if snapshot is not None and mensagem is not None:
+                registrar_alerta_recebido(conn, snapshot, mensagem, now=now)
         else:
             estado["last_result"] = "send_failed"
             estado["last_error"] = erro

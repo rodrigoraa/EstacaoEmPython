@@ -209,7 +209,8 @@ class RuntimeAlertControlsTest(unittest.TestCase):
         self.assertIn(b"Alertas p", page.data)
         self.assertIn("Dourados".encode(), page.data)
         self.assertIn("Ativar alertas públicos".encode(), page.data)
-        self.assertNotIn(b'href="/admin/radar"', self.client.get("/admin").data)
+        # A navegação mantém o radar acessível mesmo sem observações no banco.
+        self.assertIn(b'href="/admin/radar"', self.client.get("/admin").data)
 
     def test_resumo_projecao_e_chuva_local(self):
         self.login()

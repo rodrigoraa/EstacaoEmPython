@@ -23,6 +23,12 @@
     </div>
   </header>
 
+  {% with messages = get_flashed_messages() %}
+    {% for message in messages %}
+    <div class="card monitor-panel" role="status">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
   {% if snapshot_desatualizado %}
   <div class="radar-stale-banner" role="status"><div><strong>MONITORAMENTO DESATUALIZADO</strong> A última análise é histórica; aguarde nova análise para acompanhar as áreas de chuva e suas projeções.</div></div>
   {% elif estado and not radar_atual %}
@@ -92,17 +98,19 @@
         </form>
       </section>
     </div>
-    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos e cancela a entrega de preventivos pendentes quando a fila for processada. Antes de cada envio, a previsão é conferida novamente; avisos vencidos ou sem trajetória confirmada são cancelados.</p>
+    <p class="text-sm mt-4">Desativar os alertas públicos impede novos enfileiramentos automáticos e cancela a entrega de preventivos automáticos pendentes quando a fila for processada. O envio manual de um alerta recebido pelo administrador é autorizado separadamente abaixo. Antes de cada envio, as condições atuais são conferidas novamente; avisos vencidos ou sem condições válidas são cancelados.</p>
   </article>
   <dialog id="public-confirm" class="monitor-dialog" aria-labelledby="public-confirm-title">
     <h2 id="public-confirm-title" class="text-xl font-bold">{{ 'Desativar' if controls.public.enabled else 'Ativar' }} alertas públicos preventivos?</h2>
-    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando. Novos alertas preventivos serão interrompidos e as mensagens preventivas pendentes serão canceladas antes da entrega.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
+    <p class="my-4">{% if controls.public.enabled %}O monitoramento continuará funcionando. Novos alertas preventivos automáticos serão interrompidos e as mensagens automáticas pendentes serão canceladas antes da entrega. Envios manuais autorizados separadamente permanecem sujeitos à validade do alerta.{% else %}A partir do próximo ciclo, eventos elegíveis poderão ser enviados aos usuários cadastrados.{% endif %}</p>
     <form method="post" action="{{ url_for('nowcasting.atualizar_alert_control', name='public') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="enabled" value="{{ 'false' if controls.public.enabled else 'true' }}">
       <div class="monitor-dialog-actions"><button type="button" data-close-dialog="true" class="monitor-action monitor-action--cancel">Cancelar</button><button type="submit" class="monitor-action {{ 'monitor-action--off' if controls.public.enabled else 'monitor-action--on' }}">{{ 'Desativar alertas' if controls.public.enabled else 'Ativar alertas' }}</button></div>
     </form>
   </dialog>
+
+  {% include "includes/admin_manual_alert.html" %}
 
   <section aria-label="Resumo visual" class="admin-overview-grid monitor-overview">
     <article class="admin-overview-item"><div><small>Chuva na estação</small><strong>{{ 'SIM' if chuva_na_estacao is true else 'NÃO' if chuva_na_estacao is false else 'INDEFINIDO' }}</strong></div></article>

@@ -226,31 +226,30 @@ class ManualRadarAlertsTest(unittest.TestCase):
             self.assertEqual(whatsapp_sender.processar_um_envio(), "enviado")
         self.assertEqual(deliver.call_count, 1)
 
-    def test_worker_rechecks_manual_expiration(self):
+    def test_worker_finishes_authorized_manual_delivery_after_expiration(self):
         self.receive()
         self.send()
         from workers import whatsapp_sender
         later = self.now + timedelta(minutes=16)
         with (mock.patch.object(whatsapp_sender, "agora_utc", return_value=later),
               mock.patch.object(whatsapp_sender, "enviar_whatsapp") as deliver):
-            self.assertEqual(whatsapp_sender.processar_um_envio(), "cancelado")
-        deliver.assert_not_called()
+            self.assertEqual(whatsapp_sender.processar_um_envio(), "enviado")
+        deliver.assert_called_once()
 
-    def test_worker_rechecks_weather_and_manual_authorization(self):
+    def test_worker_ignores_weather_change_after_authorization_but_requires_event(self):
         self.receive()
         self.send()
         self.snapshot["evento_local_observado"] = True
         from workers import whatsapp_sender
         with (mock.patch.object(whatsapp_sender, "agora_utc", return_value=self.now),
               mock.patch.object(whatsapp_sender, "enviar_whatsapp") as deliver):
-            self.assertEqual(whatsapp_sender.processar_um_envio(), "cancelado")
+            self.assertEqual(whatsapp_sender.processar_um_envio(), "enviado")
             conn = self.db.get_db()
             conn.execute("DELETE FROM alertas_eventos")
             conn.commit()
             conn.close()
-            self.snapshot["evento_local_observado"] = False
             self.assertEqual(whatsapp_sender.processar_um_envio(), "cancelado")
-        deliver.assert_not_called()
+        self.assertEqual(deliver.call_count, 1)
 
     def test_worker_does_not_send_when_persisted_controls_are_unreadable(self):
         self.receive()

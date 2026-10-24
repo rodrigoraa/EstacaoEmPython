@@ -148,7 +148,7 @@ def enfileirar_alerta_manual(alert_id, config, *, now=None):
 
 
 def revalidar_alerta_manual(conn, item, config, *, now=None):
-    """A autorização substitui só o modo automático; não altera o texto aprovado."""
+    """Revalida a autorização persistida; meteo/TTL valem no enfileiramento."""
     try:
         if obter_controles(config)["public"]["source"] == "fail_safe":
             return "Alerta manual indisponível: controles de alertas inválidos"
@@ -163,7 +163,6 @@ def revalidar_alerta_manual(conn, item, config, *, now=None):
                 or item["mensagem"] != alerta["mensagem"]
                 or not parse_datetime(alerta.get("authorized_at"))):
             return "Alerta manual com autorização inconsistente"
-        motivo = _motivo_bloqueio(alerta, config, now or agora_utc())
-        return f"Alerta manual indisponível: {motivo}" if motivo else None
+        return None
     except Exception as erro:
         return f"Revalidação do alerta manual indisponível ({type(erro).__name__})"

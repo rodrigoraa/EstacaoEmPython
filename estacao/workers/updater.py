@@ -36,7 +36,7 @@ def configuracao_alertas():
         "frio_3": env_float("ALERTA_FRIO_NIVEL_3", 2),
         "frio_rearme": env_float("ALERTA_FRIO_REARME", 15),
         "vento_1": env_float("ALERTA_VENTO_NIVEL_1", 40),
-        "vento_2": env_float("ALERTA_VENTO_NIVEL_2", 70),
+        "vento_2": env_float("ALERTA_VENTO_NIVEL_2", 60),
         "vento_3": env_float("ALERTA_VENTO_NIVEL_3", 100),
         "vento_janela_minutos": max(
             0, env_float("ALERTA_VENTO_JANELA_MINUTOS", 3)

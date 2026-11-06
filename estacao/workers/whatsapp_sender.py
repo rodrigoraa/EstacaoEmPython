@@ -11,6 +11,7 @@ sys.path.insert(0, BASE_DIR)
 
 import database
 from services.whatsapp_service import enviar_whatsapp
+from services.alert_queue import atualizar_evento, substituir_envio_superado
 from time_utils import agora_local
 from config import env_int
 from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
@@ -33,13 +34,16 @@ def garantir_estruturas(conn):
     database.garantir_tabela_alertas_fila(conn)
     database.garantir_tabela_alertas_envios(conn)
     database.garantir_tabela_alertas_eventos(conn)
-    conn.commit()
 
 
-def reivindicar_proximo_envio(conn, retry_failed=False):
-    garantir_estruturas(conn)
+def reivindicar_proximo_envio(conn, retry_failed=False, ids_tentados=None):
+    if ids_tentados is None:
+        ids_tentados = set()
+    id_adicionado = None
     try:
         conn.execute("BEGIN IMMEDIATE")
+        # Serializa também migrações aditivas na primeira execução dos workers.
+        garantir_estruturas(conn)
         condicoes = [
             "(status = 'pendente' AND (proxima_tentativa_em IS NULL "
             "OR proxima_tentativa_em <= CURRENT_TIMESTAMP))",
@@ -49,20 +53,32 @@ def reivindicar_proximo_envio(conn, retry_failed=False):
         if retry_failed:
             condicoes.append("status = 'falhou'")
 
-        row = conn.execute(
-            f"""
-            SELECT *
-            FROM alertas_fila
-            WHERE {" OR ".join(condicoes)}
-            ORDER BY COALESCE(prioridade, 50) DESC, id
-            LIMIT 1
-            """,
-            parametros,
-        ).fetchone()
+        while True:
+            candidatos = conn.execute(
+                f"""
+                SELECT *
+                FROM alertas_fila
+                WHERE {" OR ".join(condicoes)}
+                ORDER BY COALESCE(prioridade, 50) DESC, id
+                {"" if retry_failed else "LIMIT 1"}
+                """,
+                parametros,
+            )
+            row = next(
+                (
+                    candidato for candidato in candidatos
+                    if candidato["status"] != "falhou"
+                    or candidato["id"] not in ids_tentados
+                ),
+                None,
+            )
+            candidatos.close()
 
-        if not row:
-            conn.commit()
-            return None
+            if not row:
+                conn.commit()
+                return None
+            if not substituir_envio_superado(conn, row["id"]):
+                break
 
         conn.execute(
             """
@@ -75,10 +91,18 @@ def reivindicar_proximo_envio(conn, retry_failed=False):
             """,
             (row["id"],),
         )
+        # O BEGIN IMMEDIATE serializa também o conjunto compartilhado pelos
+        # workers. Pendentes continuam elegíveis após o backoff normal, mas um
+        # item que termina em 'falhou' não ganha outra tentativa nesta sessão.
+        if retry_failed and row["id"] not in ids_tentados:
+            ids_tentados.add(row["id"])
+            id_adicionado = row["id"]
         conn.commit()
         return row
     except Exception:
         conn.rollback()
+        if id_adicionado is not None:
+            ids_tentados.discard(id_adicionado)
         raise
 
 
@@ -104,39 +128,6 @@ def registrar_envio_alerta(conn, item, status, erro=None):
             erro,
             item["evento_id"],
         ),
-    )
-
-
-def atualizar_evento(conn, evento_id):
-    if not evento_id:
-        return
-    totais = conn.execute(
-        """
-        SELECT
-            SUM(CASE WHEN status = 'enviado' THEN 1 ELSE 0 END) AS enviados,
-            SUM(CASE WHEN status = 'falhou' THEN 1 ELSE 0 END) AS falhas,
-            SUM(CASE WHEN status IN ('pendente', 'enviando') THEN 1 ELSE 0 END) AS abertos
-        FROM alertas_fila
-        WHERE evento_id = ?
-        """,
-        (evento_id,),
-    ).fetchone()
-    enviados = int(totais["enviados"] or 0)
-    falhas = int(totais["falhas"] or 0)
-    abertos = int(totais["abertos"] or 0)
-    if abertos:
-        status = "processando"
-    elif falhas:
-        status = "concluido_com_falhas"
-    else:
-        status = "concluido"
-    conn.execute(
-        """
-        UPDATE alertas_eventos
-        SET enviados = ?, falhas = ?, status = ?, atualizado_em = CURRENT_TIMESTAMP
-        WHERE evento_id = ?
-        """,
-        (enviados, falhas, status, evento_id),
     )
 
 
@@ -201,10 +192,12 @@ def marcar_falhou(conn, item, erro):
     conn.commit()
 
 
-def processar_um_envio(retry_failed=False):
+def processar_um_envio(retry_failed=False, ids_tentados=None):
     conn = database.get_db()
     try:
-        item = reivindicar_proximo_envio(conn, retry_failed=retry_failed)
+        item = reivindicar_proximo_envio(
+            conn, retry_failed=retry_failed, ids_tentados=ids_tentados
+        )
     finally:
         conn.close()
 
@@ -241,9 +234,12 @@ def processar_fila(limite=None, intervalo=INTERVALO_ENVIO_USUARIOS, retry_failed
     enviados = 0
     falhas = 0
     processados = 0
+    ids_tentados = set()
 
     while limite is None or processados < limite:
-        resultado = processar_um_envio(retry_failed=retry_failed)
+        resultado = processar_um_envio(
+            retry_failed=retry_failed, ids_tentados=ids_tentados
+        )
         if resultado is None:
             break
 
@@ -259,11 +255,17 @@ def processar_fila(limite=None, intervalo=INTERVALO_ENVIO_USUARIOS, retry_failed
     return {"processados": processados, "enviados": enviados, "falhas": falhas}
 
 
-def processar_lote_paralelo(workers=WHATSAPP_WORKERS, retry_failed=False):
+def processar_lote_paralelo(
+    workers=WHATSAPP_WORKERS, retry_failed=False, ids_tentados=None
+):
+    if ids_tentados is None:
+        ids_tentados = set()
     with ThreadPoolExecutor(max_workers=workers) as executor:
         resultados = list(
             executor.map(
-                lambda _: processar_um_envio(retry_failed=retry_failed),
+                lambda _: processar_um_envio(
+                    retry_failed=retry_failed, ids_tentados=ids_tentados
+                ),
                 range(workers),
             )
         )
@@ -272,8 +274,11 @@ def processar_lote_paralelo(workers=WHATSAPP_WORKERS, retry_failed=False):
 
 def rodar_continuamente(intervalo=INTERVALO_ENVIO_USUARIOS, retry_failed=False):
     log("🚀 Worker de WhatsApp iniciado")
+    ids_tentados = set()
     while True:
-        resultados = processar_lote_paralelo(retry_failed=retry_failed)
+        resultados = processar_lote_paralelo(
+            retry_failed=retry_failed, ids_tentados=ids_tentados
+        )
         if not resultados:
             time.sleep(INTERVALO_SEM_FILA)
         else:
@@ -287,7 +292,10 @@ def parse_args():
     parser.add_argument("--once", action="store_true", help="Processa apenas um envio pendente.")
     parser.add_argument("--limite", type=int, default=None, help="Processa ate N envios e encerra.")
     parser.add_argument("--intervalo", type=int, default=INTERVALO_ENVIO_USUARIOS)
-    parser.add_argument("--retry-failed", action="store_true", help="Tenta reenviar itens com status falhou.")
+    parser.add_argument(
+        "--retry-failed", action="store_true",
+        help="Tenta reenviar itens com status falhou uma vez por execução/sessão.",
+    )
     return parser.parse_args()
 
 

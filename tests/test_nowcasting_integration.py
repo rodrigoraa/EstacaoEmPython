@@ -74,14 +74,14 @@ class NowcastingIntegrationTest(unittest.TestCase):
             "versao_algoritmo": "1.2",
         }
 
-    def test_migration_aditiva_idempotente_cria_snapshot_schema_8(self):
+    def test_migration_aditiva_idempotente_cria_snapshot_schema_atual(self):
         self.database.init_db()
         conn = self.database.get_db()
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version = conn.execute("SELECT versao FROM schema_version WHERE id=1").fetchone()[0]
         conn.close()
         self.assertIn("nowcasting_snapshots", tables)
-        self.assertEqual(version, 8)
+        self.assertEqual(version, self.database.SCHEMA_VERSION)
         conn = self.database.get_db()
         frame_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_frames)")}
         cluster_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_clusters)")}
@@ -89,7 +89,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         self.assertTrue({"data_frame_raw", "coletado_em_utc"} <= frame_columns)
         self.assertTrue({"classe_predominante", "classe_maxima"} <= cluster_columns)
 
-    def test_migration_7_para_8_preserva_snapshot_existente(self):
+    def test_migration_7_para_atual_preserva_snapshot_existente(self):
         from services.nowcasting_repository import salvar_snapshot
 
         self.assertIsNotNone(salvar_snapshot(self.state(), "snapshot-schema-7"))
@@ -114,7 +114,7 @@ class NowcastingIntegrationTest(unittest.TestCase):
         ).fetchone()[0]
         conn.close()
         self.assertEqual(count, 1)
-        self.assertEqual(version, 8)
+        self.assertEqual(version, self.database.SCHEMA_VERSION)
         self.assertEqual(external_status, "STALE")
 
     def test_pagina_e_api_antes_do_primeiro_snapshot(self):

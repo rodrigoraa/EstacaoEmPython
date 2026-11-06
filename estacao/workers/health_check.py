@@ -251,12 +251,12 @@ def enviar_mensagem_admin(telefone, mensagem):
 
 
 def processar_resultado(conn, problemas, config, permitir_whatsapp=True):
-    estado = obter_estado(conn)
     assinatura = assinatura_problemas(problemas)
     mensagem = montar_mensagem(problemas) if problemas else "Health check OK."
     notificou = False
 
     if not problemas:
+        estado = obter_estado(conn)
         if estado and estado["status"] == "problema":
             registrar_log(conn, "INFO", "Health check voltou ao normal.", mensagem)
         salvar_estado(conn, "ok", assinatura="[]", mensagem=mensagem, notificou=False)
@@ -264,6 +264,9 @@ def processar_resultado(conn, problemas, config, permitir_whatsapp=True):
         return {"ok": True, "notificado": False, "mensagem": mensagem}
 
     registrar_log(conn, "WARNING", "Health check encontrou problema.", mensagem)
+    # O INSERT acima serializa os processos. Ler depois dele evita decidir o
+    # cooldown com um estado anterior ao envio de outra execucao concorrente.
+    estado = obter_estado(conn)
     if permitir_whatsapp and config["admin_phone"] and deve_notificar(estado, assinatura, config):
         enviar_mensagem_admin(config["admin_phone"], mensagem)
         notificou = True

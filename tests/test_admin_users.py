@@ -164,6 +164,26 @@ class AdminUsuariosTest(unittest.TestCase):
         self.assertIn(b' value="Pessoa 07"', filtrada.data)
         self.assertNotIn(b' value="Pessoa 08"', filtrada.data)
 
+    def test_admin_filtra_substituidos_e_mostra_contagem(self):
+        with self.abrir_banco() as conn:
+            conn.executemany(
+                """
+                INSERT INTO alertas_eventos (
+                    evento_id, data_referencia, tipo, nivel, status,
+                    destinatarios, substituidos
+                ) VALUES (?, '2026-11-05', 'chuva', ?, ?, 2, ?)
+                """,
+                [("chuva-inferior-substituida", 1, "substituido", 2),
+                 ("chuva-superior-enfileirada", 2, "enfileirado", 0)],
+            )
+        self.autenticar_admin()
+        resposta = self.client.get("/admin?aba=eventos&filtro=substituido")
+        self.assertEqual(resposta.status_code, 200)
+        pagina = resposta.get_data(as_text=True)
+        self.assertIn("chuva-inferior-substituida", pagina)
+        self.assertNotIn("chuva-superior-enfileirada", pagina)
+        self.assertIn("2 substituídos", pagina)
+
     def test_admin_pagina_todos_os_historicos(self):
         conn = self.abrir_banco()
         for indice in range(1, 13):

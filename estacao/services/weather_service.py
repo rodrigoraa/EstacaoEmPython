@@ -147,6 +147,7 @@ def obter_dados(persistir_bruto=True):
                 campo_numerico_valido(raw, "windgustmph", 0, 200)
                 or campo_numerico_valido(raw, "maxdailygust", 0, 200)
             ),
+            "vento_max_diario": campo_numerico_valido(raw, "maxdailygust", 0, 200),
             "chuva": campo_numerico_valido(raw, "dailyrainin", 0, 100),
             "umidade": campo_numerico_valido(raw, "humidity", 0, 100),
             "uv": campo_numerico_valido(raw, "uv", 0, 30),

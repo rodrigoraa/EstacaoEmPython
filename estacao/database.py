@@ -8,7 +8,7 @@ from config import env_str
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.environ.get("ESTACAO_DB", os.path.join(BASE_DIR, "estacao.db"))
 ALERT_STATE_KEY = "principal"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 logger = logging.getLogger(__name__)
 
 
@@ -184,7 +184,22 @@ def garantir_tabela_alertas_fila(conn):
         )
 
 
+def extrair_ciclo_evento(evento_id, data_referencia, tipo, nivel):
+    """Recupera somente o formato canônico legado data:tipo:nível:ciclo."""
+    prefixo = f"{data_referencia}:{tipo}:{nivel}:"
+    if not isinstance(evento_id, str) or not evento_id.startswith(prefixo):
+        return None
+    sufixo = evento_id[len(prefixo):]
+    if not sufixo.isascii() or not sufixo.isdecimal():
+        return None
+    return int(sufixo)
+
+
 def garantir_tabela_alertas_eventos(conn):
+    # A transação pertence ao chamador; serializa check/ALTER também quando
+    # esta preparação é chamada diretamente pelo admin ou por um worker.
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     tabela_nova = not tabela_existe(conn, "alertas_eventos")
     conn.execute("""
     CREATE TABLE IF NOT EXISTS alertas_eventos (
@@ -193,6 +208,7 @@ def garantir_tabela_alertas_eventos(conn):
         data_referencia TEXT NOT NULL,
         tipo TEXT NOT NULL,
         nivel INTEGER NOT NULL,
+        ciclo INTEGER,
         valor REAL,
         unidade TEXT,
         ocorrido_em_local TEXT,
@@ -202,12 +218,24 @@ def garantir_tabela_alertas_eventos(conn):
         enfileirados INTEGER NOT NULL DEFAULT 0,
         enviados INTEGER NOT NULL DEFAULT 0,
         falhas INTEGER NOT NULL DEFAULT 0,
+        substituidos INTEGER NOT NULL DEFAULT 0,
         mensagem TEXT,
         detalhe TEXT,
         criado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         atualizado_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    garantir_coluna(conn, "alertas_eventos", "substituidos", "INTEGER NOT NULL DEFAULT 0")
+    if not coluna_existe(conn, "alertas_eventos", "ciclo"):
+        garantir_coluna(conn, "alertas_eventos", "ciclo", "INTEGER")
+        eventos = conn.execute(
+            "SELECT evento_id, data_referencia, tipo, nivel FROM alertas_eventos"
+        ).fetchall()
+        conn.executemany(
+            "UPDATE alertas_eventos SET ciclo = ? WHERE evento_id = ?",
+            [(extrair_ciclo_evento(r["evento_id"], r["data_referencia"], r["tipo"], r["nivel"]),
+              r["evento_id"]) for r in eventos],
+        )
     if tabela_nova:
         conn.execute(
             "CREATE INDEX idx_alertas_eventos_data_tipo "

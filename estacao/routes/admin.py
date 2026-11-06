@@ -617,6 +617,7 @@ def admin():
             "sem_destinatarios",
             "concluido",
             "concluido_com_falhas",
+            "substituido",
         }:
             filtro = "todos"
         filtros["filtro"] = filtro

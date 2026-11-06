@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import sqlite3
 import sys
@@ -45,6 +46,177 @@ class AlertasWorkerTest(unittest.TestCase):
         conn = sqlite3.connect(os.environ["ESTACAO_DB"])
         conn.row_factory = sqlite3.Row
         return conn
+
+    def preparar_alertas_chuva(self):
+        for chave, valor in {
+            "ALERTA_CHUVA_NIVEL_1": "30",
+            "ALERTA_CHUVA_NIVEL_2": "50",
+            "ALERTA_CHUVA_NIVEL_3": None,
+        }.items():
+            anterior = os.environ.get(chave)
+            if anterior is None:
+                self.addCleanup(os.environ.pop, chave, None)
+            else:
+                self.addCleanup(os.environ.__setitem__, chave, anterior)
+            if valor is None:
+                os.environ.pop(chave, None)
+            else:
+                os.environ[chave] = valor
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        conn = self.abrir_banco()
+        conn.execute(
+            "INSERT INTO usuarios (nome, telefone, receber_whatsapp) VALUES (?, ?, 1)",
+            ("Maria", "67999999999"),
+        )
+        conn.commit()
+        conn.close()
+
+    def verificar_chuva(self, acumulado, data="2026-07-19", valida=True):
+        self.updater.verificar_alertas(
+            25, 25, 0, acumulado, 50, 0,
+            data_referencia=data,
+            ocorrido_em_local=f"{data}T12:00:00-04:00",
+            validade_alertas={"chuva": valida},
+        )
+
+    def consultar_alertas_chuva(self):
+        conn = self.abrir_banco()
+        eventos = conn.execute(
+            "SELECT * FROM alertas_eventos WHERE tipo = 'chuva' ORDER BY id"
+        ).fetchall()
+        fila = conn.execute(
+            """
+            SELECT fila.*
+            FROM alertas_fila AS fila
+            JOIN alertas_eventos AS evento USING (evento_id)
+            WHERE evento.tipo = 'chuva'
+            ORDER BY fila.id
+            """
+        ).fetchall()
+        conn.close()
+        return eventos, fila
+
+    def test_chuva_abaixo_de_100_preserva_limites_de_30_e_50(self):
+        self.preparar_alertas_chuva()
+
+        for acumulado, niveis in (
+            (29.9, []),
+            (30.0, [1]),
+            (49.9, [1]),
+            (50.0, [1, 2]),
+            (99.9, [1, 2]),
+        ):
+            with self.subTest(acumulado=acumulado):
+                self.verificar_chuva(acumulado)
+                eventos, fila = self.consultar_alertas_chuva()
+                self.assertEqual([evento["nivel"] for evento in eventos], niveis)
+                self.assertEqual(len(fila), len(niveis))
+
+    def test_chuva_100_enfileira_nivel_3_imediato_apos_50(self):
+        self.preparar_alertas_chuva()
+        os.environ["ALERTA_CONFIRMACOES_NIVEL_1"] = "3"
+
+        self.verificar_chuva(50.0)
+        self.verificar_chuva(100.0)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [2, 3])
+        self.assertEqual([alerta["prioridade"] for alerta in fila], [80, 100])
+        self.assertEqual(eventos[-1]["evento_id"], "2026-07-19:chuva:3:0")
+        self.assertEqual(eventos[-1]["valor"], 100.0)
+        self.assertEqual(eventos[-1]["unidade"], "mm")
+        self.assertEqual(
+            eventos[-1]["ocorrido_em_local"], "2026-07-19T12:00:00-04:00"
+        )
+        self.assertIn("ALERTA EXTREMO", fila[-1]["mensagem"])
+        self.assertIn("Chuva Muito Forte", fila[-1]["mensagem"])
+        self.assertIn("100.0 mm", fila[-1]["mensagem"])
+        self.assertEqual(self.database.obter_estado_alertas()["nivel_chuva"], 3)
+
+    def test_chuva_salto_acima_de_100_enfileira_apenas_nivel_3(self):
+        self.preparar_alertas_chuva()
+
+        self.verificar_chuva(123.4)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [3])
+        self.assertEqual(len(fila), 1)
+        self.assertEqual(fila[0]["prioridade"], 100)
+        self.assertIn("123.4 mm", fila[0]["mensagem"])
+
+    def test_chuva_nivel_3_nao_duplica_apos_polls_e_reinicio(self):
+        self.preparar_alertas_chuva()
+
+        self.verificar_chuva(100.0)
+        self.verificar_chuva(102.5)
+        self.updater = importlib.reload(self.updater)
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.verificar_chuva(120.0)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [3])
+        self.assertEqual(len(fila), 1)
+        self.assertEqual(self.updater.carregar_estado()["nivel_chuva"], 3)
+        estado_arquivo = json.loads(Path(self.updater.STATE_FILE).read_text())
+        self.assertEqual(estado_arquivo["nivel_chuva"], 3)
+
+    def test_chuva_nivel_3_nao_rebaixa_apos_queda_do_acumulado(self):
+        self.preparar_alertas_chuva()
+
+        for acumulado in (100.0, 49.0, 30.0, 99.9, 100.0):
+            self.verificar_chuva(acumulado)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [3])
+        self.assertEqual(len(fila), 1)
+        self.assertEqual(self.database.obter_estado_alertas()["nivel_chuva"], 3)
+
+    def test_chuva_nivel_3_reinicia_no_dia_seguinte(self):
+        self.preparar_alertas_chuva()
+
+        self.verificar_chuva(100.0)
+        self.verificar_chuva(0.0, data="2026-07-20")
+        self.assertEqual(self.updater.carregar_estado()["nivel_chuva"], 0)
+        self.verificar_chuva(100.0, data="2026-07-20")
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual(
+            [(evento["data_referencia"], evento["nivel"]) for evento in eventos],
+            [("2026-07-19", 3), ("2026-07-20", 3)],
+        )
+        self.assertEqual(len(fila), 2)
+        self.assertEqual(self.updater.carregar_estado()["data"], "2026-07-20")
+        self.assertEqual(self.updater.carregar_estado()["nivel_chuva"], 3)
+
+    def test_chuva_nivel_3_respeita_limite_configurado(self):
+        self.preparar_alertas_chuva()
+        os.environ["ALERTA_CHUVA_NIVEL_3"] = "120"
+
+        self.verificar_chuva(119.9)
+        eventos, _ = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [2])
+        self.verificar_chuva(120.0)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [2, 3])
+        self.assertEqual(fila[-1]["prioridade"], 100)
+        self.assertIn("120.0 mm", fila[-1]["mensagem"])
+
+    def test_chuva_invalida_nao_enfileira_nivel_3(self):
+        self.preparar_alertas_chuva()
+
+        self.verificar_chuva(180.0, valida=False)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual(eventos, [])
+        self.assertEqual(fila, [])
+        self.assertEqual(self.database.obter_estado_alertas()["nivel_chuva"], 0)
+
+        self.verificar_chuva(180.0)
+
+        eventos, fila = self.consultar_alertas_chuva()
+        self.assertEqual([evento["nivel"] for evento in eventos], [3])
+        self.assertEqual(len(fila), 1)
 
     def test_executar_persiste_antes_de_processar_alertas(self):
         dados = {
@@ -520,6 +692,98 @@ class AlertasWorkerTest(unittest.TestCase):
         self.assertEqual(dados["chuva_hoje"], 0.0)
         self.assertFalse(estado["aguardando_reset_vento"])
         self.assertFalse(estado["aguardando_reset_chuva"])
+
+    def test_virada_usa_ultima_maxima_bruta_quando_corrigida_e_maior(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+        estado = self.updater.estado_alertas_padrao("2026-10-02")
+        estado.update({"nivel_vento": 1, "rajada_max_nuvem": 66.3})
+        self.database.salvar_estado_alertas(estado)
+        # A nuvem resetou o máximo durante o dia; o banco preserva o pico real.
+        self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-02T23:59:00-04:00",
+            "rajada": 8.0, "rajada_max": 40.4, "chuva_hoje": 0,
+        })
+        dados, _ = self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-03T00:00:00-04:00",
+            "rajada": 8.0, "rajada_max": 40.4, "chuva_hoje": 0,
+        })
+        self.assertEqual(dados["rajada_max"], 8.0)
+        self.assertTrue(self.updater.carregar_estado()["aguardando_reset_vento"])
+
+    def test_nova_maxima_apos_reset_intermediario_nao_e_descartada(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+        estado = self.updater.estado_alertas_padrao("2026-10-02")
+        estado.update({"nivel_vento": 1, "rajada_max_nuvem": 66.3})
+        self.database.salvar_estado_alertas(estado)
+        self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-02T23:59:00-04:00",
+            "rajada": 8.0, "rajada_max": 40.4, "chuva_hoje": 0,
+        })
+        dados, _ = self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-03T00:00:00-04:00",
+            "rajada": 45.0, "rajada_max": 45.0, "chuva_hoje": 0,
+        })
+        self.assertEqual(dados["rajada_max"], 45.0)
+
+    def test_maxima_ausente_na_nuvem_nao_apaga_referencia_anterior(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+        estado = self.updater.estado_alertas_padrao("2026-10-02")
+        estado.update({"rajada_max_nuvem": 66.3, "vento_ultima_max_nuvem": 40.4})
+        self.database.salvar_estado_alertas(estado)
+        self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-02T23:59:00-04:00",
+            "rajada": 8.0, "rajada_max": 8.0, "chuva_hoje": 0,
+            "validade_alertas": {"vento": True, "vento_max_diario": False},
+        })
+        dados, _ = self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-03T00:00:00-04:00",
+            "rajada": 8.0, "rajada_max": 8.0, "chuva_hoje": 0,
+            "validade_alertas": {"vento": True, "vento_max_diario": False},
+        })
+        dados, _ = self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-03T00:01:00-04:00",
+            "rajada": 8.0, "rajada_max": 40.4, "chuva_hoje": 0,
+            "validade_alertas": {"vento": True, "vento_max_diario": True},
+        })
+        self.assertEqual(dados["rajada_max"], 8.0)
+
+    def test_conversao_distingue_maxima_ausente_do_fallback_de_rajada(self):
+        from services import weather_service
+        resposta = mock.Mock()
+        resposta.json.return_value = {"data": [{"lastData": {"windgustmph": 5.0}}]}
+        with mock.patch.object(weather_service.requests, "get", return_value=resposta):
+            dados = weather_service.obter_dados(persistir_bruto=False)
+        self.assertEqual(dados["rajada_max"], 8.0)
+        self.assertIs(dados["validade_alertas"].get("vento_max_diario"), False)
+
+    def test_referencia_valida_sobrevive_a_dia_inteiro_sem_maxima_na_nuvem(self):
+        self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")
+        self.updater.log = lambda mensagem: None
+        self.updater.salvar_resumo_diario_banco = lambda data: None
+        estado = self.updater.estado_alertas_padrao("2026-10-02")
+        estado.update({"rajada_max_nuvem": 40.4, "vento_ultima_max_nuvem": 40.4})
+        self.database.salvar_estado_alertas(estado)
+        self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-03T00:00:00-04:00",
+            "rajada": 8.0, "rajada_max": 8.0, "chuva_hoje": 0,
+            "validade_alertas": {"vento": True, "vento_max_diario": False},
+        })
+        # Simula o máximo corrigido que executar() preserva após um dia calmo.
+        estado = self.updater.carregar_estado()
+        estado["rajada_max_nuvem"] = 8.0
+        self.database.salvar_estado_alertas(estado)
+        dados, _ = self.updater.preparar_dados_novo_dia({
+            "station_data_hora_local": "2026-10-04T00:00:00-04:00",
+            "rajada": 8.0, "rajada_max": 40.4, "chuva_hoje": 0,
+            "validade_alertas": {"vento": True, "vento_max_diario": True},
+        })
+        self.assertEqual(dados["rajada_max"], 8.0)
 
     def test_nova_rajada_superior_a_maxima_de_ontem_e_aceita_antes_do_reset(self):
         self.updater.STATE_FILE = str(Path(self.tmp.name) / "alert_state.json")

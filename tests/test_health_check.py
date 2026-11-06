@@ -3,9 +3,12 @@ import os
 import sqlite3
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -117,6 +120,29 @@ class HealthCheckTest(unittest.TestCase):
         self.assertFalse(segundo["notificado"])
         self.assertEqual(len(envios), 1)
         self.assertEqual(envios[0][0], "67999999999")
+
+    def test_execucoes_concorrentes_notificam_uma_vez(self):
+        os.environ["ADMIN_ALERT_PHONE"] = "67999999999"
+        self.inserir_coleta(minutos_atras=20)
+        antes_de_gravar = threading.Barrier(2)
+        registrar_log = self.health_check.registrar_log
+        envios = []
+
+        def sincronizar_log(conn, *args, **kwargs):
+            antes_de_gravar.wait(timeout=5)
+            return registrar_log(conn, *args, **kwargs)
+
+        with patch.object(self.health_check, "registrar_log", sincronizar_log), patch.object(
+            self.health_check,
+            "enviar_mensagem_admin",
+            lambda telefone, mensagem: envios.append((telefone, mensagem)),
+        ), ThreadPoolExecutor(max_workers=2) as executor:
+            futuros = [executor.submit(self.health_check.executar_health_check) for _ in range(2)]
+            resultados = [futuro.result(timeout=10) for futuro in futuros]
+
+        self.assertEqual(len(envios), 1)
+        self.assertEqual(sum(resultado["notificado"] for resultado in resultados), 1)
+        self.assertTrue(all(not resultado["ok"] for resultado in resultados))
 
 
 if __name__ == "__main__":

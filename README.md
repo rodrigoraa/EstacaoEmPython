@@ -9,7 +9,20 @@ Os limites oficiais de chuva são:
 ```text
 CHUVA NÍVEL 1 = 30 mm
 CHUVA NÍVEL 2 = 50 mm
+CHUVA NÍVEL 3 = 100 mm
 ```
+
+Ao atingir 100 mm de acumulado diário válido, o updater enfileira imediatamente o alerta extremo de chuva muito forte, uma vez por dia. Uma primeira leitura já nesse patamar gera apenas o nível 3; leituras posteriores menores não reduzem o nível, e o controle reinicia no próximo dia da estação. O aviso informa o acumulado observado, sem acrescentar previsão.
+
+Cada nível de chuva inicia uma nova distribuição para todos os inscritos ativos, inclusive quem já recebeu um nível anterior. Se o acumulado passar de 30 para 50 mm durante o envio, a campanha de 30 mm é encerrada: todos os seus avisos ainda pendentes são marcados como substituídos, e o aviso de 50 mm é enviado para todos novamente. Aos 100 mm ocorre a mesma escalada, encerrando os pendentes de 30 e 50 mm daquele dia.
+
+A campanha inferior não é retomada em caso de falha ao enfileirar ou enviar o nível superior; essas falhas exigem tratar o nível atual. O histórico de entregas permanece no banco, e o painel contabiliza as substituições. Uma mensagem já entregue à API do WhatsApp pode terminar de ser enviada, pois não é possível recolhê-la.
+
+A mesma substituição vale para calor, frio, vento e baixa umidade: um nível superior inicia a distribuição para todos os inscritos e encerra os pendentes inferiores da mesma ocorrência. Calor, frio e umidade usam um ciclo que continua após meia-noite e muda quando a condição se recupera; chuva e vento mantêm o controle diário. Um crítico antigo não bloqueia o aviso inicial de um novo ciclo.
+
+Falhas ao colocar destinatários na fila são reparadas na próxima leitura processada enquanto a ocorrência continua ativa, sem duplicar linhas existentes. O reparo usa a mensagem, valor e horário do evento original, somente no maior nível atual. O nível detectado continua registrado mesmo quando o enfileiramento falha, preservando o rearme correto.
+
+Após a atualização, o novo nível é avaliado na próxima leitura válida com acumulado igual ou superior a 100 mm (ou ao limite configurado). Campanhas manuais fora dos eventos automáticos não são deduplicadas automaticamente: se a atualização ocorrer após um envio manual no mesmo dia e a estação ainda registrar esse acumulado, poderá ser gerado um aviso automático adicional.
 
 Os demais padrões continuam configuráveis sem alterar esses contratos. A indicação visual de possível tempestade é independente dos alertas de WhatsApp: usa `chuva_rate` atual e rajada atual/recente na mesma janela temporal, com padrões conservadores de 10 mm/h, 60 km/h e 10 minutos.
 
@@ -140,6 +153,7 @@ Ative `TRUST_PROXY=true` somente quando a aplicação aceitar tráfego exclusiva
 | `TEMPESTADE_JANELA_MINUTOS` | `10` |
 | `ALERTA_CHUVA_NIVEL_1` | `30` mm |
 | `ALERTA_CHUVA_NIVEL_2` | `50` mm |
+| `ALERTA_CHUVA_NIVEL_3` | `100` mm |
 
 Também permanecem os limites `ALERTA_CALOR_*`, `ALERTA_FRIO_*`, `ALERTA_VENTO_*`, `ALERTA_UMIDADE_*` e `ALERTA_CONFIRMACOES_NIVEL_1` já usados pelo updater.
 
@@ -255,7 +269,7 @@ A fila mantém semântica at-least-once. Se a Evolution aceitar uma mensagem e a
 
 ## Banco e migrations
 
-O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `8`, registrada na pequena tabela `schema_version`.
+O SQLite usa WAL, `synchronous=FULL`, `busy_timeout` e foreign keys. O schema atual é a versão `10`, registrada na pequena tabela `schema_version`. A atualização acrescenta o contador `substituidos` e o identificador `ciclo` aos eventos de alerta sem apagar eventos ou envios existentes. Ciclos de eventos antigos são recuperados somente quando o identificador segue o formato automático conhecido; identificadores desconhecidos não são associados silenciosamente a uma ocorrência.
 
 Execute a migration leve explicitamente antes de reiniciar os serviços:
 
@@ -403,6 +417,17 @@ REGIONAL_STATIONS_RETENTION_ENABLED=true python -m estacao.workers.maintenance -
 
 ## Execução
 
+O health check coordena o cooldown entre execuções simultâneas. Campanhas manuais
+reservam cada par campanha/usuário antes de chamar a API; uma reserva `enviando`
+interrompida exige reconciliação antes de novo envio, e não é recuperada por
+`--retry-failed`. Os limites de cadastro e reenvio de confirmação permanecem
+independentes dos alertas meteorológicos.
+
+No sender, `--retry-failed` permite uma tentativa explícita por item que terminou
+em falha durante aquela execução ou sessão contínua. Não repete o mesmo erro
+permanente em loop; reiniciar o processo inicia outra sessão explícita. As
+retentativas normais de itens `pendente` continuam respeitando o backoff.
+
 Da raiz, os entrypoints por módulo são:
 
 ```bash
@@ -442,7 +467,7 @@ por `RADAR_POLL_SECONDS`, `REGIONAL_STATIONS_POLL_SECONDS` e
 `NOWCASTING_POLL_SECONDS`. Execute o nowcasting depois que os coletores já tiverem
 gravado dados; ele nunca substitui ou reúne os outros workers em um único processo.
 O updater Ambient Weather legado permanece contínuo e não possui `--once`; os três
-workers novos aceitam `--once` sem alterar os limites existentes de chuva de 30/50 mm.
+workers novos aceitam `--once` sem alterar os limites de chuva de 30/50/100 mm.
 
 Gunicorn continua usando:
 

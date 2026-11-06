@@ -142,70 +142,96 @@ def deve_pular_envio(registro, retry_failed=False):
     return True
 
 
+def reservar_envio(conn, campanha_id, usuario, telefone, mensagem, retry_failed=False):
+    """Confirmar o claim antes do HTTP, sem recuperar envios interrompidos."""
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        registro = obter_envio(conn, campanha_id, usuario["id"])
+        if deve_pular_envio(registro, retry_failed=retry_failed):
+            conn.commit()
+            return False
+        salvar_envio(conn, campanha_id, usuario, telefone, "enviando", mensagem)
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def enviar_campanha(campanha_id, template, intervalo, confirmar=False, limite=None, retry_failed=False):
     conn = database.get_db()
-    garantir_estruturas(conn)
+    try:
+        garantir_estruturas(conn)
 
-    usuarios = listar_destinatarios(conn)
-    if limite:
-        usuarios = usuarios[:limite]
+        usuarios = listar_destinatarios(conn)
+        if limite:
+            usuarios = usuarios[:limite]
 
-    total = len(usuarios)
-    enviados = 0
-    falhas = 0
-    pulados = 0
+        total = len(usuarios)
+        enviados = 0
+        falhas = 0
+        pulados = 0
 
-    if confirmar:
-        log(f"Enviando campanha {campanha_id} para ate {total} usuario(s).")
-    else:
-        log(f"Simulacao da campanha {campanha_id}: {total} usuario(s) seriam avaliados.")
+        if confirmar:
+            log(f"Enviando campanha {campanha_id} para ate {total} usuario(s).")
+        else:
+            log(f"Simulacao da campanha {campanha_id}: {total} usuario(s) seriam avaliados.")
 
-    for indice, usuario in enumerate(usuarios):
-        telefone = telefone_com_codigo_pais(usuario["telefone"])
-        mensagem = montar_mensagem(template, usuario)
-        registro = obter_envio(conn, campanha_id, usuario["id"])
+        for indice, usuario in enumerate(usuarios):
+            telefone = telefone_com_codigo_pais(usuario["telefone"])
+            mensagem = montar_mensagem(template, usuario)
+            if confirmar:
+                autorizado = reservar_envio(
+                    conn, campanha_id, usuario, telefone, mensagem, retry_failed=retry_failed
+                )
+            else:
+                registro = obter_envio(conn, campanha_id, usuario["id"])
+                autorizado = not deve_pular_envio(registro, retry_failed=retry_failed)
 
-        if deve_pular_envio(registro, retry_failed=retry_failed):
-            pulados += 1
-            log(
-                f"Pulando {mascarar_nome(usuario['nome'])} "
-                f"({mascarar_telefone(telefone)}): campanha ja registrada."
-            )
-            continue
+            if not autorizado:
+                pulados += 1
+                log(
+                    f"Pulando {mascarar_nome(usuario['nome'])} "
+                    f"({mascarar_telefone(telefone)}): campanha ja registrada."
+                )
+                continue
 
-        if not confirmar:
-            log(
-                f"[SIMULACAO] Enviaria para {mascarar_nome(usuario['nome'])} "
-                f"({mascarar_telefone(telefone)})"
-            )
-            continue
+            if not confirmar:
+                log(
+                    f"[SIMULACAO] Enviaria para {mascarar_nome(usuario['nome'])} "
+                    f"({mascarar_telefone(telefone)})"
+                )
+                continue
 
-        try:
-            enviar_whatsapp(telefone, mensagem)
-            salvar_envio(conn, campanha_id, usuario, telefone, "enviado", mensagem)
-            enviados += 1
-            log(
-                f"Enviado para {mascarar_nome(usuario['nome'])} "
-                f"({mascarar_telefone(telefone)})"
-            )
-        except Exception as erro:
-            salvar_envio(conn, campanha_id, usuario, telefone, "falhou", mensagem, str(erro))
-            falhas += 1
-            log(
-                f"Falha para {mascarar_nome(usuario['nome'])} "
-                f"({mascarar_telefone(telefone)}): {erro}"
-            )
+            try:
+                enviar_whatsapp(telefone, mensagem)
+            except Exception as erro:
+                salvar_envio(conn, campanha_id, usuario, telefone, "falhou", mensagem, str(erro))
+                falhas += 1
+                log(
+                    f"Falha para {mascarar_nome(usuario['nome'])} "
+                    f"({mascarar_telefone(telefone)}): {erro}"
+                )
+            else:
+                # Falha de persistencia apos entrega deve preservar o claim;
+                # marca-la como falhou permitiria repetir com --retry-failed.
+                salvar_envio(conn, campanha_id, usuario, telefone, "enviado", mensagem)
+                enviados += 1
+                log(
+                    f"Enviado para {mascarar_nome(usuario['nome'])} "
+                    f"({mascarar_telefone(telefone)})"
+                )
 
-        if indice < total - 1:
-            time.sleep(intervalo)
+            if indice < total - 1:
+                time.sleep(intervalo)
 
-    conn.close()
-    return {
-        "total": total,
-        "enviados": enviados,
-        "falhas": falhas,
-        "pulados": pulados,
-    }
+        return {
+            "total": total,
+            "enviados": enviados,
+            "falhas": falhas,
+            "pulados": pulados,
+        }
+    finally:
+        conn.close()
 
 
 def parse_args():

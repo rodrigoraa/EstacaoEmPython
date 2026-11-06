@@ -14,6 +14,7 @@ from acumulados import valor_float
 from persistence import salvar_historico_clima
 from time_utils import agora_local, data_local, parse_datetime
 from services.weather_service import obter_dados
+from services.alert_queue import substituir_alertas_pendentes
 from unsubscribe_tokens import telefone_com_codigo_pais
 from config import env_float, env_int, public_base_url
 from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
@@ -43,6 +44,7 @@ def configuracao_alertas():
         ),
         "chuva_1": env_float("ALERTA_CHUVA_NIVEL_1", 30),
         "chuva_2": env_float("ALERTA_CHUVA_NIVEL_2", 50),
+        "chuva_3": env_float("ALERTA_CHUVA_NIVEL_3", 100),
         "umidade_1": env_float("ALERTA_UMIDADE_NIVEL_1", 30),
         "umidade_2": env_float("ALERTA_UMIDADE_NIVEL_2", 20),
         "umidade_rearme": env_float("ALERTA_UMIDADE_REARME", 35),
@@ -65,6 +67,7 @@ def estado_alertas_padrao(data=""):
         "nivel_chuva": 0,
         "nivel_umidade": 0,
         "rajada_max_nuvem": 0.0,
+        "vento_ultima_max_nuvem": None,
         "chuva_ultima_nuvem": 0.0,
         "aguardando_reset_vento": False,
         "vento_max_dia_anterior": 0.0,
@@ -187,27 +190,31 @@ def enfileirar_alerta_usuario(
 def enviar_alerta(mensagem, evento=None):
     log(f"🚨 Enfileirando alerta para usuários...")
     conn = database.get_db()
-    database.garantir_tabela_alertas_fila(conn)
-    database.garantir_tabela_alertas_eventos(conn)
-    conn.commit()
     enfileirados = 0
     falhas = 0
+    duplicado = False
 
     try:
+        conn.execute("BEGIN IMMEDIATE")
+        database.garantir_tabela_alertas_fila(conn)
+        database.garantir_tabela_alertas_eventos(conn)
         evento_id = evento.get("evento_id") if evento else None
         if evento:
             cursor_evento = conn.execute(
                 """
                 INSERT OR IGNORE INTO alertas_eventos (
-                    evento_id, data_referencia, tipo, nivel, valor, unidade,
+                    evento_id, data_referencia, tipo, nivel, ciclo, valor, unidade,
                     ocorrido_em_local, fonte, mensagem
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     evento_id,
                     evento["data_referencia"],
                     evento["tipo"],
                     evento["nivel"],
+                    evento.get("ciclo", database.extrair_ciclo_evento(
+                        evento_id, evento["data_referencia"], evento["tipo"], evento["nivel"]
+                    )),
                     evento.get("valor"),
                     evento.get("unidade"),
                     evento.get("ocorrido_em_local"),
@@ -215,14 +222,12 @@ def enviar_alerta(mensagem, evento=None):
                     mensagem,
                 ),
             )
-            if cursor_evento.rowcount == 0:
-                conn.commit()
-                return {
-                    "total": 0,
-                    "enfileirados": 0,
-                    "falhas": 0,
-                    "duplicado": True,
-                }
+            duplicado = cursor_evento.rowcount == 0
+            if duplicado:
+                registro = conn.execute(
+                    "SELECT mensagem FROM alertas_eventos WHERE evento_id = ?", (evento_id,)
+                ).fetchone()
+                mensagem = registro["mensagem"]
 
         usuarios = conn.execute(
             """
@@ -234,8 +239,17 @@ def enviar_alerta(mensagem, evento=None):
             ORDER BY id
             """
         ).fetchall()
+        existentes = set()
+        if evento:
+            existentes = {r[0] for r in conn.execute(
+                "SELECT usuario_id FROM alertas_fila WHERE evento_id = ?", (evento_id,)
+            )}
+        pendentes = [usuario for usuario in usuarios if usuario["id"] not in existentes]
+        if duplicado and not pendentes:
+            conn.commit()
+            return {"total": 0, "enfileirados": 0, "falhas": 0, "duplicado": True}
 
-        for usuario in usuarios:
+        for usuario in pendentes:
             telefone = telefone_com_codigo_pais(usuario["telefone"])
             mensagem_final = montar_mensagem_alerta(usuario, mensagem)
 
@@ -259,18 +273,26 @@ def enviar_alerta(mensagem, evento=None):
                 )
 
         if evento:
-            status = "enfileirado" if enfileirados else "sem_destinatarios"
+            total_fila = conn.execute(
+                "SELECT COUNT(*) FROM alertas_fila WHERE evento_id = ?", (evento_id,)
+            ).fetchone()[0]
+            status = "enfileirado" if total_fila else "concluido_com_falhas" if falhas else "sem_destinatarios"
             conn.execute(
                 """
                 UPDATE alertas_eventos
-                SET status = ?, destinatarios = ?, enfileirados = ?,
+                SET status = ?, destinatarios = MAX(destinatarios, ?), enfileirados = ?,
                     falhas = ?, atualizado_em = CURRENT_TIMESTAMP
                 WHERE evento_id = ?
                 """,
-                (status, len(usuarios), enfileirados, falhas, evento_id),
+                (status, len(usuarios), total_fila, falhas, evento_id),
             )
+        if evento:
+            substituir_alertas_pendentes(conn, evento_id)
         conn.commit()
-        return {"total": len(usuarios), "enfileirados": enfileirados, "falhas": falhas}
+        resultado = {"total": len(pendentes), "enfileirados": enfileirados, "falhas": falhas}
+        if duplicado:
+            resultado["duplicado"] = True
+        return resultado
     except Exception:
         conn.rollback()
         raise
@@ -302,6 +324,7 @@ def marcar_alerta_enviado(
             "data_referencia": data_referencia,
             "tipo": tipo,
             "nivel": nivel,
+            "ciclo": ciclo,
             "valor": valor,
             "unidade": unidade,
             "ocorrido_em_local": ocorrido_em_local,
@@ -310,21 +333,53 @@ def marcar_alerta_enviado(
         },
     )
 
-    if resultado["enfileirados"] > 0 or resultado.get("duplicado"):
-        estado[chave_nivel] = nivel
-        if atualizacoes:
-            estado.update(atualizacoes)
-        salvar_estado(estado)
-        return True
-
-    log(
-        f"Alerta nao marcado como enfileirado: {resultado['falhas']} falhas "
-        f"de {resultado['total']} destinatarios."
-    )
-    return False
+    # O nível acompanha a detecção persistida, não o sucesso da distribuição.
+    # Assim a recuperação das condições rearma o ciclo mesmo após falha na fila.
+    estado[chave_nivel] = nivel
+    if atualizacoes:
+        estado.update(atualizacoes)
+    salvar_estado(estado)
+    if resultado["falhas"]:
+        log(f"Evento detectado com {resultado['falhas']} falha(s) de enfileiramento; reparo pendente.")
+    return True
 
 
-def atualizar_estado_rearme_frio(estado, temp):
+def eventos_com_enfileiramento_pendente():
+    conn = database.get_db()
+    try:
+        database.garantir_tabela_alertas_eventos(conn)
+        eventos = [dict(row) for row in conn.execute(
+            "SELECT * FROM alertas_eventos WHERE enfileirados < destinatarios ORDER BY id"
+        )]
+        conn.commit()
+        return eventos
+    finally:
+        conn.close()
+
+
+def reparar_enfileiramentos(estado, eventos):
+    """Reparar só o maior nível do episódio ainda ativo, com o texto original."""
+    selecionados = {}
+    for evento in eventos:
+        tipo = evento["tipo"]
+        if tipo not in {"calor", "frio", "umidade", "vento", "chuva"}:
+            continue
+        if evento["ciclo"] != estado.get(f"ciclo_{tipo}", 0):
+            continue
+        if evento["nivel"] != estado.get(f"nivel_{tipo}", 0):
+            continue
+        if tipo in {"chuva", "vento"} and evento["data_referencia"] != estado["data"]:
+            continue
+        selecionados[tipo] = evento
+    for evento in selecionados.values():
+        nivel = evento["nivel"]
+        evento["prioridade"] = 100 if nivel >= 3 else 80 if nivel == 2 else 50
+        enviar_alerta(evento["mensagem"], evento=evento)
+
+
+def atualizar_estado_rearme_frio(
+    estado, temp, sensacao=None, sensacao_valida=False
+):
     if estado["nivel_frio"] <= 0 and not estado.get("frio_rearmado"):
         return
 
@@ -336,7 +391,17 @@ def atualizar_estado_rearme_frio(estado, temp):
         temp_max = temp
         alterado = True
 
-    if estado["nivel_frio"] > 0 and temp_max >= configuracao_alertas()["frio_rearme"]:
+    config = configuracao_alertas()
+    frio_ainda_ativo = temp <= config["frio_1"] or (
+        sensacao_valida
+        and sensacao is not None
+        and sensacao <= config["frio_1"]
+    )
+    if (
+        estado["nivel_frio"] > 0
+        and temp_max >= config["frio_rearme"]
+        and not frio_ainda_ativo
+    ):
         estado["nivel_frio"] = 0
         estado["frio_rearmado"] = True
         estado["ciclo_frio"] = int(estado.get("ciclo_frio", 0) or 0) + 1
@@ -372,6 +437,7 @@ def mensagem_frio(titulo, texto_base, temp, sensacao, estado):
 
 def estado_alertas_novo_dia(estado_anterior, hoje):
     estado = estado_alertas_padrao(hoje)
+    estado["vento_ultima_max_nuvem"] = estado_anterior.get("vento_ultima_max_nuvem")
 
     # Condicoes instantaneas nao devem gerar outro alerta apenas porque a
     # data mudou. O nivel sera rearmado quando a condicao normalizar.
@@ -410,19 +476,27 @@ def preparar_dados_novo_dia(dados):
 
     rajada_atual = valor_float(dados.get("rajada"))
     rajada_max_nuvem = valor_float(dados.get("rajada_max"), rajada_atual)
+    maxima_nuvem_valida = (dados.get("validade_alertas") or {}).get(
+        "vento_max_diario", "rajada_max" in dados
+    )
     chuva_nuvem = max(valor_float(dados.get("chuva_hoje")), 0.0)
 
     if estado.get("data") != hoje:
         if estado.get("data"):
             salvar_resumo_diario_banco(estado["data"])
 
-        vento_anterior = max(valor_float(estado.get("rajada_max_nuvem")), 0.0)
+        # Comparar o contador da nuvem com sua última leitura, não com o pico
+        # corrigido do banco, que pode ser maior após um reset intermediário.
+        vento_anterior = max(valor_float(
+            estado.get("vento_ultima_max_nuvem"),
+            valor_float(estado.get("rajada_max_nuvem")),
+        ), 0.0)
         chuva_anterior = max(valor_float(estado.get("chuva_ultima_nuvem")), 0.0)
         estado = estado_alertas_novo_dia(estado, hoje)
 
         estado["vento_max_dia_anterior"] = vento_anterior
         estado["aguardando_reset_vento"] = (
-            vento_anterior > 0 and rajada_max_nuvem >= vento_anterior
+            vento_anterior > 0 and (not maxima_nuvem_valida or rajada_max_nuvem >= vento_anterior)
         )
         estado["chuva_base_virada"] = chuva_anterior
         estado["aguardando_reset_chuva"] = (
@@ -436,7 +510,9 @@ def preparar_dados_novo_dia(dados):
 
     if estado.get("aguardando_reset_vento"):
         referencia = valor_float(estado.get("vento_max_dia_anterior"))
-        if rajada_max_nuvem < referencia:
+        if not maxima_nuvem_valida:
+            dados["rajada_max"] = rajada_atual
+        elif rajada_max_nuvem < referencia:
             estado["aguardando_reset_vento"] = False
             estado["vento_max_dia_anterior"] = 0.0
             log("Reset diario da rajada maxima confirmado pela estacao.")
@@ -460,6 +536,8 @@ def preparar_dados_novo_dia(dados):
             # posterior a meia-noite, sem carregar o total do dia anterior.
             dados["chuva_hoje"] = round(max(chuva_nuvem - base, 0.0), 1)
 
+    if maxima_nuvem_valida:
+        estado["vento_ultima_max_nuvem"] = rajada_max_nuvem
     estado["chuva_ultima_nuvem"] = chuva_nuvem
     salvar_estado(estado)
     return dados, hoje
@@ -610,6 +688,8 @@ def verificar_alertas(
     validade_alertas=None,
 ):
     estado = carregar_estado()
+    # Capturar antes da geração evita repetir no mesmo poll uma falha nova.
+    pendentes_anteriores = eventos_com_enfileiramento_pendente()
     hoje = data_referencia or data_local()
     config = configuracao_alertas()
     validade = validade_alertas or {
@@ -630,7 +710,12 @@ def verificar_alertas(
         salvar_estado(estado)
 
     if validade.get("temperatura"):
-        atualizar_estado_rearme_frio(estado, temp)
+        atualizar_estado_rearme_frio(
+            estado,
+            temp,
+            sensacao=sensacao,
+            sensacao_valida=validade.get("sensacao", False),
+        )
     atualizar_rearme_condicoes_instantaneas(
         estado,
         temp,
@@ -728,7 +813,11 @@ def verificar_alertas(
         config,
     )
 
-    if validade.get("chuva") and chuva_hoje >= config["chuva_2"] and estado["nivel_chuva"] < 2:
+    if validade.get("chuva") and chuva_hoje >= config["chuva_3"] and estado["nivel_chuva"] < 3:
+        msg = f"🌧️ *ALERTA EXTREMO: Chuva Muito Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje."
+        marcar_alerta_enviado(estado, "nivel_chuva", 3, msg, valor=chuva_hoje, unidade="mm", ocorrido_em_local=ocorrido_em_local)
+
+    elif validade.get("chuva") and chuva_hoje >= config["chuva_2"] and estado["nivel_chuva"] < 2:
         msg = f"🌧️ *ALERTA CRÍTICO: Chuva Forte!*\nAcumulado de *{chuva_hoje:.1f} mm* hoje."
         marcar_alerta_enviado(estado, "nivel_chuva", 2, msg, valor=chuva_hoje, unidade="mm", ocorrido_em_local=ocorrido_em_local)
 
@@ -743,6 +832,9 @@ def verificar_alertas(
     elif umidade_confirmada and estado["nivel_umidade"] < 1:
         msg = f"💧 *ALERTA: Umidade Baixa!*\nO ar está seco, na faixa de *{umidade}%*."
         marcar_alerta_enviado(estado, "nivel_umidade", 1, msg, valor=umidade, unidade="%", ocorrido_em_local=ocorrido_em_local)
+
+    # Executar depois das escaladas evita recriar um aviso inferior superado.
+    reparar_enfileiramentos(estado, pendentes_anteriores)
 
 def executar():
     log("🔄 Coletando dados da estação")

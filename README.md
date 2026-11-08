@@ -423,6 +423,13 @@ REGIONAL_STATIONS_RETENTION_ENABLED=true python -m estacao.workers.maintenance -
 
 ## Execução
 
+O sender verifica a prontidão da Evolution antes de cada lote: a instância deve
+informar `open` em `/instance/connectionState/{instanceName}`. Enquanto a API
+estiver indisponível ou o WhatsApp conectando, o modo contínuo aguarda sem retirar
+mensagens da fila nem consumir tentativas. `--once` e `--limite` retornam código 1
+nessa condição para permitir nova execução após a recuperação. Falhas no POST
+depois da verificação continuam seguindo as retentativas existentes.
+
 Da raiz, os entrypoints por módulo são:
 
 ```bash

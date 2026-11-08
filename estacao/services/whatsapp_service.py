@@ -1,6 +1,7 @@
 import logging
 import requests
 from dotenv import load_dotenv
+from urllib.parse import quote
 
 from config import env_str
 from logging_utils import mascarar_telefone
@@ -33,6 +34,36 @@ def obter_configuracao_evolution():
     except InvalidOutboundURL:
         raise RuntimeError("Configuração do destino Evolution inválida") from None
     return valores
+
+
+def verificar_prontidao_evolution():
+    """Consulta somente leitura; não conecta, reinicia ou envia mensagens."""
+    try:
+        config = obter_configuracao_evolution()
+    except RuntimeError as erro:
+        return False, str(erro)
+
+    instancia = quote(config["instance"], safe="")
+    url = f"{config['url']}/instance/connectionState/{instancia}"
+    try:
+        resposta = requests.get(
+            url, headers={"apikey": config["api_key"]}, timeout=5, allow_redirects=False
+        )
+    except requests.Timeout:
+        return False, "Timeout ao consultar estado da Evolution API"
+    except requests.RequestException:
+        return False, "Não foi possível conectar à Evolution API"
+
+    if not 200 <= resposta.status_code < 300:
+        return False, f"HTTP {resposta.status_code} ao consultar estado da Evolution API"
+    try:
+        dados = resposta.json()
+    except ValueError:
+        return False, "Resposta inválida ao consultar estado da Evolution API"
+    instancia = dados.get("instance") if isinstance(dados, dict) else None
+    if isinstance(instancia, dict) and instancia.get("state") == "open":
+        return True, "Instância WhatsApp conectada"
+    return False, "Instância WhatsApp ainda não está conectada"
 
 
 def enviar_whatsapp(numero, mensagem):

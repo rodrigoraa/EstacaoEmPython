@@ -14,7 +14,7 @@ load_dotenv(os.path.join(BASE_DIR, ".env"), encoding="utf-8")
 load_dotenv(encoding="utf-8")
 
 import database
-from services.whatsapp_service import enviar_whatsapp
+from services.whatsapp_service import enviar_whatsapp, verificar_prontidao_evolution
 from time_utils import agora_utc, parse_datetime
 from config import env_int, nowcasting_config, numero_alerta_valido
 from logging_utils import configurar_logging, mascarar_nome, mascarar_telefone
@@ -430,7 +430,18 @@ def processar_lote_paralelo(workers=WHATSAPP_WORKERS, retry_failed=False):
 
 def rodar_continuamente(intervalo=INTERVALO_ENVIO_USUARIOS, retry_failed=False):
     log("🚀 Worker de WhatsApp iniciado")
+    ultimo_motivo = None
     while True:
+        pronta, motivo = verificar_prontidao_evolution()
+        if not pronta:
+            if motivo != ultimo_motivo:
+                log(f"⏳ Fila aguardando Evolution: {motivo}. Tentativas preservadas.")
+            ultimo_motivo = motivo
+            time.sleep(max(1, INTERVALO_SEM_FILA))
+            continue
+        if ultimo_motivo is not None:
+            log("Evolution pronta; retomando processamento da fila.")
+        ultimo_motivo = None
         resultados = processar_lote_paralelo(retry_failed=retry_failed)
         if not resultados:
             time.sleep(INTERVALO_SEM_FILA)
@@ -454,6 +465,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.once or args.limite is not None:
+        pronta, motivo = verificar_prontidao_evolution()
+        if not pronta:
+            log(f"⏳ Fila aguardando Evolution: {motivo}. Nenhuma tentativa consumida.")
+            return 1
     if args.once:
         resultado = processar_fila(limite=1, intervalo=args.intervalo, retry_failed=args.retry_failed)
         log(
@@ -484,7 +500,7 @@ def main():
 if __name__ == "__main__":
     configurar_logging()
     try:
-        main()
+        sys.exit(main())
     except sqlite3.Error as erro:
         log(f"❌ Erro SQLite no worker de WhatsApp: {erro}")
         raise

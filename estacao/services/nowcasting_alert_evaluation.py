@@ -69,29 +69,57 @@ def avaliar_alerta_preventivo_snapshot(snapshot, config, *, now=None):
 
 
 def montar_mensagem_preventiva(snapshot):
-    """Texto público probabilístico, sem detalhes técnicos do diagnóstico."""
+    """Distingue presença no raio monitorado de uma previsão de entrada futura."""
     alerta = (snapshot or {}).get("alerta_preventivo") or {}
     confirmado = tracking_confirmado(alerta)
-    distancia = _numero_finito(alerta.get("distance_km"))
-    movimento = "se aproximando da" if confirmado else "próxima da"
+    distancia = _medida_nao_negativa(alerta.get("distance_km"))
+    eta = _medida_nao_negativa(alerta.get("projected_impact_eta_minutes"))
+    projecao_confiavel = (
+        confirmado and alerta.get("projected_impact") is True
+        and eta is not None and eta <= 120
+        and alerta.get("trajectory_confidence") in {"MODERADA", "ALTA"}
+    )
+    presente = projecao_confiavel and eta == 0
+    futura = projecao_confiavel and eta > 0
     nivel = alerta.get("alert_level")
     if nivel == "ALERTA":
         titulo = "🔴 Atenção para possibilidade de chuva forte no Distrito de São José."
-        corpo = f"Uma área de chuva intensa está {movimento} região."
+        area = "Uma área de chuva intensa"
     elif nivel == "ATENCAO":
         titulo = "⚠️ Atenção para possível chuva no Distrito de São José."
-        corpo = f"Uma área de chuva com maior intensidade está {movimento} região."
+        area = "Uma área de chuva com maior intensidade"
     else:
-        titulo = ("🌧️ Possível chuva se aproximando do Distrito de São José." if confirmado
-                  else "🌧️ Possível chuva próxima ao Distrito de São José.")
-        corpo = (f"Uma área de chuva está a aproximadamente {distancia:.0f} km da região."
-                 if distancia is not None else "Uma área de chuva está próxima da região.")
-    partes = [titulo, corpo]
-    eta = _numero_finito(alerta.get("projected_impact_eta_minutes"))
-    if (confirmado and alerta.get("projected_impact") is True
-            and eta is not None and 0 <= eta <= 120
-            and alerta.get("trajectory_confidence") in {"MODERADA", "ALTA"}):
-        partes.append(f"Estimativa de chegada: {eta:.0f} min.")
+        titulo = "🌧️ Possibilidade de chuva no Distrito de São José."
+        area = "Uma área de chuva"
+    if presente:
+        corpo = f"{area} detectada pelo radar já está na área monitorada."
+    elif futura:
+        corpo = f"{area} detectada pelo radar está se aproximando da área monitorada."
+    else:
+        corpo = f"{area} foi detectada pelo radar."
+    if distancia is None:
+        localizacao = "Distância da área de chuva à estação indisponível."
+    elif distancia == 0:
+        localizacao = "A parte mais próxima da área de chuva detectada está sobre ou muito próxima da estação."
+    elif distancia < 1:
+        localizacao = "A parte mais próxima da área de chuva detectada está a menos de 1 km da estação."
+    else:
+        localizacao = f"A parte mais próxima da área de chuva detectada está a aproximadamente {distancia:.0f} km da estação."
+    partes = [titulo, corpo, localizacao]
+    if presente:
+        partes.append("Isso não confirma chuva no solo na estação.")
+    elif futura:
+        tempo = "menos de 1 min" if eta < 1 else f"aproximadamente {eta:.0f} min"
+        partes.append(f"Estimativa de entrada na área monitorada: {tempo}.")
+        partes.append("Essa estimativa não prevê a chegada exata da chuva à estação.")
+    else:
+        partes.append("Ainda não há estimativa confiável de entrada na área monitorada.")
     partes.append("Para mais informações acesse:\nhttps://meteo.eesjv.com.br")
     return "\n\n".join(partes)
+
+
+def _medida_nao_negativa(valor):
+    """Não converte ausência, booleanos ou medidas inválidas em zero no texto."""
+    numero = None if isinstance(valor, bool) else _numero_finito(valor)
+    return numero if numero is not None and numero >= 0 else None
 

@@ -461,7 +461,7 @@ class WhatsAppSenderTest(unittest.TestCase):
             numero, mensagem = enviar.call_args.args
             self.assertEqual(numero, "5567999999999")
             self.assertTrue(mensagem.startswith("ATENÇÃO, Maria,\n"))
-            self.assertIn("Estimativa de chegada: 25 min.", mensagem)
+            self.assertIn("Estimativa de entrada na área monitorada: aproximadamente 25 min.", mensagem)
             self.assertNotIn("40 min.", mensagem)
         conn = self.abrir_banco()
         fila = conn.execute("SELECT mensagem FROM alertas_fila").fetchone()
@@ -469,6 +469,32 @@ class WhatsAppSenderTest(unittest.TestCase):
         conn.close()
         self.assertEqual(fila["mensagem"], mensagem)
         self.assertEqual(historico["mensagem"], mensagem)
+
+    def test_revalidacao_corrige_eta_zero_e_pequeno_antes_do_transporte(self):
+        for eta, expected in ((0, "já está na área monitorada"),
+                              (0.2, "Estimativa de entrada na área monitorada: menos de 1 min.")):
+            with self.subTest(eta=eta):
+                self.enfileirar_previsao()
+                snapshot = self.snapshot()
+                snapshot["alerta_preventivo"].update(distance_km=0.2,
+                                                     projected_impact_eta_minutes=eta)
+                self.atualizar_snapshot(snapshot)
+                with mock.patch.object(self.sender, "enviar_whatsapp") as send:
+                    self.assertEqual(self.sender.processar_um_envio(), "enviado")
+                text = send.call_args.args[1]
+                self.assertIn(expected, text)
+                self.assertIn("menos de 1 km da estação", text)
+                self.assertNotIn("0 min", text)
+                if eta == 0:
+                    self.assertNotIn("se aproximando", text)
+                conn = self.abrir_banco()
+                try:
+                    queued = conn.execute("SELECT mensagem FROM alertas_fila ORDER BY id DESC LIMIT 1").fetchone()[0]
+                    history = conn.execute("SELECT mensagem FROM alertas_envios ORDER BY id DESC LIMIT 1").fetchone()[0]
+                finally:
+                    conn.close()
+                self.assertEqual(queued, text)
+                self.assertEqual(history, text)
 
     def test_ttl_e_configuravel_e_horario_local_sem_offset_e_interpretado_corretamente(self):
         evento_id = self.enfileirar_previsao(idade_minutos=20)

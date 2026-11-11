@@ -821,6 +821,21 @@ Snapshots recém-gerados não tornam uma imagem antiga atual; timestamps ausente
 ou mais de um minuto no futuro bloqueiam a previsão. Confirmação regional
 continua no diagnóstico e não é requisito obrigatório.
 
+Nas mensagens de radar, a distância indica a parte mais próxima da área detectada
+em relação à estação, e não o centro do sistema. Distâncias positivas abaixo de
+1 km aparecem como “menos de 1 km”; zero aparece como “sobre ou muito próxima da
+estação”. Medidas ausentes ou inválidas ficam indisponíveis.
+
+O ETA projetado indica a entrada dos pixels de chuva na área monitorada (raio
+configurado por `NOWCASTING_PUBLIC_IMPACT_RADIUS_KM`), sem prever a chegada exata
+da chuva à estação. Com projeção confiável, ETA zero informa que a área de chuva
+já está na área monitorada, sem afirmar chegada futura ou chuva no solo. ETAs
+positivos abaixo de um minuto aparecem como “menos de 1 min”. Sem confirmação,
+projeção ou confiança suficientes, o texto informa que ainda não há estimativa
+confiável. Esse gerador é compartilhado pelo envio automático, teste ao
+administrador e revalidação da fila automática. O envio manual preserva o texto
+original recebido; mensagens antigas já recebidas não são reescritas.
+
 Antes da entrega, a fila confere novamente o controle público, a validade da
 mensagem, o snapshot atual e o cadastro/consentimento do destinatário. Preventivos vencidos, desativados ou que perderam
 confirmação são marcados como `cancelado` e não seguem para retries. Alertas de

@@ -292,8 +292,9 @@ class PublicAlertsTest(unittest.TestCase):
                     msg = montar_mensagem_preventiva(snap)
                     self.assertEqual(msg.count("Distrito de São José"), 1)
                     self.assertEqual(msg.count("https://meteo.eesjv.com.br"), 1)
-                    self.assertEqual("se aproximando" in msg, tracking)
-                    self.assertEqual(msg.count("Estimativa de chegada:"), int(tracking and eta == 25 and quality in {"BOA", "MODERADA"}))
+                    reliable = tracking and eta == 25 and quality in {"BOA", "MODERADA"}
+                    self.assertEqual("se aproximando" in msg, reliable)
+                    self.assertEqual(msg.count("Estimativa de entrada na área monitorada:"), int(reliable))
                     for term in ("eco", "refletividade", "cluster", "tracking", "célula", "maxcappi", "frame", "ee são josé", "escola estadual são josé", "vai chover"):
                         self.assertNotIn(term, msg.lower())
         self.confirmed_medium()
@@ -301,6 +302,24 @@ class PublicAlertsTest(unittest.TestCase):
         self.assertTrue(msg.startswith("ATENÇÃO, Pessoa 0,\n"))
         self.assertEqual(msg.count("Distrito de São José"), 1)
         self.assertEqual(msg.count("https://meteo.eesjv.com.br"), 1)
+
+    def test_fila_e_evento_preservam_valores_pequenos_em_todos_os_niveis(self):
+        for i, intensity in enumerate(("MEDIUM", "HIGH", "VERY_HIGH")):
+            enqueued = 0
+            for frame in range(2):
+                minute = i * 10 + frame * 5
+                snap = self.snapshot(intensity, minute=minute, distance=0.2)
+                snap["alerta_preventivo"]["projected_impact_eta_minutes"] = 0.2
+                result = self.process(snap, minute)
+                enqueued += result["enfileirados"]
+            self.assertEqual(enqueued, 2)
+        self.assertEqual(len(self.rows("alertas_eventos")), 3)
+        for row in self.rows("alertas_fila") + self.rows("alertas_eventos"):
+            text = row["mensagem"]
+            self.assertIn("menos de 1 km da estação", text)
+            self.assertIn("Estimativa de entrada na área monitorada: menos de 1 min.", text)
+            self.assertNotIn("0 km", text)
+            self.assertNotIn("0 min", text)
 
     def test_rollback_fanout_e_estado(self):
         original = self.service.salvar_estado
@@ -408,7 +427,7 @@ class PublicAlertsTest(unittest.TestCase):
         result = self.process(second, 5)
         self.assertEqual(result["enfileirados"], 2)
         self.assertEqual(result["state"]["highest_enqueued_severity"], 1)
-        self.assertIn("Estimativa de chegada: 25 min.", self.rows("alertas_fila")[0]["mensagem"])
+        self.assertIn("Estimativa de entrada na área monitorada: aproximadamente 25 min.", self.rows("alertas_fila")[0]["mensagem"])
 
     def test_high_very_high_antecipados_a_150_km(self):
         for i, intensity in enumerate(("HIGH", "VERY_HIGH")):

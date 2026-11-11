@@ -189,7 +189,7 @@ class PreventiveFrontTest(unittest.TestCase):
                     self.assertNotIn(proibido.lower(), texto.lower())
                 self.assertIn("Distrito de São José", texto)
                 self.assertEqual("se aproximando" in texto, tracked)
-                self.assertEqual("Estimativa de chegada: 25 min." in texto, tracked)
+                self.assertEqual("Estimativa de entrada na área monitorada: aproximadamente 25 min." in texto, tracked)
                 alerta["projected_impact_eta_minutes"] = None
                 self.assertNotIn("Estimativa", montar_mensagem_alerta_teste({"alerta_preventivo": alerta}))
 

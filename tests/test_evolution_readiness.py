@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -127,11 +128,11 @@ class EvolutionReadinessWorkerTest(unittest.TestCase):
         self.addCleanup(self.post.stop)
 
     def inserir(self):
-        with self.db.get_db() as conn:
+        with closing(self.db.get_db()) as conn, conn:
             conn.execute("INSERT INTO alertas_fila (telefone, mensagem) VALUES ('5567999999999', 'Teste')")
 
     def filas(self):
-        with self.db.get_db() as conn:
+        with closing(self.db.get_db()) as conn:
             return [dict(row) for row in conn.execute("SELECT * FROM alertas_fila ORDER BY id")]
 
     def test_modos_finitos_nao_consumem_tentativas_enquanto_api_indisponivel(self):
@@ -145,7 +146,7 @@ class EvolutionReadinessWorkerTest(unittest.TestCase):
                     codigo = self.sender.main()
                 self.assertEqual(self.filas(), antes)
                 self.assertEqual(codigo, 1)
-        with self.db.get_db() as conn:
+        with closing(self.db.get_db()) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_envios").fetchone()[0], 0)
         self.enviar.assert_not_called()
 
@@ -196,5 +197,5 @@ class EvolutionReadinessWorkerTest(unittest.TestCase):
         row = self.filas()[0]
         self.assertEqual((row["status"], row["tentativas"]), ("pendente", 1))
         self.assertIsNotNone(row["proxima_tentativa_em"])
-        with self.db.get_db() as conn:
+        with closing(self.db.get_db()) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM alertas_envios WHERE status='falhou'").fetchone()[0], 1)

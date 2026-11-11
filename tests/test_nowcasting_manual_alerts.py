@@ -115,6 +115,24 @@ class ManualRadarAlertsTest(unittest.TestCase):
         self.assertFalse(self.status()["can_send"])
         self.assertEqual(self.status()["alert"]["enfileirados"], 2)
 
+    def test_admin_e_fila_manual_descrevem_eta_zero_como_area_presente(self):
+        self.snapshot["alerta_preventivo"].update(distance_km=0.2,
+                                                projected_impact_eta_minutes=0)
+        sender = self.receive()
+        text = sender.call_args.args[1]
+        self.assertIn("já está na área monitorada", text)
+        self.assertIn("menos de 1 km da estação", text)
+        self.assertNotIn("se aproximando", text)
+        self.assertNotIn("0 min", text)
+        self.assertEqual(self.send()["enfileirados"], 2)
+        for row in self.rows("alertas_fila") + self.rows("alertas_eventos"):
+            self.assertEqual(row["mensagem"], text)
+        from workers import whatsapp_sender
+        with (mock.patch.object(whatsapp_sender, "agora_utc", return_value=self.now),
+              mock.patch.object(whatsapp_sender, "enviar_whatsapp") as deliver):
+            self.assertEqual(whatsapp_sender.processar_um_envio(), "enviado")
+        self.assertEqual(deliver.call_args.args[1], text)
+
     def test_concurrent_clicks_enqueue_once(self):
         self.receive()
         alert_id = self.status()["alert"]["id"]

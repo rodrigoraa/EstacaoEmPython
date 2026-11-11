@@ -141,7 +141,7 @@ class RadarRainAlertsTest(unittest.TestCase):
         self.assertEqual(result, "enviado")
         send.assert_called_once()
         self.assertIn("São José", send.call_args.args[1])
-        self.assertIn("Estimativa de chegada:", send.call_args.args[1])
+        self.assertIn("Estimativa de entrada na área monitorada:", send.call_args.args[1])
 
     def test_centro_passando_ao_lado_com_chuva_atingindo_entrega(self):
         for index in range(5):
@@ -154,6 +154,39 @@ class RadarRainAlertsTest(unittest.TestCase):
         result, send = self.deliver()
         self.assertEqual(result, "enviado")
         send.assert_called_once()
+
+    def assert_area_ja_presente(self, bottom, top):
+        for index in range(5):
+            x = 5 * index
+            result = self.cycle(index, [(x - 40, bottom, x + 40, top, (84, 253, 0))])
+        alerta = result["snapshot"]["alerta_preventivo"]
+        self.assertEqual(alerta["projected_impact_eta_minutes"], 0)
+        self.assertEqual(result["public_enqueued"], 1)
+        conn = self.database.get_db_readonly()
+        try:
+            event = conn.execute("SELECT mensagem FROM alertas_eventos").fetchone()[0]
+            queued = conn.execute("SELECT mensagem FROM alertas_fila").fetchone()[0]
+        finally:
+            conn.close()
+        for text in (event, queued):
+            self.assertIn("já está na área monitorada", text)
+            self.assertNotIn("se aproximando", text)
+            self.assertNotIn("0 km", text)
+            self.assertNotIn("0 min", text)
+            self.assertIn("não confirma chuva no solo na estação", text)
+        delivered, send = self.deliver()
+        self.assertEqual(delivered, "enviado")
+        self.assertEqual(send.call_args.args[1], queued)
+        return alerta
+
+    def test_png_sobre_estacao_preserva_zero_bruto_e_corrige_evento_fila_e_texto(self):
+        alerta = self.assert_area_ja_presente(-5, 5)
+        self.assertAlmostEqual(alerta["distance_km"], 0, places=6)
+
+    def test_png_dentro_do_raio_sem_eco_na_estacao_nao_promete_chegada(self):
+        alerta = self.assert_area_ja_presente(3, 57)
+        self.assertGreater(alerta["distance_km"], 2)
+        self.assertLess(alerta["distance_km"], 5)
 
     def test_centro_ja_afastando_com_chuva_atras_ainda_chegando_entrega(self):
         for index in range(5):

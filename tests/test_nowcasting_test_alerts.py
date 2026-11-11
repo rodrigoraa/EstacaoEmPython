@@ -534,9 +534,11 @@ class NowcastingTestAlertsTest(unittest.TestCase):
         snapshot = self.snapshot()
         snapshot["alerta_preventivo"].update(distance_km=20, alert_level="INFORMATIVO")
         self.assertEqual(self.service.montar_mensagem_alerta_teste(snapshot), (
-            "🌧️ Possível chuva se aproximando do Distrito de São José.\n\n"
-            "Uma área de chuva está a aproximadamente 20 km da região.\n\n"
-            "Estimativa de chegada: 25 min.\n\n"
+            "🌧️ Possibilidade de chuva no Distrito de São José.\n\n"
+            "Uma área de chuva detectada pelo radar está se aproximando da área monitorada.\n\n"
+            "A parte mais próxima da área de chuva detectada está a aproximadamente 20 km da estação.\n\n"
+            "Estimativa de entrada na área monitorada: aproximadamente 25 min.\n\n"
+            "Essa estimativa não prevê a chegada exata da chuva à estação.\n\n"
             "Para mais informações acesse:\nhttps://meteo.eesjv.com.br"
         ))
 
